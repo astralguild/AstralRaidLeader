@@ -2,7 +2,8 @@
 -- Automatically passes Raid Leader to a configurable list of preferred
 -- characters. When the player holds Raid Leader, the addon first tries to
 -- promote the highest-priority preferred leader that is currently in the
--- group. If none are present, a periodic reminder is shown until one joins
+-- group. If none are present, an event-driven reminder is shown when roster
+-- state changes.
 -- or the player leaves the group.
 
 local ADDON_NAME = "AstralRaidLeader"
@@ -18,8 +19,7 @@ _G[ADDON_NAME] = ARL
 local DEFAULTS = {
     preferredLeaders       = {},    -- ordered list of character names (highest priority first)
     autoPromote            = true,  -- attempt to promote automatically on roster changes
-    reminderEnabled        = true,  -- show periodic reminders when holding an unwanted lead
-    reminderInterval       = 30,    -- seconds between reminder messages
+    reminderEnabled        = true,  -- show event-driven reminders when holding an unwanted lead
     notifyEnabled          = true,  -- show a popup when manual promotion is available
     notifySound            = true,  -- play a UI sound when the popup is shown
     quietMode              = false, -- suppress all chat output when true
@@ -28,6 +28,12 @@ local DEFAULTS = {
     trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
     guildRankPriority      = {},    -- ordered list of guild rank names (highest priority first)
     useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
+    -- Death tracking
+    deathTrackingEnabled   = true,  -- record deaths during raid encounters
+    showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
+    lastWipeDeaths         = {},    -- list of death records from the most recent wipe
+    lastWipeEncounter      = "",    -- name of the encounter that wiped
+    lastWipeDate           = "",    -- human-readable timestamp of the wipe
 }
 
 -- Built-in consumable categories – always checked, never stored in SavedVariables.
@@ -292,6 +298,21 @@ end
 
 local StartReminder
 
+local function PrintLeaderReminderMessage()
+    local parts = {}
+    if #ARL.db.preferredLeaders > 0 then
+        parts[#parts + 1] = "Preferred leader(s): |cffffd100"
+            .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
+    end
+    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        parts[#parts + 1] = "guild rank priority: |cffffd100"
+            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
+    end
+    local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
+    Print("Reminder: You are the Raid Leader." .. detail
+        .. " Use |cffffff00/arl promote|r to hand off when they join.")
+end
+
 local function EvaluateLeaderState(trigger)
     if not ARL.db then return end
     local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
@@ -311,11 +332,10 @@ local function EvaluateLeaderState(trigger)
     if ARL.db.autoPromote then
         ARL:HideManualPromotePopup()
         local ok = TryAutoPromote()
-        if not ok then StartReminder() end
+        if not ok then StartReminder(trigger) end
         return
     end
 
-    StartReminder()
     local preferredName = GetTopAvailablePreferredLeader()
     -- Fall back to a guild rank candidate for the popup when no preferred leader
     -- is present but guild rank priority is enabled.
@@ -324,6 +344,7 @@ local function EvaluateLeaderState(trigger)
         preferredName = rankTarget
     end
     if not preferredName then
+        StartReminder(trigger)
         ARL:HideManualPromotePopup()
         return
     end
@@ -442,9 +463,6 @@ local function RunConsumableAudit(force)
     end
 end
 
-local reminderFrame   = CreateFrame("Frame", nil, UIParent)
-local reminderActive  = false
-local reminderElapsed = 0
 -- Expose audit entry points on the ARL namespace so other files
 -- (e.g. the Options window) can invoke them without going through
 -- the slash-command dispatcher.
@@ -454,70 +472,29 @@ ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
 
 
 function ARL:CancelReminder()
-    reminderActive  = false
-    reminderElapsed = 0
+    -- Event-driven reminders do not keep timer state.
 end
 
-StartReminder = function()
+StartReminder = function(trigger)
     if not ARL.db or not ARL.db.reminderEnabled then return end
     local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
     local hasGuildRankPriority = ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0
     if not hasPreferredLeaders and not hasGuildRankPriority then return end
-    reminderActive  = true
-    reminderElapsed = 0
+    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then return end
+
+    -- Event-driven reminders: only announce on join/world-change style triggers.
+    if trigger ~= "new_member" and trigger ~= "instance_change" then return end
+
+    PrintLeaderReminderMessage()
 end
-
-reminderFrame:SetScript("OnUpdate", function(_, elapsed)
-    if not reminderActive then return end
-
-    reminderElapsed = reminderElapsed + elapsed
-    if reminderElapsed < ARL.db.reminderInterval then return end
-    reminderElapsed = 0
-
-    -- Stop reminding if we are no longer the group leader.
-    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then
-        ARL:CancelReminder()
-        ARL:HideManualPromotePopup()
-        return
-    end
-
-    -- Try to auto-promote before showing the reminder.
-    if ARL.db.autoPromote and TryAutoPromote() then
-        return
-    end
-
-    if not ARL.db.autoPromote then
-        local preferredName = GetTopAvailablePreferredLeader()
-        if not preferredName and ARL.db.useGuildRankPriority then
-            local _, rankTarget = GetTopAvailableByGuildRank()
-            preferredName = rankTarget
-        end
-        if preferredName then
-            ARL:ShowManualPromotePopup(preferredName, false)
-        end
-    end
-
-    -- Build a friendly reminder message covering both preferred leaders and
-    -- guild rank priority so the player knows what the addon is waiting for.
-    local parts = {}
-    if #ARL.db.preferredLeaders > 0 then
-        parts[#parts + 1] = "Preferred leader(s): |cffffd100"
-            .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
-    end
-    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
-        parts[#parts + 1] = "guild rank priority: |cffffd100"
-            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
-    end
-    local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
-    Print("Reminder: You are the Raid Leader." .. detail
-        .. " Use |cffffff00/arl promote|r to hand off when they join.")
-end)
 
 -- ============================================================
 -- Event handling
 -- ============================================================
 
-local eventFrame = CreateFrame("Frame", nil, UIParent)
+local HandleDeathTrackingEvent
+
+local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
@@ -526,6 +503,8 @@ eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("READY_CHECK")
+eventFrame:RegisterEvent("ENCOUNTER_START")
+eventFrame:RegisterEvent("ENCOUNTER_END")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -550,6 +529,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "READY_CHECK" then
         RunConsumableAudit()
 
+    elseif event == "ENCOUNTER_START" or event == "ENCOUNTER_END"
+    then
+        if HandleDeathTrackingEvent then
+            HandleDeathTrackingEvent(event, ...)
+        end
+
     elseif event == "GUILD_ROSTER_UPDATE" then
         EvaluateLeaderState("roster")
 
@@ -563,6 +548,107 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         EvaluateLeaderState(trigger)
     end
 end)
+
+-- ============================================================
+-- Death tracking
+-- ============================================================
+
+-- Per-session state (not persisted).
+local currentEncounterDeaths = {}   -- death records for the active encounter
+local currentEncounterName   = ""
+local currentEncounterStart  = 0
+local inEncounter            = false
+local currentEncounterID     = 0
+
+-- Format seconds as M:SS for the recap display.
+local function FormatEncounterTime(seconds)
+    local m = math.floor(seconds / 60)
+    local s = seconds % 60
+    return string.format("%d:%02d", m, s)
+end
+
+local function BuildDeathsFromDamageMeter()
+    if not C_DamageMeter or type(C_DamageMeter.GetCombatSessionFromID) ~= "function" then
+        return {}
+    end
+
+    local sessionId = nil
+    if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
+        sessionId = C_DamageMeter.GetCurrentCombatSessionID()
+    elseif type(C_DamageMeter.GetLastCombatSessionID) == "function" then
+        sessionId = C_DamageMeter.GetLastCombatSessionID()
+    end
+
+    if (not sessionId or sessionId == 0) and currentEncounterID ~= 0 and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function" then
+        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(currentEncounterID)
+    end
+
+    if not sessionId then return {} end
+
+    local ok, session = pcall(C_DamageMeter.GetCombatSessionFromID, sessionId)
+    if not ok or type(session) ~= "table" then return {} end
+
+    local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
+    if type(deathList) ~= "table" then return {} end
+
+    local results = {}
+    for _, entry in ipairs(deathList) do
+        if type(entry) == "table" then
+            local playerName = entry.playerName or entry.destName or entry.name or entry.player or "Unknown"
+            local mechanic   = entry.mechanic or entry.spellName or entry.abilityName or entry.cause or "Unknown"
+            local source     = entry.sourceName or entry.source or entry.killerName or "Unknown"
+            local timeOffset = tonumber(entry.timeOffset or entry.elapsedTime or entry.time) or 0
+            if timeOffset < 0 then timeOffset = 0 end
+            results[#results + 1] = {
+                playerName = playerName,
+                mechanic   = mechanic,
+                source     = source,
+                timeOffset = timeOffset,
+                timeStr    = FormatEncounterTime(math.floor(timeOffset)),
+            }
+        end
+    end
+
+    return results
+end
+
+HandleDeathTrackingEvent = function(event, ...)
+    if event == "ENCOUNTER_START" then
+        local encounterID, encounterName = ...
+        currentEncounterID     = tonumber(encounterID) or 0
+        currentEncounterName   = encounterName or "Unknown"
+        currentEncounterStart  = GetTime()
+        currentEncounterDeaths = {}
+        inEncounter            = true
+
+    elseif event == "ENCOUNTER_END" then
+        local _, encounterName, _, _, success = ...
+        inEncounter = false
+
+        if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
+            local deaths = BuildDeathsFromDamageMeter()
+            if #deaths > 0 then
+                currentEncounterDeaths = deaths
+            end
+
+            -- Persist deaths recorded for this attempt.
+            ARL.db.lastWipeDeaths    = currentEncounterDeaths
+            ARL.db.lastWipeEncounter = encounterName or currentEncounterName
+            ARL.db.lastWipeDate      = date("%Y-%m-%d %H:%M")
+            Print(string.format(
+                "Wipe recorded on |cffffd100%s|r – %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+                ARL.db.lastWipeEncounter,
+                #currentEncounterDeaths
+            ))
+            if ARL.db.showRecapOnWipe and ARL.ShowDeathRecap then
+                ARL:ShowDeathRecap()
+            end
+        end
+
+        currentEncounterDeaths = {}
+        currentEncounterID     = 0
+    end
+end
 
 -- ============================================================
 -- Slash commands
@@ -656,7 +742,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.autoPromote and "enabled" or "disabled"))
         end
 
-    -- /arl reminder [on|off|<seconds>]
+    -- /arl reminder [on|off]
     elseif cmd == "reminder" then
         local lower = arg:lower()
         if lower == "on" then
@@ -667,19 +753,12 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             ARL:CancelReminder()
             Print("Reminder |cffff0000disabled|r.")
         elseif arg ~= "" then
-            local secs = tonumber(arg)
-            if secs and secs >= 5 then
-                ARL.db.reminderInterval = secs
-                Print(string.format("Reminder interval set to |cffffff00%d|r seconds.", secs))
-            else
-                Print("Interval must be a number >= 5. Usage: /arl reminder <seconds>")
-            end
+            Print("Reminder is event-driven now. Usage: /arl reminder [on|off]")
         else
             Print(string.format(
-                "Reminder is |cff%s%s|r. Interval: |cffffff00%d|r seconds.",
+                "Reminder is |cff%s%s|r. Trigger: |cffffff00member join / instance change|r.",
                 ARL.db.reminderEnabled and "00ff00" or "ff0000",
-                ARL.db.reminderEnabled and "enabled" or "disabled",
-                ARL.db.reminderInterval
+                ARL.db.reminderEnabled and "enabled" or "disabled"
             ))
         end
 
@@ -996,6 +1075,29 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Settings UI is not available yet. Try again in a moment.")
         end
 
+    -- /arl deaths | /arl wipe  – show the last wipe death recap
+    elseif cmd == "deaths" or cmd == "wipe" then
+        if ARL.ShowDeathRecap then
+            ARL:ShowDeathRecap()
+        else
+            Print("Death recap UI is not available yet. Try again in a moment.")
+        end
+
+    -- /arl deathtracking [on|off]
+    elseif cmd == "deathtracking" then
+        local lower = arg:lower()
+        if lower == "on" then
+            ARL.db.deathTrackingEnabled = true
+            Print("Death tracking |cff00ff00enabled|r.")
+        elseif lower == "off" then
+            ARL.db.deathTrackingEnabled = false
+            Print("Death tracking |cffff0000disabled|r.")
+        else
+            Print(string.format("Death tracking is currently |cff%s%s|r.",
+                ARL.db.deathTrackingEnabled and "00ff00" or "ff0000",
+                ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
+        end
+
     -- bare /arl opens settings
     elseif cmd == "" then
         if ARL.ShowOptions then
@@ -1014,11 +1116,13 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl clear|r              – Clear the entire list")
         Print("  |cffffff00/arl promote|r            – Manually promote the top available preferred leader")
         Print("  |cffffff00/arl auto [on|off]|r      – Toggle automatic promotion on roster changes")
-        Print("  |cffffff00/arl reminder [on|off|N]|r – Toggle or set the reminder interval (seconds)")
+        Print("  |cffffff00/arl reminder [on|off]|r – Toggle event-driven leader reminders")
         Print("  |cffffff00/arl notify [on|off]|r    – Toggle the manual-promote popup when auto is off")
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
+        Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
+        Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")

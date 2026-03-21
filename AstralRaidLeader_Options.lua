@@ -71,6 +71,7 @@ local panels = {
     CreatePanel(),  -- 2: Leaders
     CreatePanel(),  -- 3: Guild Ranks
     CreatePanel(),  -- 4: Consumables
+    CreatePanel(),  -- 5: Deaths
 }
 
 -- ============================================================
@@ -78,7 +79,7 @@ local panels = {
 -- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
 -- ============================================================
 
-local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables" }
+local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables", "Deaths" }
 local tabs = {}
 local currentTabIndex = 0  -- tracked locally; PanelTemplates_SetSelectedTab removed in 12.x
 
@@ -147,7 +148,7 @@ local autoCB = CreateCheckbox(p1,
 
 local reminderCB = CreateCheckbox(p1,
     "Enable reminder chat messages",
-    "Show periodic reminder messages when no preferred leader is present.",
+    "Show reminder messages when members join and no preferred leader is present.",
     8, -36)
 
 local notifyCB = CreateCheckbox(p1,
@@ -165,39 +166,28 @@ local quietCB = CreateCheckbox(p1,
     "Suppress all chat output from AstralRaidLeader (auto-promote still works silently).",
     8, -120)
 
-local sliderLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-sliderLabel:SetPoint("TOPLEFT", 8, -160)
-sliderLabel:SetText("Reminder interval (seconds)")
-
-local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", p1, "OptionsSliderTemplate")
-reminderSlider:SetPoint("TOPLEFT", 8, -182)
-reminderSlider:SetMinMaxValues(5, 120)
-reminderSlider:SetValueStep(5)
-reminderSlider:SetObeyStepOnDrag(true)
-reminderSlider:SetWidth(240)
-_G[reminderSlider:GetName() .. "Low"]:SetText("5")
-_G[reminderSlider:GetName() .. "High"]:SetText("120")
-
-local sliderValue = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-sliderValue:SetPoint("LEFT", reminderSlider, "RIGHT", 10, 0)
-sliderValue:SetText("30s")
+local reminderHelpText = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+reminderHelpText:SetPoint("TOPLEFT", 8, -160)
+reminderHelpText:SetWidth(528)
+reminderHelpText:SetJustifyH("LEFT")
+reminderHelpText:SetText("Reminders are event-driven and trigger when party/raid roster changes.")
 
 local groupTypeLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-groupTypeLabel:SetPoint("TOPLEFT", 8, -228)
+groupTypeLabel:SetPoint("TOPLEFT", 8, -196)
 groupTypeLabel:SetText("Auto-promote in:")
 
 local groupAllCB = CreateCheckbox(p1,
     "All groups",
     "Auto-promote in both raids and parties.",
-    8, -250)
+    8, -218)
 
 local groupRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -250)
+groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -218)
 groupRaidCB.Text:SetText("Raids only")
 groupRaidCB.tooltipText = "Only auto-promote when in a raid group."
 
 local groupPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -250)
+groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -218)
 groupPartyCB.Text:SetText("Parties only")
 groupPartyCB.tooltipText = "Only auto-promote when in a party (not a raid)."
 
@@ -421,6 +411,33 @@ runAuditButton:SetSize(110, 24)
 runAuditButton:SetText("Run Audit Now")
 
 -- ============================================================
+-- Tab 5 - Deaths
+-- ============================================================
+
+local p5 = panels[5]
+
+local deathTrackingCB = CreateCheckbox(p5,
+    "Enable death tracking during encounters",
+    "Record raid and party deaths during encounter attempts.",
+    8, -8)
+
+local showRecapCB = CreateCheckbox(p5,
+    "Open recap window automatically on wipe",
+    "Show the Death Recap window automatically when an encounter ends in a wipe.",
+    8, -36)
+
+local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+recapInfoText:SetPoint("TOPLEFT", 8, -70)
+recapInfoText:SetWidth(520)
+recapInfoText:SetJustifyH("LEFT")
+recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
+
+local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
+openRecapButton:SetPoint("TOPLEFT", 8, -100)
+openRecapButton:SetSize(140, 24)
+openRecapButton:SetText("Open Last Recap")
+
+-- ============================================================
 -- Refresh helpers
 -- ============================================================
 
@@ -542,12 +559,10 @@ local function RefreshUI()
     groupRaidCB:SetChecked(filter == "raid")
     groupPartyCB:SetChecked(filter == "party")
 
-    local interval = tonumber(ARL.db.reminderInterval) or 30
-    reminderSlider:SetValue(interval)
-    sliderValue:SetText(string.format("%ds", interval))
-
     useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
     consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
+    deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
+    showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
 
     RefreshListText()
     RefreshRankListText()
@@ -618,16 +633,6 @@ end
 groupAllCB:SetScript("OnClick",  function() if not updating then SetGroupTypeFilter("all")   end end)
 groupRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("raid")  end end)
 groupPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("party") end end)
-
-reminderSlider:SetScript("OnValueChanged", function(self, value)
-    if updating or not ARL.db then return end
-    local rounded = math.floor((value / 5) + 0.5) * 5
-    if rounded < 5   then rounded = 5   end
-    if rounded > 120 then rounded = 120 end
-    self:SetValue(rounded)
-    ARL.db.reminderInterval = rounded
-    sliderValue:SetText(string.format("%ds", rounded))
-end)
 
 -- ============================================================
 -- Tab 2 – Leaders: handlers
@@ -953,6 +958,34 @@ end)
 
 catEdit:SetScript("OnEnterPressed",    function() spellIdEdit:SetFocus() end)
 spellIdEdit:SetScript("OnEnterPressed", function() addConsumableButton:Click() end)
+
+-- ============================================================
+-- Tab 5 - Deaths: handlers
+-- ============================================================
+
+deathTrackingCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.deathTrackingEnabled = self:GetChecked() and true or false
+    Print(string.format("Death tracking |cff%s%s|r.",
+        ARL.db.deathTrackingEnabled and "00ff00" or "ff0000",
+        ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
+end)
+
+showRecapCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.showRecapOnWipe = self:GetChecked() and true or false
+    Print(string.format("Auto-open death recap on wipe |cff%s%s|r.",
+        ARL.db.showRecapOnWipe and "00ff00" or "ff0000",
+        ARL.db.showRecapOnWipe and "enabled" or "disabled"))
+end)
+
+openRecapButton:SetScript("OnClick", function()
+    if ARL.ShowDeathRecap then
+        ARL:ShowDeathRecap()
+    else
+        Print("Death recap UI is not available yet. Try again in a moment.")
+    end
+end)
 
 -- ============================================================
 -- ShowOptions
