@@ -534,6 +534,10 @@ eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("READY_CHECK")
+eventFrame:RegisterEvent("ENCOUNTER_START")
+eventFrame:RegisterEvent("ENCOUNTER_END")
+eventFrame:RegisterEvent("UNIT_HEALTH")
+eventFrame:RegisterEvent("UNIT_FLAGS")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -558,6 +562,13 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "READY_CHECK" then
         RunConsumableAudit()
 
+    elseif event == "ENCOUNTER_START" or event == "ENCOUNTER_END"
+        or event == "UNIT_HEALTH" or event == "UNIT_FLAGS"
+    then
+        if HandleDeathTrackingEvent then
+            HandleDeathTrackingEvent(event, ...)
+        end
+
     elseif event == "GUILD_ROSTER_UPDATE" then
         EvaluateLeaderState("roster")
 
@@ -569,6 +580,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         end
         lastGroupMemberCount = currentCount
         EvaluateLeaderState(trigger)
+        if HandleDeathTrackingEvent then
+            HandleDeathTrackingEvent(event, ...)
+        end
     end
 end)
 
@@ -577,25 +591,49 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local lastHitByGUID          = {}   -- [guid] = { source, mechanic }
 local currentEncounterDeaths = {}   -- death records for the active encounter
 local currentEncounterName   = ""
 local currentEncounterStart  = 0
 local inEncounter            = false
+local trackedUnitState       = {}   -- [guid] = { name = string, dead = bool }
+local recordedDeathsByGUID   = {}   -- [guid] = true once recorded during current encounter
 
-local band = bit.band
-local bor = bit.bor
-local PLAYER_TYPE_MASK = COMBATLOG_OBJECT_TYPE_PLAYER or 0x00000400
-local GROUP_AFFILIATION_MASK = bor(
-    COMBATLOG_OBJECT_AFFILIATION_MINE or 0x00000001,
-    COMBATLOG_OBJECT_AFFILIATION_PARTY or 0x00000002,
-    COMBATLOG_OBJECT_AFFILIATION_RAID or 0x00000004
-)
+local function AddTrackedUnit(unit)
+    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return end
+    local guid = UnitGUID(unit)
+    if not guid then return end
 
--- Returns true when the combat-log flags indicate a player in our group / raid.
-local function IsGroupPlayer(flags)
-    if not flags then return false end
-    return band(flags, PLAYER_TYPE_MASK) ~= 0 and band(flags, GROUP_AFFILIATION_MASK) ~= 0
+    local existing = trackedUnitState[guid]
+    local isDead = UnitIsDeadOrGhost(unit) and true or false
+    trackedUnitState[guid] = {
+        name = UnitName(unit) or (existing and existing.name) or "Unknown",
+        dead = existing and existing.dead or isDead,
+    }
+end
+
+local function RebuildTrackedUnitState()
+    local previous = trackedUnitState
+    trackedUnitState = {}
+
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            AddTrackedUnit("raid" .. i)
+        end
+    elseif IsInGroup() then
+        AddTrackedUnit("player")
+        for i = 1, GetNumSubgroupMembers() do
+            AddTrackedUnit("party" .. i)
+        end
+    else
+        AddTrackedUnit("player")
+    end
+
+    for guid, state in pairs(trackedUnitState) do
+        local prior = previous[guid]
+        if prior and prior.dead then
+            state.dead = true
+        end
+    end
 end
 
 -- Format seconds as M:SS for the recap display.
@@ -605,14 +643,47 @@ local function FormatEncounterTime(seconds)
     return string.format("%d:%02d", m, s)
 end
 
+local function RecordUnitDeath(unit)
+    if not inEncounter or not (ARL.db and ARL.db.deathTrackingEnabled) then return end
+    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return end
+
+    local guid = UnitGUID(unit)
+    if not guid then return end
+
+    local state = trackedUnitState[guid]
+    if not state then
+        AddTrackedUnit(unit)
+        state = trackedUnitState[guid]
+    end
+    if not state then return end
+
+    local isDeadNow = UnitIsDeadOrGhost(unit) and true or false
+    if isDeadNow and not state.dead and not recordedDeathsByGUID[guid] then
+        local timeOffset = math.floor(GetTime() - currentEncounterStart)
+        table.insert(currentEncounterDeaths, {
+            playerName = UnitName(unit) or state.name or "Unknown",
+            mechanic   = "Unknown (Midnight restricted)",
+            source     = "Unavailable",
+            timeOffset = timeOffset,
+            timeStr    = FormatEncounterTime(timeOffset),
+        })
+        recordedDeathsByGUID[guid] = true
+    end
+
+    state.name = UnitName(unit) or state.name or "Unknown"
+    state.dead = isDeadNow
+end
+
 HandleDeathTrackingEvent = function(event, ...)
     if event == "ENCOUNTER_START" then
         local _, encounterName = ...
         currentEncounterName   = encounterName or "Unknown"
         currentEncounterStart  = GetTime()
         currentEncounterDeaths = {}
-        lastHitByGUID          = {}
+        trackedUnitState       = {}
+        recordedDeathsByGUID   = {}
         inEncounter            = true
+        RebuildTrackedUnitState()
 
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
@@ -634,51 +705,17 @@ HandleDeathTrackingEvent = function(event, ...)
         end
 
         currentEncounterDeaths = {}
-        lastHitByGUID          = {}
+        trackedUnitState       = {}
+        recordedDeathsByGUID   = {}
 
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if not (ARL.db and ARL.db.deathTrackingEnabled and inEncounter) then return end
-
-        local _, subevent, _, _, srcName, _, _, dstGUID, dstName, dstFlags, _, arg12, arg13 = CombatLogGetCurrentEventInfo()
-
-        if subevent == "SWING_DAMAGE" then
-            if IsGroupPlayer(dstFlags) then
-                lastHitByGUID[dstGUID] = { source = srcName or "Unknown", mechanic = "Melee" }
-            end
-
-        elseif subevent == "SPELL_DAMAGE"
-            or subevent == "RANGE_DAMAGE"
-            or subevent == "SPELL_PERIODIC_DAMAGE"
-        then
-            if IsGroupPlayer(dstFlags) then
-                lastHitByGUID[dstGUID] = {
-                    source   = srcName  or "Unknown",
-                    mechanic = arg13 or "Unknown Spell",
-                }
-            end
-
-        elseif subevent == "ENVIRONMENTAL_DAMAGE" then
-            if IsGroupPlayer(dstFlags) then
-                lastHitByGUID[dstGUID] = {
-                    source   = "Environment",
-                    mechanic = arg12 or "Environmental",
-                }
-            end
-
-        elseif subevent == "UNIT_DIED" then
-            if IsGroupPlayer(dstFlags) then
-                local lastHit   = lastHitByGUID[dstGUID]
-                local timeOffset = math.floor(GetTime() - currentEncounterStart)
-                table.insert(currentEncounterDeaths, {
-                    playerName = dstName  or "Unknown",
-                    mechanic   = lastHit and lastHit.mechanic or "Unknown",
-                    source     = lastHit and lastHit.source   or "Unknown",
-                    timeOffset = timeOffset,
-                    timeStr    = FormatEncounterTime(timeOffset),
-                })
-                lastHitByGUID[dstGUID] = nil
-            end
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
+        if inEncounter then
+            RebuildTrackedUnitState()
         end
+
+    elseif event == "UNIT_HEALTH" or event == "UNIT_FLAGS" then
+        local unit = ...
+        RecordUnitDeath(unit)
     end
 end
 
