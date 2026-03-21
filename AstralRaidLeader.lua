@@ -525,7 +525,7 @@ end)
 
 local HandleDeathTrackingEvent
 
-local eventFrame = CreateFrame("Frame", nil, UIParent)
+local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
@@ -534,9 +534,6 @@ eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("READY_CHECK")
-eventFrame:RegisterEvent("ENCOUNTER_START")
-eventFrame:RegisterEvent("ENCOUNTER_END")
-eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -560,11 +557,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     elseif event == "READY_CHECK" then
         RunConsumableAudit()
-
-    elseif event == "ENCOUNTER_START" or event == "ENCOUNTER_END" or event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if HandleDeathTrackingEvent then
-            HandleDeathTrackingEvent(event, ...)
-        end
 
     elseif event == "GUILD_ROSTER_UPDATE" then
         EvaluateLeaderState("roster")
