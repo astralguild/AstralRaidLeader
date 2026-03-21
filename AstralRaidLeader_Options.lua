@@ -71,6 +71,7 @@ local panels = {
     CreatePanel(),  -- 2: Leaders
     CreatePanel(),  -- 3: Guild Ranks
     CreatePanel(),  -- 4: Consumables
+    CreatePanel(),  -- 5: Deaths
 }
 
 -- ============================================================
@@ -78,7 +79,7 @@ local panels = {
 -- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
 -- ============================================================
 
-local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables" }
+local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables", "Deaths" }
 local tabs = {}
 local currentTabIndex = 0  -- tracked locally; PanelTemplates_SetSelectedTab removed in 12.x
 
@@ -421,6 +422,33 @@ runAuditButton:SetSize(110, 24)
 runAuditButton:SetText("Run Audit Now")
 
 -- ============================================================
+-- Tab 5 - Deaths
+-- ============================================================
+
+local p5 = panels[5]
+
+local deathTrackingCB = CreateCheckbox(p5,
+    "Enable death tracking during encounters",
+    "Record raid and party deaths during encounter attempts.",
+    8, -8)
+
+local showRecapCB = CreateCheckbox(p5,
+    "Open recap window automatically on wipe",
+    "Show the Death Recap window automatically when an encounter ends in a wipe.",
+    8, -36)
+
+local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+recapInfoText:SetPoint("TOPLEFT", 8, -70)
+recapInfoText:SetWidth(520)
+recapInfoText:SetJustifyH("LEFT")
+recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
+
+local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
+openRecapButton:SetPoint("TOPLEFT", 8, -100)
+openRecapButton:SetSize(140, 24)
+openRecapButton:SetText("Open Last Recap")
+
+-- ============================================================
 -- Refresh helpers
 -- ============================================================
 
@@ -548,6 +576,8 @@ local function RefreshUI()
 
     useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
     consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
+    deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
+    showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
 
     RefreshListText()
     RefreshRankListText()
@@ -953,6 +983,34 @@ end)
 
 catEdit:SetScript("OnEnterPressed",    function() spellIdEdit:SetFocus() end)
 spellIdEdit:SetScript("OnEnterPressed", function() addConsumableButton:Click() end)
+
+-- ============================================================
+-- Tab 5 - Deaths: handlers
+-- ============================================================
+
+deathTrackingCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.deathTrackingEnabled = self:GetChecked() and true or false
+    Print(string.format("Death tracking |cff%s%s|r.",
+        ARL.db.deathTrackingEnabled and "00ff00" or "ff0000",
+        ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
+end)
+
+showRecapCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.showRecapOnWipe = self:GetChecked() and true or false
+    Print(string.format("Auto-open death recap on wipe |cff%s%s|r.",
+        ARL.db.showRecapOnWipe and "00ff00" or "ff0000",
+        ARL.db.showRecapOnWipe and "enabled" or "disabled"))
+end)
+
+openRecapButton:SetScript("OnClick", function()
+    if ARL.ShowDeathRecap then
+        ARL:ShowDeathRecap()
+    else
+        Print("Death recap UI is not available yet. Try again in a moment.")
+    end
+end)
 
 -- ============================================================
 -- ShowOptions
