@@ -58,10 +58,23 @@ local updating = false
 -- area below the title/tab bar, leaving room for the Close button.
 -- ============================================================
 
+local navContainer = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
+navContainer:SetPoint("TOPLEFT", 8, -58)
+navContainer:SetPoint("BOTTOMRIGHT", -8, 44)
+
+local subTabSidebar = CreateFrame("Frame", nil, navContainer, "InsetFrameTemplate3")
+subTabSidebar:SetPoint("TOPLEFT", 8, -8)
+subTabSidebar:SetPoint("BOTTOMLEFT", 8, 8)
+subTabSidebar:SetWidth(165)
+
+local contentHost = CreateFrame("Frame", nil, navContainer)
+contentHost:SetPoint("TOPLEFT", subTabSidebar, "TOPRIGHT", 10, 0)
+contentHost:SetPoint("BOTTOMRIGHT", navContainer, "BOTTOMRIGHT", -8, 8)
+
 local function CreatePanel()
-    local p = CreateFrame("Frame", nil, frame)
-    p:SetPoint("TOPLEFT",     frame, "TOPLEFT",      8,  -58)
-    p:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",  -8,  44)
+    local p = CreateFrame("Frame", nil, contentHost)
+    p:SetPoint("TOPLEFT", 4, -4)
+    p:SetPoint("BOTTOMRIGHT", -4, 4)
     p:Hide()
     return p
 end
@@ -79,10 +92,33 @@ local panels = {
 -- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
 -- ============================================================
 
-local MAIN_TAB_LABELS = { "Auto Invite", "Consumable Checks", "Death Recaps" }
-local tabs = {}
+local MAIN_TABS = {
+    {
+        label = "Auto Invite",
+        subTabs = {
+            { label = "General", panel = 1 },
+            { label = "Leaders", panel = 2 },
+            { label = "Guild Ranks", panel = 3 },
+        },
+    },
+    {
+        label = "Consumable Checks",
+        subTabs = {
+            { label = "Consumables", panel = 4 },
+        },
+    },
+    {
+        label = "Death Recaps",
+        subTabs = {
+            { label = "Death Recap", panel = 5 },
+        },
+    },
+}
+
+local mainTabs = {}
+local subTabButtons = {}
 local currentMainTabIndex = 0
-local currentAutoSubTabIndex = 1
+local currentSubTabIndex = 1
 
 local function ShowOnlyPanel(panelIndex)
     for i, panel in ipairs(panels) do
@@ -90,57 +126,68 @@ local function ShowOnlyPanel(panelIndex)
     end
 end
 
-for i, label in ipairs(MAIN_TAB_LABELS) do
-    local tab = CreateFrame("Button", frame:GetName() .. "Tab" .. i, frame, "PanelTabButtonTemplate")
-    tab:SetText(label)
+for i, tabConfig in ipairs(MAIN_TABS) do
+    local tab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    tab:SetText(tabConfig.label)
+    tab:SetSize(150, 22)
     if i == 1 then
-        tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 4, 2)
+        tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -32)
     else
-        tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", -14, 0)
+        tab:SetPoint("LEFT", mainTabs[i - 1], "RIGHT", 6, 0)
     end
     tab:SetID(i)
-    PanelTemplates_TabResize(tab, 0)
-    tabs[i] = tab
+    mainTabs[i] = tab
 end
 
-PanelTemplates_SetNumTabs(frame, #MAIN_TAB_LABELS)
+for i = 1, 6 do
+    local btn = CreateFrame("Button", nil, subTabSidebar, "UIPanelButtonTemplate")
+    btn:SetSize(145, 22)
+    if i == 1 then
+        btn:SetPoint("TOPLEFT", 10, -10)
+    else
+        btn:SetPoint("TOPLEFT", subTabButtons[i - 1], "BOTTOMLEFT", 0, -4)
+    end
+    btn:Hide()
+    subTabButtons[i] = btn
+end
 
-local AUTO_SUBTAB_LABELS = { "General", "Leaders", "Guild Ranks" }
-local autoSubTabs = {}
-
-local function SetAutoSubTabVisual(selectedIndex)
-    for i, tab in ipairs(autoSubTabs) do
+local function SetMainTabVisual(selectedIndex)
+    for i, tab in ipairs(mainTabs) do
         tab:SetEnabled(i ~= selectedIndex)
     end
 end
 
-local function SelectAutoSubTab(index)
-    if index < 1 or index > 3 then return end
-    currentAutoSubTabIndex = index
-    SetAutoSubTabVisual(index)
-    if currentMainTabIndex == 1 then
-        ShowOnlyPanel(index)
+local function SetSubTabVisual(selectedIndex)
+    for i, tab in ipairs(subTabButtons) do
+        if tab:IsShown() then
+            tab:SetEnabled(i ~= selectedIndex)
+        end
     end
 end
 
-for i, label in ipairs(AUTO_SUBTAB_LABELS) do
-    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    if i == 1 then
-        btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -34)
-    else
-        btn:SetPoint("LEFT", autoSubTabs[i - 1], "RIGHT", 6, 0)
-    end
-    btn:SetSize(100, 22)
-    btn:SetText(label)
-    btn:SetScript("OnClick", function() SelectAutoSubTab(i) end)
-    autoSubTabs[i] = btn
+local function SelectSubTab(index)
+    local mainConfig = MAIN_TABS[currentMainTabIndex]
+    if not mainConfig then return end
+    local subConfig = mainConfig.subTabs[index]
+    if not subConfig then return end
+
+    currentSubTabIndex = index
+    SetSubTabVisual(index)
+    ShowOnlyPanel(subConfig.panel)
 end
 
-local function SetMainTabVisual(selectedIndex)
-    for i, tab in ipairs(tabs) do
-        if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
-            if i == selectedIndex then PanelTemplates_SelectTab(tab)
-            else PanelTemplates_DeselectTab(tab) end
+local function BuildSubTabs(mainIndex)
+    local mainConfig = MAIN_TABS[mainIndex]
+    if not mainConfig then return end
+
+    for i, btn in ipairs(subTabButtons) do
+        local subConfig = mainConfig.subTabs[i]
+        if subConfig then
+            btn:SetText(subConfig.label)
+            btn:SetScript("OnClick", function() SelectSubTab(i) end)
+            btn:Show()
+        else
+            btn:Hide()
         end
     end
 end
@@ -150,21 +197,11 @@ local function SelectMainTab(index)
     frame.selectedTab = index
     SetMainTabVisual(index)
 
-    local showAutoSubTabs = (index == 1)
-    for _, btn in ipairs(autoSubTabs) do
-        if showAutoSubTabs then btn:Show() else btn:Hide() end
-    end
-
-    if index == 1 then
-        SelectAutoSubTab(currentAutoSubTabIndex)
-    elseif index == 2 then
-        ShowOnlyPanel(4)
-    elseif index == 3 then
-        ShowOnlyPanel(5)
-    end
+    BuildSubTabs(index)
+    SelectSubTab(1)
 end
 
-for i, tab in ipairs(tabs) do
+for i, tab in ipairs(mainTabs) do
     tab:SetScript("OnClick", function() SelectMainTab(i) end)
 end
 
@@ -1055,7 +1092,7 @@ function ARL:ShowOptions()
     frame:Show()
     frame:Raise()
     if currentMainTabIndex == 0 then
-        currentAutoSubTabIndex = 1
+        currentSubTabIndex = 1
         SelectMainTab(1)
     else
         SelectMainTab(currentMainTabIndex)
