@@ -60,7 +60,7 @@ local updating = false
 
 local function CreatePanel()
     local p = CreateFrame("Frame", nil, frame)
-    p:SetPoint("TOPLEFT",     frame, "TOPLEFT",      8,  -32)
+    p:SetPoint("TOPLEFT",     frame, "TOPLEFT",      8,  -58)
     p:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",  -8,  44)
     p:Hide()
     return p
@@ -79,25 +79,18 @@ local panels = {
 -- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
 -- ============================================================
 
-local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables", "Deaths" }
+local MAIN_TAB_LABELS = { "Auto Invite", "Consumable Checks", "Death Recaps" }
 local tabs = {}
-local currentTabIndex = 0  -- tracked locally; PanelTemplates_SetSelectedTab removed in 12.x
+local currentMainTabIndex = 0
+local currentAutoSubTabIndex = 1
 
-local function SelectTab(index)
+local function ShowOnlyPanel(panelIndex)
     for i, panel in ipairs(panels) do
-        if i == index then panel:Show() else panel:Hide() end
-    end
-    currentTabIndex = index
-    frame.selectedTab = index
-    for i, tab in ipairs(tabs) do
-        if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
-            if i == index then PanelTemplates_SelectTab(tab)
-            else PanelTemplates_DeselectTab(tab) end
-        end
+        if i == panelIndex then panel:Show() else panel:Hide() end
     end
 end
 
-for i, label in ipairs(TAB_LABELS) do
+for i, label in ipairs(MAIN_TAB_LABELS) do
     local tab = CreateFrame("Button", frame:GetName() .. "Tab" .. i, frame, "PanelTabButtonTemplate")
     tab:SetText(label)
     if i == 1 then
@@ -106,12 +99,74 @@ for i, label in ipairs(TAB_LABELS) do
         tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", -14, 0)
     end
     tab:SetID(i)
-    tab:SetScript("OnClick", function(self) SelectTab(self:GetID()) end)
     PanelTemplates_TabResize(tab, 0)
     tabs[i] = tab
 end
 
-PanelTemplates_SetNumTabs(frame, #TAB_LABELS)
+PanelTemplates_SetNumTabs(frame, #MAIN_TAB_LABELS)
+
+local AUTO_SUBTAB_LABELS = { "General", "Leaders", "Guild Ranks" }
+local autoSubTabs = {}
+
+local function SetAutoSubTabVisual(selectedIndex)
+    for i, tab in ipairs(autoSubTabs) do
+        tab:SetEnabled(i ~= selectedIndex)
+    end
+end
+
+local function SelectAutoSubTab(index)
+    if index < 1 or index > 3 then return end
+    currentAutoSubTabIndex = index
+    SetAutoSubTabVisual(index)
+    if currentMainTabIndex == 1 then
+        ShowOnlyPanel(index)
+    end
+end
+
+for i, label in ipairs(AUTO_SUBTAB_LABELS) do
+    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    if i == 1 then
+        btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -34)
+    else
+        btn:SetPoint("LEFT", autoSubTabs[i - 1], "RIGHT", 6, 0)
+    end
+    btn:SetSize(100, 22)
+    btn:SetText(label)
+    btn:SetScript("OnClick", function() SelectAutoSubTab(i) end)
+    autoSubTabs[i] = btn
+end
+
+local function SetMainTabVisual(selectedIndex)
+    for i, tab in ipairs(tabs) do
+        if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
+            if i == selectedIndex then PanelTemplates_SelectTab(tab)
+            else PanelTemplates_DeselectTab(tab) end
+        end
+    end
+end
+
+local function SelectMainTab(index)
+    currentMainTabIndex = index
+    frame.selectedTab = index
+    SetMainTabVisual(index)
+
+    local showAutoSubTabs = (index == 1)
+    for _, btn in ipairs(autoSubTabs) do
+        if showAutoSubTabs then btn:Show() else btn:Hide() end
+    end
+
+    if index == 1 then
+        SelectAutoSubTab(currentAutoSubTabIndex)
+    elseif index == 2 then
+        ShowOnlyPanel(4)
+    elseif index == 3 then
+        ShowOnlyPanel(5)
+    end
+end
+
+for i, tab in ipairs(tabs) do
+    tab:SetScript("OnClick", function() SelectMainTab(i) end)
+end
 
 -- ============================================================
 -- Helper: create a checkbox parented to the given panel frame.
@@ -999,7 +1054,10 @@ function ARL:ShowOptions()
     RefreshUI()
     frame:Show()
     frame:Raise()
-    if currentTabIndex == 0 then
-        SelectTab(1)
+    if currentMainTabIndex == 0 then
+        currentAutoSubTabIndex = 1
+        SelectMainTab(1)
+    else
+        SelectMainTab(currentMainTabIndex)
     end
 end
