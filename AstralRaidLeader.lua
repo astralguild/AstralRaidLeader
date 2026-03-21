@@ -16,16 +16,24 @@ _G[ADDON_NAME] = ARL
 -- ============================================================
 
 local DEFAULTS = {
-    preferredLeaders  = {},   -- ordered list of character names (highest priority first)
-    autoPromote       = true, -- attempt to promote automatically on roster changes
-    reminderEnabled   = true, -- show periodic reminders when holding an unwanted lead
-    reminderInterval  = 30,   -- seconds between reminder messages
-    notifyEnabled     = true, -- show a popup when manual promotion is available
-    notifySound       = true, -- play a UI sound when the popup is shown
-    quietMode         = false, -- suppress all chat output when true
-    groupTypeFilter   = "all", -- "all", "raid", or "party"
-    guildRankPriority    = {},    -- ordered list of guild rank names (highest priority first)
-    useGuildRankPriority = false, -- fall back to guild rank priority when no preferred leader is present
+    preferredLeaders       = {},    -- ordered list of character names (highest priority first)
+    autoPromote            = true,  -- attempt to promote automatically on roster changes
+    reminderEnabled        = true,  -- show periodic reminders when holding an unwanted lead
+    reminderInterval       = 30,    -- seconds between reminder messages
+    notifyEnabled          = true,  -- show a popup when manual promotion is available
+    notifySound            = true,  -- play a UI sound when the popup is shown
+    quietMode              = false, -- suppress all chat output when true
+    groupTypeFilter        = "all", -- "all", "raid", or "party"
+    consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
+    trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
+    guildRankPriority      = {},    -- ordered list of guild rank names (highest priority first)
+    useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
+}
+
+-- Built-in consumable categories – always checked, never stored in SavedVariables.
+local SYSTEM_CONSUMABLES = {
+    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324 } },
+    { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
 }
 
 -- ============================================================
@@ -42,16 +50,17 @@ local function InitDB()
     if type(AstralRaidLeaderDB) ~= "table" then
         AstralRaidLeaderDB = {}
     end
+    local function DeepCopy(orig)
+        local copy = {}
+        for k, v in pairs(orig) do
+            copy[k] = type(v) == "table" and DeepCopy(v) or v
+        end
+        return copy
+    end
+
     for k, v in pairs(DEFAULTS) do
         if AstralRaidLeaderDB[k] == nil then
-            -- Deep-copy table defaults so each character's db gets its own table.
-            if type(v) == "table" then
-                local copy = {}
-                for i, item in ipairs(v) do copy[i] = item end
-                AstralRaidLeaderDB[k] = copy
-            else
-                AstralRaidLeaderDB[k] = v
-            end
+            AstralRaidLeaderDB[k] = type(v) == "table" and DeepCopy(v) or v
         end
     end
     ARL.db = AstralRaidLeaderDB
@@ -118,12 +127,18 @@ local function GetTopAvailablePreferredLeader()
     return nil, nil
 end
 
+local RequestGuildRosterIfStale
+
 -- Build a map of { name:lower() -> rankName } for all guild members using the
 -- cached guild roster.  Returns an empty table when the player is not in a guild.
 local function GetGuildMemberRankMap()
     if not IsInGuild() then return {} end
     local rankMap = {}
     local numMembers = GetNumGuildMembers()
+    if numMembers == 0 then
+        RequestGuildRosterIfStale()
+        return rankMap
+    end
     for i = 1, numMembers do
         local name, rankName = GetGuildRosterInfo(i)
         if name and rankName then
@@ -202,6 +217,20 @@ local notifyCooldownSeconds = 20
 local lastNotifyAt = 0
 local pendingNotifyName = nil
 local lastGroupMemberCount = 0
+local guildRosterRequestThrottleSeconds = 10
+local lastGuildRosterRequestAt = 0
+
+RequestGuildRosterIfStale = function()
+    if not IsInGuild() then return end
+    local now = GetTime()
+    if (now - lastGuildRosterRequestAt) < guildRosterRequestThrottleSeconds then return end
+    if C_GuildInfo and C_GuildInfo.GuildRoster then
+        C_GuildInfo.GuildRoster()
+    elseif GuildRoster then
+        GuildRoster()
+    end
+    lastGuildRosterRequestAt = now
+end
 
 StaticPopupDialogs["ASTRALRAIDLEADER_MANUAL_PROMOTE"] = {
     text = "A promotion candidate is in your group: %s\n\nPromote now?",
@@ -305,12 +334,124 @@ local function EvaluateLeaderState(trigger)
 end
 
 -- ============================================================
--- Reminder timer
+-- Consumable audit (triggered on READY_CHECK)
 -- ============================================================
 
-local reminderFrame   = CreateFrame("Frame")
+-- Return true when unit currently has a buff with the given spell ID.
+-- the deprecated multi-return UnitBuff signature removed in 11.0+.
+local function HasBuff(unit, spellId)
+    local i = 1
+    while i <= 64 do
+        local buffData = C_UnitAuras.GetBuffDataByIndex(unit, i)
+        if not buffData then break end
+        if buffData.spellId == spellId then return true end
+        i = i + 1
+    end
+    return false
+end
+
+-- Return the index, table, and isSystem flag for the consumable category matching label.
+local function FindConsumableCategory(label)
+    local lower = label:lower()
+    for i, cat in ipairs(SYSTEM_CONSUMABLES) do
+        if cat.label:lower() == lower then
+            return i, cat, true
+        end
+    end
+    for i, cat in ipairs(ARL.db.trackedConsumables) do
+        if cat.label:lower() == lower then
+            return i, cat, false
+        end
+    end
+    return nil, nil, false
+end
+
+-- Scan all group members for missing tracked consumable buffs and print a report.
+-- Pass force=true to run even when solo (e.g. from the settings UI).
+local function RunConsumableAudit(force)
+    if not ARL.db or not ARL.db.consumableAuditEnabled then return end
+    if not force and not IsInRelevantGroup() then return end
+
+    local units = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            units[#units + 1] = "raid" .. i
+        end
+    else
+        units[#units + 1] = "player"
+        for i = 1, GetNumSubgroupMembers() do
+            units[#units + 1] = "party" .. i
+        end
+    end
+
+    -- Build full list: system defaults + user additions.
+    local allConsumables = {}
+    for _, cat in ipairs(SYSTEM_CONSUMABLES) do allConsumables[#allConsumables + 1] = cat end
+    for _, cat in ipairs(ARL.db.trackedConsumables) do allConsumables[#allConsumables + 1] = cat end
+    if #allConsumables == 0 then return end
+
+    local missing = {}
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            local name = UnitName(unit)
+            if name and name ~= "" then
+                local missingCats = {}
+                for _, consumable in ipairs(allConsumables) do
+                    local hasIt = false
+                    for _, spellId in ipairs(consumable.spellIds) do
+                        if HasBuff(unit, spellId) then
+                            hasIt = true
+                            break
+                        end
+                    end
+                    -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
+                    if not hasIt and consumable.namePatterns then
+                        for _, pattern in ipairs(consumable.namePatterns) do
+                            local j = 1
+                            while j <= 64 do
+                                    local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
+                                    if not aura then break end
+                                    if aura.name and aura.name:find(pattern, 1, true) then
+                                    hasIt = true
+                                    break
+                                end
+                                j = j + 1
+                            end
+                            if hasIt then break end
+                        end
+                    end
+                    if not hasIt then
+                        missingCats[#missingCats + 1] = consumable.label
+                    end
+                end
+                if #missingCats > 0 then
+                    missing[#missing + 1] = { name = name, cats = missingCats }
+                end
+            end
+        end
+    end
+
+    if #missing == 0 then
+        Print("Ready check: All group members have their consumables!")
+    else
+        Print(string.format("Ready check: %d group member(s) missing consumables:", #missing))
+        for _, entry in ipairs(missing) do
+            Print(string.format("  |cffffd100%s|r – missing: |cffff6666%s|r",
+                entry.name, table.concat(entry.cats, ", ")))
+        end
+    end
+end
+
+local reminderFrame   = CreateFrame("Frame", nil, UIParent)
 local reminderActive  = false
 local reminderElapsed = 0
+-- Expose audit entry points on the ARL namespace so other files
+-- (e.g. the Options window) can invoke them without going through
+-- the slash-command dispatcher.
+ARL.RunConsumableAudit     = RunConsumableAudit
+ARL.FindConsumableCategory = FindConsumableCategory
+ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
+
 
 function ARL:CancelReminder()
     reminderActive  = false
@@ -376,24 +517,28 @@ end)
 -- Event handling
 -- ============================================================
 
-local eventFrame = CreateFrame("Frame")
+local eventFrame = CreateFrame("Frame", nil, UIParent)
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("READY_CHECK")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         InitDB()
         lastGroupMemberCount = GetNumGroupMembers()
+        RequestGuildRosterIfStale()
         Print("Loaded. Type |cffffff00/arl help|r for commands.")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- db may already be set from PLAYER_LOGIN; guard against double-init.
         if not ARL.db then InitDB() end
         lastGroupMemberCount = GetNumGroupMembers()
+        RequestGuildRosterIfStale()
         EvaluateLeaderState("instance_change")
 
     elseif event == "ZONE_CHANGED_NEW_AREA" then
@@ -401,6 +546,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         ARL:TryShowPendingManualPromotePopup()
+
+    elseif event == "READY_CHECK" then
+        RunConsumableAudit()
+
+    elseif event == "GUILD_ROSTER_UPDATE" then
+        EvaluateLeaderState("roster")
 
     elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
         local currentCount = GetNumGroupMembers()
@@ -608,6 +759,126 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.quietMode and "enabled" or "disabled"))
         end
 
+    -- /arl consumable [list|add|remove|delete|clear|audit]
+    elseif cmd == "consumable" then
+        local subcmd, rest = arg:match("^(%S+)%s*(.*)")
+        if not subcmd then subcmd = "" end
+        subcmd = subcmd:lower()
+        rest = rest or ""
+
+        if subcmd == "list" then
+            if #ARL.db.trackedConsumables == 0 then
+                Print("No consumables are being tracked. Use |cffffff00/arl consumable add <label> <spellId>|r to add one.")
+            else
+                Print("Tracked consumables:")
+                for i, cat in ipairs(ARL.db.trackedConsumables) do
+                        local parts = {}
+                        if #cat.spellIds > 0 then
+                            parts[#parts + 1] = "spell IDs: " .. table.concat(cat.spellIds, ", ")
+                        end
+                        if cat.namePatterns and #cat.namePatterns > 0 then
+                            parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
+                        end
+                        Print(string.format("  %d. |cffffd100%s|r - %s",
+                            i, cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)"))
+                end
+            end
+
+        elseif subcmd == "add" then
+            local label, idStr = rest:match("^(.-)%s+(%d+)$")
+            if not label or label == "" or not idStr then
+                Print("Usage: /arl consumable add <label> <spellId>")
+                return
+            end
+            local spellId = tonumber(idStr)
+            if not spellId or spellId < 1 then
+                Print("Invalid spell ID. Must be a positive integer.")
+                return
+            end
+            local _, cat = FindConsumableCategory(label)
+            if cat then
+                for _, id in ipairs(cat.spellIds) do
+                    if id == spellId then
+                        Print(string.format("Spell ID %d is already in the |cffffd100%s|r category.", spellId, cat.label))
+                        return
+                    end
+                end
+                table.insert(cat.spellIds, spellId)
+                Print(string.format("Added spell ID %d to |cffffd100%s|r.", spellId, cat.label))
+            else
+                table.insert(ARL.db.trackedConsumables, { label = label, spellIds = { spellId } })
+                Print(string.format("Created new category |cffffd100%s|r with spell ID %d.", label, spellId))
+            end
+
+        elseif subcmd == "remove" then
+            local label, idStr = rest:match("^(.-)%s+(%d+)$")
+            if not label or label == "" or not idStr then
+                Print("Usage: /arl consumable remove <label> <spellId>")
+                return
+            end
+            local spellId = tonumber(idStr)
+            local idx, cat = FindConsumableCategory(label)
+            if not cat then
+                Print(string.format("Category |cffffd100%s|r not found.", label))
+                return
+            end
+            for i, id in ipairs(cat.spellIds) do
+                if id == spellId then
+                    table.remove(cat.spellIds, i)
+                    Print(string.format("Removed spell ID %d from |cffffd100%s|r.", spellId, cat.label))
+                    if #cat.spellIds == 0 then
+                        table.remove(ARL.db.trackedConsumables, idx)
+                        Print(string.format("Category |cffffd100%s|r removed (no spell IDs remaining).", cat.label))
+                    end
+                    return
+                end
+            end
+            Print(string.format("Spell ID %d was not found in |cffffd100%s|r.", spellId, cat.label))
+
+        elseif subcmd == "delete" then
+            if rest == "" then
+                Print("Usage: /arl consumable delete <label>")
+                return
+            end
+            local idx, cat = FindConsumableCategory(rest)
+            if not cat then
+                Print(string.format("Category |cffffd100%s|r not found.", rest))
+                return
+            end
+            table.remove(ARL.db.trackedConsumables, idx)
+            Print(string.format("Deleted category |cffffd100%s|r.", cat.label))
+
+        elseif subcmd == "clear" then
+            ARL.db.trackedConsumables = {}
+            Print("Cleared all tracked consumable categories.")
+
+        elseif subcmd == "audit" then
+            RunConsumableAudit(true)  -- force=true so it works solo
+
+        else
+            Print("Consumable sub-commands:")
+            Print("  |cffffff00/arl consumable list|r                        – List tracked consumable categories")
+            Print("  |cffffff00/arl consumable add <label> <spellId>|r       – Add a spell ID to a category")
+            Print("  |cffffff00/arl consumable remove <label> <spellId>|r    – Remove a spell ID from a category")
+            Print("  |cffffff00/arl consumable delete <label>|r              – Delete an entire category")
+            Print("  |cffffff00/arl consumable clear|r                       – Remove all tracked consumable categories")
+            Print("  |cffffff00/arl consumable audit|r                       – Run the consumable audit now")
+        end
+
+    -- /arl consumableaudit [on|off]
+    elseif cmd == "consumableaudit" then
+        if arg:lower() == "on" then
+            ARL.db.consumableAuditEnabled = true
+            Print("Consumable audit on ready check |cff00ff00enabled|r.")
+        elseif arg:lower() == "off" then
+            ARL.db.consumableAuditEnabled = false
+            Print("Consumable audit on ready check |cffff0000disabled|r.")
+        else
+            Print(string.format("Consumable audit on ready check is currently |cff%s%s|r.",
+                ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
+                ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
+        end
+
     -- /arl grouptype [all|raid|party]
     elseif cmd == "grouptype" then
         local lower = arg:lower()
@@ -748,6 +1019,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
+        Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
+        Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")
         Print("  |cffffff00/arl addrank <rank>|r     – Add a guild rank to the priority list")
         Print("  |cffffff00/arl removerank <rank>|r  – Remove a guild rank from the priority list")
