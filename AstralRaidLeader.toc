@@ -7,3 +7,4 @@
 
 AstralRaidLeader.lua
 AstralRaidLeader_Options.lua
+AstralRaidLeader_Deaths.lua

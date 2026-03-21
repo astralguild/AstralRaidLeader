@@ -24,6 +24,12 @@ local DEFAULTS = {
     notifySound       = true, -- play a UI sound when the popup is shown
     quietMode         = false, -- suppress all chat output when true
     groupTypeFilter   = "all", -- "all", "raid", or "party"
+    -- Death tracking
+    deathTrackingEnabled = true,  -- record deaths during raid encounters
+    showRecapOnWipe      = true,  -- automatically open the recap window after a wipe
+    lastWipeDeaths       = {},    -- list of death records from the most recent wipe
+    lastWipeEncounter    = "",    -- name of the encounter that wiped
+    lastWipeDate         = "",    -- human-readable timestamp of the wipe
 }
 
 -- ============================================================
@@ -331,6 +337,121 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- ============================================================
+-- Death tracking
+-- ============================================================
+
+-- Per-session state (not persisted).
+local lastHitByGUID          = {}   -- [guid] = { source, mechanic }
+local currentEncounterDeaths = {}   -- death records for the active encounter
+local currentEncounterName   = ""
+local currentEncounterStart  = 0
+local inEncounter            = false
+
+-- Returns true when the combat-log flags indicate a player in our group / raid.
+local function IsGroupPlayer(flags)
+    if not flags then return false end
+    -- Bit 0x400 = COMBATLOG_OBJECT_TYPE_PLAYER
+    -- Bits 0x1/0x2/0x4 = mine / party / raid affiliation
+    return bit.band(flags, 0x400) ~= 0 and bit.band(flags, 0x7) ~= 0
+end
+
+-- Format seconds as M:SS for the recap display.
+local function FormatEncounterTime(seconds)
+    local m = math.floor(seconds / 60)
+    local s = seconds % 60
+    return string.format("%d:%02d", m, s)
+end
+
+local deathFrame = CreateFrame("Frame")
+deathFrame:RegisterEvent("ENCOUNTER_START")
+deathFrame:RegisterEvent("ENCOUNTER_END")
+deathFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+
+deathFrame:SetScript("OnEvent", function(_, event, ...)
+    if event == "ENCOUNTER_START" then
+        local _, encounterName = ...
+        currentEncounterName   = encounterName or "Unknown"
+        currentEncounterStart  = GetTime()
+        currentEncounterDeaths = {}
+        lastHitByGUID          = {}
+        inEncounter            = true
+
+    elseif event == "ENCOUNTER_END" then
+        local _, encounterName, _, _, success = ...
+        inEncounter = false
+
+        if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
+            -- Wipe – persist the deaths recorded during this attempt.
+            ARL.db.lastWipeDeaths    = currentEncounterDeaths
+            ARL.db.lastWipeEncounter = encounterName or currentEncounterName
+            ARL.db.lastWipeDate      = date("%Y-%m-%d %H:%M")
+            Print(string.format(
+                "Wipe recorded on |cffffd100%s|r – %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+                ARL.db.lastWipeEncounter,
+                #currentEncounterDeaths
+            ))
+            if ARL.db.showRecapOnWipe and ARL.ShowDeathRecap then
+                ARL:ShowDeathRecap()
+            end
+        end
+
+        currentEncounterDeaths = {}
+        lastHitByGUID          = {}
+
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        if not (ARL.db and ARL.db.deathTrackingEnabled and inEncounter) then return end
+
+        local args     = { CombatLogGetCurrentEventInfo() }
+        local subevent = args[2]
+        local srcName  = args[5]
+        local dstGUID  = args[8]
+        local dstName  = args[9]
+        local dstFlags = args[10]
+
+        if subevent == "SWING_DAMAGE" then
+            if IsGroupPlayer(dstFlags) then
+                lastHitByGUID[dstGUID] = { source = srcName or "Unknown", mechanic = "Melee" }
+            end
+
+        elseif subevent == "SPELL_DAMAGE"
+            or subevent == "RANGE_DAMAGE"
+            or subevent == "SPELL_PERIODIC_DAMAGE"
+        then
+            -- args[12]=spellId, args[13]=spellName, args[14]=spellSchool
+            if IsGroupPlayer(dstFlags) then
+                lastHitByGUID[dstGUID] = {
+                    source   = srcName  or "Unknown",
+                    mechanic = args[13] or "Unknown Spell",
+                }
+            end
+
+        elseif subevent == "ENVIRONMENTAL_DAMAGE" then
+            -- args[12]=environmentalType
+            if IsGroupPlayer(dstFlags) then
+                lastHitByGUID[dstGUID] = {
+                    source   = "Environment",
+                    mechanic = args[12] or "Environmental",
+                }
+            end
+
+        elseif subevent == "UNIT_DIED" then
+            if IsGroupPlayer(dstFlags) then
+                local lastHit   = lastHitByGUID[dstGUID]
+                local timeOffset = math.floor(GetTime() - currentEncounterStart)
+                table.insert(currentEncounterDeaths, {
+                    playerName = dstName  or "Unknown",
+                    mechanic   = lastHit and lastHit.mechanic or "Unknown",
+                    source     = lastHit and lastHit.source   or "Unknown",
+                    timeOffset = timeOffset,
+                    timeStr    = FormatEncounterTime(timeOffset),
+                })
+                lastHitByGUID[dstGUID] = nil
+            end
+        end
+    end
+end)
+
+-- ============================================================
 -- Slash commands
 -- ============================================================
 
@@ -548,6 +669,29 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Settings UI is not available yet. Try again in a moment.")
         end
 
+    -- /arl deaths | /arl wipe  – show the last wipe death recap
+    elseif cmd == "deaths" or cmd == "wipe" then
+        if ARL.ShowDeathRecap then
+            ARL:ShowDeathRecap()
+        else
+            Print("Death recap UI is not available yet. Try again in a moment.")
+        end
+
+    -- /arl deathtracking [on|off]
+    elseif cmd == "deathtracking" then
+        local lower = arg:lower()
+        if lower == "on" then
+            ARL.db.deathTrackingEnabled = true
+            Print("Death tracking |cff00ff00enabled|r.")
+        elseif lower == "off" then
+            ARL.db.deathTrackingEnabled = false
+            Print("Death tracking |cffff0000disabled|r.")
+        else
+            Print(string.format("Death tracking is currently |cff%s%s|r.",
+                ARL.db.deathTrackingEnabled and "00ff00" or "ff0000",
+                ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
+        end
+
     -- bare /arl opens settings
     elseif cmd == "" then
         if ARL.ShowOptions then
@@ -571,6 +715,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
+        Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
+        Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
         Print("  |cffffff00/arl settings|r           – Open the in-game settings window")
         Print("  |cffffff00/arl help|r               – Show this help message")
 
