@@ -62,14 +62,32 @@ local navContainer = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
 navContainer:SetPoint("TOPLEFT", 8, -58)
 navContainer:SetPoint("BOTTOMRIGHT", -8, 44)
 
+local navBG = navContainer:CreateTexture(nil, "BACKGROUND")
+navBG:SetAllPoints()
+navBG:SetColorTexture(0.03, 0.03, 0.04, 0.84)
+
 local subTabSidebar = CreateFrame("Frame", nil, navContainer, "InsetFrameTemplate3")
 subTabSidebar:SetPoint("TOPLEFT", 8, -8)
 subTabSidebar:SetPoint("BOTTOMLEFT", 8, 8)
 subTabSidebar:SetWidth(165)
 
+local sidebarBG = subTabSidebar:CreateTexture(nil, "BACKGROUND")
+sidebarBG:SetAllPoints()
+sidebarBG:SetColorTexture(0.01, 0.01, 0.02, 0.9)
+
 local contentHost = CreateFrame("Frame", nil, navContainer)
 contentHost:SetPoint("TOPLEFT", subTabSidebar, "TOPRIGHT", 10, 0)
 contentHost:SetPoint("BOTTOMRIGHT", navContainer, "BOTTOMRIGHT", -8, 8)
+
+local contentBG = contentHost:CreateTexture(nil, "BACKGROUND")
+contentBG:SetAllPoints()
+contentBG:SetColorTexture(0.02, 0.02, 0.03, 0.6)
+
+local sidebarDivider = navContainer:CreateTexture(nil, "BORDER")
+sidebarDivider:SetColorTexture(0.25, 0.25, 0.3, 0.8)
+sidebarDivider:SetPoint("TOPLEFT", subTabSidebar, "TOPRIGHT", 4, -4)
+sidebarDivider:SetPoint("BOTTOMLEFT", subTabSidebar, "BOTTOMRIGHT", 4, 4)
+sidebarDivider:SetWidth(1)
 
 local function CreatePanel()
     local p = CreateFrame("Frame", nil, contentHost)
@@ -129,13 +147,19 @@ end
 for i, tabConfig in ipairs(MAIN_TABS) do
     local tab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     tab:SetText(tabConfig.label)
-    tab:SetSize(150, 22)
+    tab:SetSize(165, 22)
     if i == 1 then
         tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -32)
     else
         tab:SetPoint("LEFT", mainTabs[i - 1], "RIGHT", 6, 0)
     end
     tab:SetID(i)
+    tab:SetNormalFontObject(GameFontNormal)
+    tab:SetHighlightFontObject(GameFontHighlight)
+    local bg = tab:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.1, 0.92)
+    tab._bg = bg
     mainTabs[i] = tab
 end
 
@@ -147,20 +171,38 @@ for i = 1, 6 do
     else
         btn:SetPoint("TOPLEFT", subTabButtons[i - 1], "BOTTOMLEFT", 0, -4)
     end
+    btn:SetNormalFontObject(GameFontNormal)
+    btn:SetHighlightFontObject(GameFontHighlight)
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.07, 0.07, 0.09, 0.88)
+    btn._bg = bg
     btn:Hide()
     subTabButtons[i] = btn
 end
 
 local function SetMainTabVisual(selectedIndex)
     for i, tab in ipairs(mainTabs) do
-        tab:SetEnabled(i ~= selectedIndex)
+        if i == selectedIndex then
+            tab:SetTextColor(1.0, 0.82, 0.0)
+            if tab._bg then tab._bg:SetColorTexture(0.45, 0.05, 0.05, 0.92) end
+        else
+            tab:SetTextColor(0.85, 0.85, 0.85)
+            if tab._bg then tab._bg:SetColorTexture(0.08, 0.08, 0.1, 0.92) end
+        end
     end
 end
 
 local function SetSubTabVisual(selectedIndex)
     for i, tab in ipairs(subTabButtons) do
         if tab:IsShown() then
-            tab:SetEnabled(i ~= selectedIndex)
+            if i == selectedIndex then
+                tab:SetTextColor(1.0, 0.82, 0.0)
+                if tab._bg then tab._bg:SetColorTexture(0.12, 0.22, 0.42, 0.95) end
+            else
+                tab:SetTextColor(0.85, 0.85, 0.85)
+                if tab._bg then tab._bg:SetColorTexture(0.07, 0.07, 0.09, 0.88) end
+            end
         end
     end
 end
