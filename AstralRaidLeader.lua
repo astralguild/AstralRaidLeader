@@ -581,12 +581,19 @@ local currentEncounterName   = ""
 local currentEncounterStart  = 0
 local inEncounter            = false
 
+local band = bit.band
+local bor = bit.bor
+local PLAYER_TYPE_MASK = COMBATLOG_OBJECT_TYPE_PLAYER or 0x00000400
+local GROUP_AFFILIATION_MASK = bor(
+    COMBATLOG_OBJECT_AFFILIATION_MINE or 0x00000001,
+    COMBATLOG_OBJECT_AFFILIATION_PARTY or 0x00000002,
+    COMBATLOG_OBJECT_AFFILIATION_RAID or 0x00000004
+)
+
 -- Returns true when the combat-log flags indicate a player in our group / raid.
 local function IsGroupPlayer(flags)
     if not flags then return false end
-    -- Bit 0x400 = COMBATLOG_OBJECT_TYPE_PLAYER
-    -- Bits 0x1/0x2/0x4 = mine / party / raid affiliation
-    return bit.band(flags, 0x400) ~= 0 and bit.band(flags, 0x7) ~= 0
+    return band(flags, PLAYER_TYPE_MASK) ~= 0 and band(flags, GROUP_AFFILIATION_MASK) ~= 0
 end
 
 -- Format seconds as M:SS for the recap display.
@@ -635,12 +642,7 @@ deathFrame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         if not (ARL.db and ARL.db.deathTrackingEnabled and inEncounter) then return end
 
-        local args     = { CombatLogGetCurrentEventInfo() }
-        local subevent = args[2]
-        local srcName  = args[5]
-        local dstGUID  = args[8]
-        local dstName  = args[9]
-        local dstFlags = args[10]
+        local _, subevent, _, _, srcName, _, _, dstGUID, dstName, dstFlags, _, arg12, arg13 = CombatLogGetCurrentEventInfo()
 
         if subevent == "SWING_DAMAGE" then
             if IsGroupPlayer(dstFlags) then
@@ -651,20 +653,18 @@ deathFrame:SetScript("OnEvent", function(_, event, ...)
             or subevent == "RANGE_DAMAGE"
             or subevent == "SPELL_PERIODIC_DAMAGE"
         then
-            -- args[12]=spellId, args[13]=spellName, args[14]=spellSchool
             if IsGroupPlayer(dstFlags) then
                 lastHitByGUID[dstGUID] = {
                     source   = srcName  or "Unknown",
-                    mechanic = args[13] or "Unknown Spell",
+                    mechanic = arg13 or "Unknown Spell",
                 }
             end
 
         elseif subevent == "ENVIRONMENTAL_DAMAGE" then
-            -- args[12]=environmentalType
             if IsGroupPlayer(dstFlags) then
                 lastHitByGUID[dstGUID] = {
                     source   = "Environment",
-                    mechanic = args[12] or "Environmental",
+                    mechanic = arg12 or "Environmental",
                 }
             end
 
