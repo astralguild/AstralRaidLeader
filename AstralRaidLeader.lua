@@ -298,6 +298,21 @@ end
 
 local StartReminder
 
+local function PrintLeaderReminderMessage()
+    local parts = {}
+    if #ARL.db.preferredLeaders > 0 then
+        parts[#parts + 1] = "Preferred leader(s): |cffffd100"
+            .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
+    end
+    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        parts[#parts + 1] = "guild rank priority: |cffffd100"
+            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
+    end
+    local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
+    Print("Reminder: You are the Raid Leader." .. detail
+        .. " Use |cffffff00/arl promote|r to hand off when they join.")
+end
+
 local function EvaluateLeaderState(trigger)
     if not ARL.db then return end
     local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
@@ -317,11 +332,10 @@ local function EvaluateLeaderState(trigger)
     if ARL.db.autoPromote then
         ARL:HideManualPromotePopup()
         local ok = TryAutoPromote()
-        if not ok then StartReminder() end
+        if not ok then StartReminder(trigger) end
         return
     end
 
-    StartReminder()
     local preferredName = GetTopAvailablePreferredLeader()
     -- Fall back to a guild rank candidate for the popup when no preferred leader
     -- is present but guild rank priority is enabled.
@@ -330,6 +344,7 @@ local function EvaluateLeaderState(trigger)
         preferredName = rankTarget
     end
     if not preferredName then
+        StartReminder(trigger)
         ARL:HideManualPromotePopup()
         return
     end
@@ -448,9 +463,7 @@ local function RunConsumableAudit(force)
     end
 end
 
-local reminderFrame   = CreateFrame("Frame", nil, UIParent)
 local reminderActive  = false
-local reminderElapsed = 0
 -- Expose audit entry points on the ARL namespace so other files
 -- (e.g. the Options window) can invoke them without going through
 -- the slash-command dispatcher.
@@ -461,63 +474,21 @@ ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
 
 function ARL:CancelReminder()
     reminderActive  = false
-    reminderElapsed = 0
 end
 
-StartReminder = function()
+StartReminder = function(trigger)
     if not ARL.db or not ARL.db.reminderEnabled then return end
     local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
     local hasGuildRankPriority = ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0
     if not hasPreferredLeaders and not hasGuildRankPriority then return end
-    reminderActive  = true
-    reminderElapsed = 0
+    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then return end
+
+    -- Event-driven reminders: only announce on join/world-change style triggers.
+    if trigger ~= "new_member" and trigger ~= "instance_change" then return end
+
+    reminderActive = true
+    PrintLeaderReminderMessage()
 end
-
-reminderFrame:SetScript("OnUpdate", function(_, elapsed)
-    if not reminderActive then return end
-
-    reminderElapsed = reminderElapsed + elapsed
-    if reminderElapsed < ARL.db.reminderInterval then return end
-    reminderElapsed = 0
-
-    -- Stop reminding if we are no longer the group leader.
-    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then
-        ARL:CancelReminder()
-        ARL:HideManualPromotePopup()
-        return
-    end
-
-    -- Try to auto-promote before showing the reminder.
-    if ARL.db.autoPromote and TryAutoPromote() then
-        return
-    end
-
-    if not ARL.db.autoPromote then
-        local preferredName = GetTopAvailablePreferredLeader()
-        if not preferredName and ARL.db.useGuildRankPriority then
-            local _, rankTarget = GetTopAvailableByGuildRank()
-            preferredName = rankTarget
-        end
-        if preferredName then
-            ARL:ShowManualPromotePopup(preferredName, false)
-        end
-    end
-
-    -- Build a friendly reminder message covering both preferred leaders and
-    -- guild rank priority so the player knows what the addon is waiting for.
-    local parts = {}
-    if #ARL.db.preferredLeaders > 0 then
-        parts[#parts + 1] = "Preferred leader(s): |cffffd100"
-            .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
-    end
-    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
-        parts[#parts + 1] = "guild rank priority: |cffffd100"
-            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
-    end
-    local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
-    Print("Reminder: You are the Raid Leader." .. detail
-        .. " Use |cffffff00/arl promote|r to hand off when they join.")
-end)
 
 -- ============================================================
 -- Event handling
@@ -773,7 +744,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.autoPromote and "enabled" or "disabled"))
         end
 
-    -- /arl reminder [on|off|<seconds>]
+    -- /arl reminder [on|off]
     elseif cmd == "reminder" then
         local lower = arg:lower()
         if lower == "on" then
@@ -784,19 +755,12 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             ARL:CancelReminder()
             Print("Reminder |cffff0000disabled|r.")
         elseif arg ~= "" then
-            local secs = tonumber(arg)
-            if secs and secs >= 5 then
-                ARL.db.reminderInterval = secs
-                Print(string.format("Reminder interval set to |cffffff00%d|r seconds.", secs))
-            else
-                Print("Interval must be a number >= 5. Usage: /arl reminder <seconds>")
-            end
+            Print("Reminder is event-driven now. Usage: /arl reminder [on|off]")
         else
             Print(string.format(
-                "Reminder is |cff%s%s|r. Interval: |cffffff00%d|r seconds.",
+                "Reminder is |cff%s%s|r. Trigger: |cffffff00member join / instance change|r.",
                 ARL.db.reminderEnabled and "00ff00" or "ff0000",
-                ARL.db.reminderEnabled and "enabled" or "disabled",
-                ARL.db.reminderInterval
+                ARL.db.reminderEnabled and "enabled" or "disabled"
             ))
         end
 
@@ -1154,7 +1118,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl clear|r              – Clear the entire list")
         Print("  |cffffff00/arl promote|r            – Manually promote the top available preferred leader")
         Print("  |cffffff00/arl auto [on|off]|r      – Toggle automatic promotion on roster changes")
-        Print("  |cffffff00/arl reminder [on|off|N]|r – Toggle or set the reminder interval (seconds)")
+        Print("  |cffffff00/arl reminder [on|off]|r – Toggle event-driven leader reminders")
         Print("  |cffffff00/arl notify [on|off]|r    – Toggle the manual-promote popup when auto is off")
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
