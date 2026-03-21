@@ -25,7 +25,7 @@ local function NamesMatch(a, b)
 end
 
 local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-frame:SetSize(560, 500)
+frame:SetSize(560, 600)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
@@ -94,12 +94,18 @@ local notifySoundCB = CreateCheckbox(
     "TOPLEFT", 16, -142
 )
 
+local quietCB = CreateCheckbox(
+    "Enable quiet mode",
+    "Suppress all chat output from AstralRaidLeader (auto-promote still works silently).",
+    "TOPLEFT", 16, -170
+)
+
 local sliderLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-sliderLabel:SetPoint("TOPLEFT", 16, -182)
+sliderLabel:SetPoint("TOPLEFT", 16, -208)
 sliderLabel:SetText("Reminder interval (seconds)")
 
 local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", frame, "OptionsSliderTemplate")
-reminderSlider:SetPoint("TOPLEFT", 16, -206)
+reminderSlider:SetPoint("TOPLEFT", 16, -232)
 reminderSlider:SetMinMaxValues(5, 120)
 reminderSlider:SetValueStep(5)
 reminderSlider:SetObeyStepOnDrag(true)
@@ -112,12 +118,33 @@ local sliderValue = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 sliderValue:SetPoint("LEFT", reminderSlider, "RIGHT", 10, 0)
 sliderValue:SetText("30s")
 
+-- Group type filter
+local groupTypeLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+groupTypeLabel:SetPoint("TOPLEFT", 16, -278)
+groupTypeLabel:SetText("Auto-promote in:")
+
+local groupAllCB = CreateCheckbox(
+    "All groups",
+    "Auto-promote in both raids and parties.",
+    "TOPLEFT", 16, -300
+)
+local groupRaidCB = CreateCheckbox(
+    "Raids only",
+    "Only auto-promote when in a raid group.",
+    "LEFT", groupAllCB, "RIGHT", 20, 0
+)
+local groupPartyCB = CreateCheckbox(
+    "Parties only",
+    "Only auto-promote when in a party (not a raid).",
+    "LEFT", groupRaidCB, "RIGHT", 20, 0
+)
+
 local preferredHeader = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-preferredHeader:SetPoint("TOPLEFT", 16, -258)
+preferredHeader:SetPoint("TOPLEFT", 16, -344)
 preferredHeader:SetText("Preferred leaders (highest priority first)")
 
 local listInset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
-listInset:SetPoint("TOPLEFT", 16, -280)
+listInset:SetPoint("TOPLEFT", 16, -366)
 listInset:SetSize(528, 130)
 
 local listText = listInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -127,11 +154,11 @@ listText:SetJustifyH("LEFT")
 listText:SetJustifyV("TOP")
 
 local nameLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-nameLabel:SetPoint("TOPLEFT", 16, -420)
+nameLabel:SetPoint("TOPLEFT", 16, -506)
 nameLabel:SetText("Character")
 
 local nameEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-nameEdit:SetPoint("TOPLEFT", 16, -442)
+nameEdit:SetPoint("TOPLEFT", 16, -528)
 nameEdit:SetSize(180, 24)
 nameEdit:SetAutoFocus(false)
 nameEdit:SetMaxLetters(48)
@@ -155,6 +182,16 @@ local promoteButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 promoteButton:SetPoint("LEFT", clearButton, "RIGHT", 8, 0)
 promoteButton:SetSize(70, 24)
 promoteButton:SetText("Promote")
+
+local moveUpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+moveUpButton:SetPoint("TOPLEFT", 16, -558)
+moveUpButton:SetSize(90, 24)
+moveUpButton:SetText("Move Up")
+
+local moveDownButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+moveDownButton:SetPoint("LEFT", moveUpButton, "RIGHT", 8, 0)
+moveDownButton:SetSize(100, 24)
+moveDownButton:SetText("Move Down")
 
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
@@ -191,6 +228,12 @@ local function RefreshUI()
     reminderCB:SetChecked(ARL.db.reminderEnabled)
     notifyCB:SetChecked(ARL.db.notifyEnabled)
     notifySoundCB:SetChecked(ARL.db.notifySound)
+    quietCB:SetChecked(ARL.db.quietMode)
+
+    local filter = ARL.db.groupTypeFilter or "all"
+    groupAllCB:SetChecked(filter == "all")
+    groupRaidCB:SetChecked(filter == "raid")
+    groupPartyCB:SetChecked(filter == "party")
 
     local interval = tonumber(ARL.db.reminderInterval) or 30
     reminderSlider:SetValue(interval)
@@ -237,6 +280,42 @@ notifySoundCB:SetScript("OnClick", function(self)
     Print(string.format("Manual-promote popup sound |cff%s%s|r.",
         ARL.db.notifySound and "00ff00" or "ff0000",
         ARL.db.notifySound and "enabled" or "disabled"))
+end)
+
+quietCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.quietMode = self:GetChecked() and true or false
+    if ARL.db.quietMode then
+        -- Print the confirmation before going silent.
+        Print("Quiet mode |cff00ff00enabled|r. Chat output suppressed.")
+    else
+        Print("Quiet mode |cffff0000disabled|r.")
+    end
+end)
+
+local function SetGroupTypeFilter(filter)
+    if not ARL.db then return end
+    ARL.db.groupTypeFilter = filter
+    groupAllCB:SetChecked(filter == "all")
+    groupRaidCB:SetChecked(filter == "raid")
+    groupPartyCB:SetChecked(filter == "party")
+    local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+    Print(string.format("Group type filter set to |cffffff00%s|r.", labels[filter]))
+end
+
+groupAllCB:SetScript("OnClick", function()
+    if updating then return end
+    SetGroupTypeFilter("all")
+end)
+
+groupRaidCB:SetScript("OnClick", function()
+    if updating then return end
+    SetGroupTypeFilter("raid")
+end)
+
+groupPartyCB:SetScript("OnClick", function()
+    if updating then return end
+    SetGroupTypeFilter("party")
 end)
 
 reminderSlider:SetScript("OnValueChanged", function(self, value)
@@ -306,6 +385,56 @@ promoteButton:SetScript("OnClick", function()
     if SlashCmdList and SlashCmdList["ASTRALRAIDLEADER"] then
         SlashCmdList["ASTRALRAIDLEADER"]("promote")
     end
+end)
+
+moveUpButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local name = Normalize(nameEdit:GetText())
+    if name == "" then
+        Print("Enter a character name to move.")
+        return
+    end
+    local foundAt = nil
+    for i, n in ipairs(ARL.db.preferredLeaders) do
+        if NamesMatch(n, name) then foundAt = i break end
+    end
+    if not foundAt then
+        Print(string.format("|cffffd100%s|r was not found in the preferred leaders list.", name))
+        return
+    end
+    if foundAt == 1 then
+        Print(string.format("|cffffd100%s|r is already at the top of the list.", ARL.db.preferredLeaders[foundAt]))
+        return
+    end
+    local entry = table.remove(ARL.db.preferredLeaders, foundAt)
+    table.insert(ARL.db.preferredLeaders, foundAt - 1, entry)
+    RefreshListText()
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt - 1))
+end)
+
+moveDownButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local name = Normalize(nameEdit:GetText())
+    if name == "" then
+        Print("Enter a character name to move.")
+        return
+    end
+    local foundAt = nil
+    for i, n in ipairs(ARL.db.preferredLeaders) do
+        if NamesMatch(n, name) then foundAt = i break end
+    end
+    if not foundAt then
+        Print(string.format("|cffffd100%s|r was not found in the preferred leaders list.", name))
+        return
+    end
+    if foundAt == #ARL.db.preferredLeaders then
+        Print(string.format("|cffffd100%s|r is already at the bottom of the list.", ARL.db.preferredLeaders[foundAt]))
+        return
+    end
+    local entry = table.remove(ARL.db.preferredLeaders, foundAt)
+    table.insert(ARL.db.preferredLeaders, foundAt + 1, entry)
+    RefreshListText()
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
 end)
 
 nameEdit:SetScript("OnEnterPressed", function()

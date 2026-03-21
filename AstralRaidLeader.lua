@@ -22,6 +22,8 @@ local DEFAULTS = {
     reminderInterval  = 30,   -- seconds between reminder messages
     notifyEnabled     = true, -- show a popup when manual promotion is available
     notifySound       = true, -- play a UI sound when the popup is shown
+    quietMode         = false, -- suppress all chat output when true
+    groupTypeFilter   = "all", -- "all", "raid", or "party"
 }
 
 -- ============================================================
@@ -29,6 +31,7 @@ local DEFAULTS = {
 -- ============================================================
 
 local function Print(msg)
+    if ARL.db and ARL.db.quietMode then return end
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
 
@@ -81,6 +84,17 @@ local function GetGroupMemberMap()
     return members
 end
 
+-- Return true when the current group type matches the configured groupTypeFilter.
+local function IsInRelevantGroup()
+    local inRaid  = IsInRaid()
+    local inGroup = IsInGroup()
+    if not (inRaid or inGroup) then return false end
+    local filter = ARL.db and ARL.db.groupTypeFilter or "all"
+    if filter == "raid"  then return inRaid end
+    if filter == "party" then return inGroup and not inRaid end
+    return true  -- "all"
+end
+
 -- ============================================================
 -- Auto-promote logic
 -- ============================================================
@@ -106,7 +120,7 @@ end
 -- Returns true if a promotion was issued, false otherwise.
 local function TryAutoPromote()
     if not UnitIsGroupLeader("player") then return false end
-    if not (IsInRaid() or IsInGroup()) then return false end
+    if not IsInRelevantGroup() then return false end
 
     local leaderName, target = GetTopAvailablePreferredLeader()
     if leaderName and target then
@@ -156,7 +170,7 @@ function ARL:ShowManualPromotePopup(preferredName, bypassCooldown)
     if self.db.autoPromote then return end
     if #self.db.preferredLeaders == 0 then return end
     if not UnitIsGroupLeader("player") then return end
-    if not (IsInRaid() or IsInGroup()) then return end
+    if not IsInRelevantGroup() then return end
 
     local memberMap = GetGroupMemberMap()
     local normalized = (preferredName or ""):lower()
@@ -195,7 +209,7 @@ local function EvaluateLeaderState(trigger)
         return
     end
 
-    if not UnitIsGroupLeader("player") or not (IsInRaid() or IsInGroup()) then
+    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then
         ARL:CancelReminder()
         ARL:HideManualPromotePopup()
         return
@@ -248,7 +262,7 @@ reminderFrame:SetScript("OnUpdate", function(_, elapsed)
     reminderElapsed = 0
 
     -- Stop reminding if we are no longer the group leader.
-    if not UnitIsGroupLeader("player") or not (IsInRaid() or IsInGroup()) then
+    if not UnitIsGroupLeader("player") or not IsInRelevantGroup() then
         ARL:CancelReminder()
         ARL:HideManualPromotePopup()
         return
@@ -464,6 +478,68 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.notifySound and "enabled" or "disabled"))
         end
 
+    -- /arl move <name> <position>
+    elseif cmd == "move" then
+        local name, posStr = arg:match("^(%S+)%s+(%S+)$")
+        if not name or not posStr then
+            Print("Usage: /arl move <name> <position>")
+            return
+        end
+        local pos = tonumber(posStr)
+        if not pos or pos < 1 then
+            Print("Position must be a positive integer.")
+            return
+        end
+        local foundAt = nil
+        for i, n in ipairs(ARL.db.preferredLeaders) do
+            if n:lower() == name:lower() then
+                foundAt = i
+                break
+            end
+        end
+        if not foundAt then
+            Print(string.format("|cffffd100%s|r was not found in the preferred leaders list.", name))
+            return
+        end
+        pos = math.min(pos, #ARL.db.preferredLeaders)
+        if foundAt == pos then
+            Print(string.format("|cffffd100%s|r is already at position %d.", ARL.db.preferredLeaders[foundAt], pos))
+            return
+        end
+        local entry = table.remove(ARL.db.preferredLeaders, foundAt)
+        table.insert(ARL.db.preferredLeaders, pos, entry)
+        Print(string.format("Moved |cffffd100%s|r to position %d.", entry, pos))
+
+    -- /arl quiet [on|off]
+    elseif cmd == "quiet" then
+        if arg:lower() == "on" then
+            ARL.db.quietMode = true
+            -- This is the last thing we print before going silent.
+            Print("Quiet mode |cff00ff00enabled|r. Chat output suppressed.")
+        elseif arg:lower() == "off" then
+            ARL.db.quietMode = false
+            Print("Quiet mode |cffff0000disabled|r.")
+        else
+            Print(string.format("Quiet mode is currently |cff%s%s|r.",
+                ARL.db.quietMode and "00ff00" or "ff0000",
+                ARL.db.quietMode and "enabled" or "disabled"))
+        end
+
+    -- /arl grouptype [all|raid|party]
+    elseif cmd == "grouptype" then
+        local lower = arg:lower()
+        if lower == "all" or lower == "raid" or lower == "party" then
+            ARL.db.groupTypeFilter = lower
+            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+            Print(string.format("Group type filter set to |cffffff00%s|r.", labels[lower]))
+        elseif arg == "" then
+            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+            Print(string.format("Group type filter is |cffffff00%s|r.",
+                labels[ARL.db.groupTypeFilter] or ARL.db.groupTypeFilter))
+        else
+            Print("Usage: /arl grouptype [all|raid|party]")
+        end
+
     -- /arl settings | /arl options | /arl config
     elseif cmd == "settings" or cmd == "options" or cmd == "config" then
         if ARL.ShowOptions then
@@ -485,6 +561,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("Available commands:")
         Print("  |cffffff00/arl add <name>|r        – Add a character to the preferred leaders list")
         Print("  |cffffff00/arl remove <name>|r     – Remove a character from the list")
+        Print("  |cffffff00/arl move <name> <pos>|r – Move a character to a specific position in the list")
         Print("  |cffffff00/arl list|r               – Show the preferred leaders list")
         Print("  |cffffff00/arl clear|r              – Clear the entire list")
         Print("  |cffffff00/arl promote|r            – Manually promote the top available preferred leader")
@@ -492,6 +569,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl reminder [on|off|N]|r – Toggle or set the reminder interval (seconds)")
         Print("  |cffffff00/arl notify [on|off]|r    – Toggle the manual-promote popup when auto is off")
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
+        Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
+        Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
         Print("  |cffffff00/arl settings|r           – Open the in-game settings window")
         Print("  |cffffff00/arl help|r               – Show this help message")
 
