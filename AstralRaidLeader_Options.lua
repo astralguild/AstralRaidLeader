@@ -25,7 +25,7 @@ local function NamesMatch(a, b)
 end
 
 local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-frame:SetSize(560, 630)
+frame:SetSize(560, 880)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
@@ -199,6 +199,76 @@ moveDownButton:SetPoint("LEFT", moveUpButton, "RIGHT", 8, 0)
 moveDownButton:SetSize(100, 24)
 moveDownButton:SetText("Move Down")
 
+-- ============================================================
+-- Guild Rank Priority section
+-- ============================================================
+
+local guildRankSep = frame:CreateTexture(nil, "ARTWORK")
+guildRankSep:SetPoint("TOPLEFT", 8, -596)
+guildRankSep:SetPoint("TOPRIGHT", -8, -596)
+guildRankSep:SetHeight(1)
+guildRankSep:SetColorTexture(0.3, 0.3, 0.3, 1)
+
+local guildRankHeader = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+guildRankHeader:SetPoint("TOPLEFT", 16, -606)
+guildRankHeader:SetText("Guild Rank Priority")
+
+local useGuildRankCB = CreateCheckbox(
+    "Enable guild rank priority (fallback when no preferred leader is in group)",
+    "When no character from the preferred leaders list is present, promote the "
+    .. "highest-priority guild rank member instead.",
+    "TOPLEFT", 16, -626
+)
+
+local guildRankListLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+guildRankListLabel:SetPoint("TOPLEFT", 16, -658)
+guildRankListLabel:SetText("Guild rank priority (highest priority first)")
+
+local guildRankListInset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
+guildRankListInset:SetPoint("TOPLEFT", 16, -676)
+guildRankListInset:SetSize(528, 85)
+
+local guildRankListText = guildRankListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+guildRankListText:SetPoint("TOPLEFT", 8, -8)
+guildRankListText:SetPoint("TOPRIGHT", -8, -8)
+guildRankListText:SetJustifyH("LEFT")
+guildRankListText:SetJustifyV("TOP")
+
+local rankNameLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+rankNameLabel:SetPoint("TOPLEFT", 16, -771)
+rankNameLabel:SetText("Guild Rank")
+
+local rankNameEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+rankNameEdit:SetPoint("TOPLEFT", 16, -791)
+rankNameEdit:SetSize(180, 24)
+rankNameEdit:SetAutoFocus(false)
+rankNameEdit:SetMaxLetters(48)
+
+local addRankButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+addRankButton:SetPoint("LEFT", rankNameEdit, "RIGHT", 10, 0)
+addRankButton:SetSize(70, 24)
+addRankButton:SetText("Add")
+
+local removeRankButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+removeRankButton:SetPoint("LEFT", addRankButton, "RIGHT", 8, 0)
+removeRankButton:SetSize(90, 24)
+removeRankButton:SetText("Remove")
+
+local clearRanksButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+clearRanksButton:SetPoint("LEFT", removeRankButton, "RIGHT", 8, 0)
+clearRanksButton:SetSize(70, 24)
+clearRanksButton:SetText("Clear")
+
+local moveRankUpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+moveRankUpButton:SetPoint("TOPLEFT", 16, -821)
+moveRankUpButton:SetSize(90, 24)
+moveRankUpButton:SetText("Move Up")
+
+local moveRankDownButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+moveRankDownButton:SetPoint("LEFT", moveRankUpButton, "RIGHT", 8, 0)
+moveRankDownButton:SetSize(100, 24)
+moveRankDownButton:SetText("Move Down")
+
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
 closeButton:SetSize(100, 24)
@@ -225,6 +295,24 @@ local function RefreshListText()
     listText:SetText(table.concat(lines, "\n"))
 end
 
+local function RefreshRankListText()
+    if not ARL.db then
+        guildRankListText:SetText("Waiting for saved variables to load...")
+        return
+    end
+
+    if #ARL.db.guildRankPriority == 0 then
+        guildRankListText:SetText("No guild ranks configured. Add a rank name below.")
+        return
+    end
+
+    local lines = {}
+    for i, rank in ipairs(ARL.db.guildRankPriority) do
+        lines[#lines + 1] = string.format("%d. %s", i, rank)
+    end
+    guildRankListText:SetText(table.concat(lines, "\n"))
+end
+
 local function RefreshUI()
     if not ARL.db then return end
 
@@ -246,7 +334,10 @@ local function RefreshUI()
     reminderSlider:SetValue(interval)
     sliderValue:SetText(string.format("%ds", interval))
 
+    useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
+
     RefreshListText()
+    RefreshRankListText()
 
     updating = false
 end
@@ -454,6 +545,118 @@ end)
 
 nameEdit:SetScript("OnEnterPressed", function()
     addButton:Click()
+end)
+
+-- ============================================================
+-- Guild Rank Priority button handlers
+-- ============================================================
+
+useGuildRankCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.useGuildRankPriority = self:GetChecked() and true or false
+    Print(string.format("Guild rank priority |cff%s%s|r.",
+        ARL.db.useGuildRankPriority and "00ff00" or "ff0000",
+        ARL.db.useGuildRankPriority and "enabled" or "disabled"))
+end)
+
+addRankButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local rank = Normalize(rankNameEdit:GetText())
+    if rank == "" then return end
+
+    for _, existing in ipairs(ARL.db.guildRankPriority) do
+        if existing:lower() == rank:lower() then
+            Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", rank))
+            return
+        end
+    end
+
+    table.insert(ARL.db.guildRankPriority, rank)
+    rankNameEdit:SetText("")
+    RefreshRankListText()
+    Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", rank))
+end)
+
+removeRankButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local rank = Normalize(rankNameEdit:GetText())
+    if rank == "" then
+        Print("Enter a guild rank name to remove.")
+        return
+    end
+
+    for i, existing in ipairs(ARL.db.guildRankPriority) do
+        if existing:lower() == rank:lower() then
+            table.remove(ARL.db.guildRankPriority, i)
+            rankNameEdit:SetText("")
+            RefreshRankListText()
+            Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", existing))
+            return
+        end
+    end
+
+    Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
+end)
+
+clearRanksButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    ARL.db.guildRankPriority = {}
+    RefreshRankListText()
+    Print("Cleared the guild rank priority list.")
+end)
+
+moveRankUpButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local rank = Normalize(rankNameEdit:GetText())
+    if rank == "" then
+        Print("Enter a guild rank name to move.")
+        return
+    end
+    local foundAt = nil
+    for i, r in ipairs(ARL.db.guildRankPriority) do
+        if r:lower() == rank:lower() then foundAt = i break end
+    end
+    if not foundAt then
+        Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
+        return
+    end
+    if foundAt == 1 then
+        Print(string.format("|cffffd100%s|r is already at the top of the list.", ARL.db.guildRankPriority[foundAt]))
+        return
+    end
+    local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+    table.insert(ARL.db.guildRankPriority, foundAt - 1, entry)
+    RefreshRankListText()
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt - 1))
+end)
+
+moveRankDownButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local rank = Normalize(rankNameEdit:GetText())
+    if rank == "" then
+        Print("Enter a guild rank name to move.")
+        return
+    end
+    local foundAt = nil
+    for i, r in ipairs(ARL.db.guildRankPriority) do
+        if r:lower() == rank:lower() then foundAt = i break end
+    end
+    if not foundAt then
+        Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
+        return
+    end
+    if foundAt == #ARL.db.guildRankPriority then
+        Print(string.format("|cffffd100%s|r is already at the bottom of the list.", ARL.db.guildRankPriority[foundAt]))
+        return
+    end
+    local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+    table.insert(ARL.db.guildRankPriority, foundAt + 1, entry)
+    RefreshRankListText()
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
+end)
+
+rankNameEdit:SetScript("OnEnterPressed", function()
+    addRankButton:Click()
 end)
 
 function ARL:ShowOptions()

@@ -26,6 +26,8 @@ local DEFAULTS = {
     groupTypeFilter        = "all", -- "all", "raid", or "party"
     consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
     trackedConsumables     = {},    -- list of { label=string, spellIds={...} } entries
+    guildRankPriority      = {},    -- ordered list of guild rank names (highest priority first)
+    useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
 }
 
 -- ============================================================
@@ -118,7 +120,53 @@ local function GetTopAvailablePreferredLeader()
     return nil, nil
 end
 
+-- Build a map of { name:lower() -> rankName } for all guild members using the
+-- cached guild roster.  Returns an empty table when the player is not in a guild.
+local function GetGuildMemberRankMap()
+    if not IsInGuild() then return {} end
+    local rankMap = {}
+    local numMembers = GetNumGuildMembers()
+    for i = 1, numMembers do
+        local name, rankName = GetGuildRosterInfo(i)
+        if name and rankName then
+            local shortName = (name:match("^([^%-]+)") or name):lower()
+            rankMap[shortName]    = rankName
+            rankMap[name:lower()] = rankName
+        end
+    end
+    return rankMap
+end
+
+-- Return the highest-priority group member found via the guild rank priority list.
+-- Skips the current player (who already holds leadership).
+-- Returns rankName, rosterName or nil, nil.
+local function GetTopAvailableByGuildRank()
+    if not ARL.db.useGuildRankPriority then return nil, nil end
+    if #ARL.db.guildRankPriority == 0 then return nil, nil end
+    if not IsInGuild() then return nil, nil end
+
+    local memberMap    = GetGroupMemberMap()
+    local guildRankMap = GetGuildMemberRankMap()
+    local playerName   = UnitName("player")
+
+    for _, priorityRank in ipairs(ARL.db.guildRankPriority) do
+        local priorityLower = priorityRank:lower()
+        for memberLower, memberName in pairs(memberMap) do
+            local memberRank = guildRankMap[memberLower]
+            if memberRank and memberRank:lower() == priorityLower then
+                if not playerName or memberName:lower() ~= playerName:lower() then
+                    return priorityRank, memberName
+                end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
 -- Try to promote the highest-priority preferred leader found in the group.
+-- Falls back to guild rank priority when no preferred leader is present and
+-- useGuildRankPriority is enabled.
 -- Returns true if a promotion was issued, false otherwise.
 local function TryAutoPromote()
     if not UnitIsGroupLeader("player") then return false end
@@ -131,6 +179,18 @@ local function TryAutoPromote()
         ARL:CancelReminder()
         ARL:HideManualPromotePopup()
         return true
+    end
+
+    -- Fall back to guild rank priority when no preferred leader is in the group.
+    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        local rankName, rankTarget = GetTopAvailableByGuildRank()
+        if rankName and rankTarget then
+            PromoteToLeader(rankTarget)
+            Print(string.format("Promoted |cffffd100%s|r to Raid Leader (guild rank: %s).", rankTarget, rankName))
+            ARL:CancelReminder()
+            ARL:HideManualPromotePopup()
+            return true
+        end
     end
 
     return false
@@ -146,7 +206,7 @@ local pendingNotifyName = nil
 local lastGroupMemberCount = 0
 
 StaticPopupDialogs["ASTRALRAIDLEADER_MANUAL_PROMOTE"] = {
-    text = "A preferred leader is in your group: %s\n\nPromote now?",
+    text = "A promotion candidate is in your group: %s\n\nPromote now?",
     button1 = "Promote",
     button2 = "Not Now",
     OnAccept = function()
@@ -170,7 +230,9 @@ end
 function ARL:ShowManualPromotePopup(preferredName, bypassCooldown)
     if not self.db.notifyEnabled then return end
     if self.db.autoPromote then return end
-    if #self.db.preferredLeaders == 0 then return end
+    local hasPreferredLeaders    = #self.db.preferredLeaders > 0
+    local hasGuildRankPriority   = self.db.useGuildRankPriority and #self.db.guildRankPriority > 0
+    if not hasPreferredLeaders and not hasGuildRankPriority then return end
     if not UnitIsGroupLeader("player") then return end
     if not IsInRelevantGroup() then return end
 
@@ -205,7 +267,9 @@ local StartReminder
 
 local function EvaluateLeaderState(trigger)
     if not ARL.db then return end
-    if #ARL.db.preferredLeaders == 0 then
+    local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
+    local hasGuildRankPriority = ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0
+    if not hasPreferredLeaders and not hasGuildRankPriority then
         ARL:CancelReminder()
         ARL:HideManualPromotePopup()
         return
@@ -226,6 +290,12 @@ local function EvaluateLeaderState(trigger)
 
     StartReminder()
     local preferredName = GetTopAvailablePreferredLeader()
+    -- Fall back to a guild rank candidate for the popup when no preferred leader
+    -- is present but guild rank priority is enabled.
+    if not preferredName and ARL.db.useGuildRankPriority then
+        local _, rankTarget = GetTopAvailableByGuildRank()
+        preferredName = rankTarget
+    end
     if not preferredName then
         ARL:HideManualPromotePopup()
         return
@@ -332,7 +402,9 @@ end
 
 StartReminder = function()
     if not ARL.db or not ARL.db.reminderEnabled then return end
-    if #ARL.db.preferredLeaders == 0 then return end
+    local hasPreferredLeaders  = #ARL.db.preferredLeaders > 0
+    local hasGuildRankPriority = ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0
+    if not hasPreferredLeaders and not hasGuildRankPriority then return end
     reminderActive  = true
     reminderElapsed = 0
 end
@@ -358,18 +430,29 @@ reminderFrame:SetScript("OnUpdate", function(_, elapsed)
 
     if not ARL.db.autoPromote then
         local preferredName = GetTopAvailablePreferredLeader()
+        if not preferredName and ARL.db.useGuildRankPriority then
+            local _, rankTarget = GetTopAvailableByGuildRank()
+            preferredName = rankTarget
+        end
         if preferredName then
             ARL:ShowManualPromotePopup(preferredName, false)
         end
     end
 
-    -- Build a friendly list of preferred names.
-    local names = table.concat(ARL.db.preferredLeaders, ", ")
-    Print(string.format(
-        "Reminder: You are the Raid Leader. Preferred leader(s): |cffffd100%s|r. "
-        .. "Use |cffffff00/arl promote|r to hand off when they join.",
-        names
-    ))
+    -- Build a friendly reminder message covering both preferred leaders and
+    -- guild rank priority so the player knows what the addon is waiting for.
+    local parts = {}
+    if #ARL.db.preferredLeaders > 0 then
+        parts[#parts + 1] = "Preferred leader(s): |cffffd100"
+            .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
+    end
+    if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        parts[#parts + 1] = "guild rank priority: |cffffd100"
+            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
+    end
+    local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
+    Print("Reminder: You are the Raid Leader." .. detail
+        .. " Use |cffffff00/arl promote|r to hand off when they join.")
 end)
 
 -- ============================================================
@@ -740,6 +823,100 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Usage: /arl grouptype [all|raid|party]")
         end
 
+    -- /arl rankpriority [on|off]
+    elseif cmd == "rankpriority" then
+        if arg:lower() == "on" then
+            ARL.db.useGuildRankPriority = true
+            Print("Guild rank priority |cff00ff00enabled|r.")
+        elseif arg:lower() == "off" then
+            ARL.db.useGuildRankPriority = false
+            Print("Guild rank priority |cffff0000disabled|r.")
+        else
+            Print(string.format("Guild rank priority is currently |cff%s%s|r.",
+                ARL.db.useGuildRankPriority and "00ff00" or "ff0000",
+                ARL.db.useGuildRankPriority and "enabled" or "disabled"))
+        end
+
+    -- /arl addrank <rankname>
+    elseif cmd == "addrank" then
+        if arg == "" then
+            Print("Usage: /arl addrank <GuildRankName>")
+            return
+        end
+        for _, rank in ipairs(ARL.db.guildRankPriority) do
+            if rank:lower() == arg:lower() then
+                Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", arg))
+                return
+            end
+        end
+        table.insert(ARL.db.guildRankPriority, arg)
+        Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", arg))
+
+    -- /arl removerank <rankname>
+    elseif cmd == "removerank" then
+        if arg == "" then
+            Print("Usage: /arl removerank <GuildRankName>")
+            return
+        end
+        for i, rank in ipairs(ARL.db.guildRankPriority) do
+            if rank:lower() == arg:lower() then
+                table.remove(ARL.db.guildRankPriority, i)
+                Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", rank))
+                return
+            end
+        end
+        Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", arg))
+
+    -- /arl ranklist
+    elseif cmd == "ranklist" then
+        if #ARL.db.guildRankPriority == 0 then
+            Print("The guild rank priority list is empty. Add ranks with /arl addrank <rankname>.")
+        else
+            Print("Guild rank priority (highest priority first):")
+            for i, rank in ipairs(ARL.db.guildRankPriority) do
+                Print(string.format("  %d. |cffffd100%s|r", i, rank))
+            end
+        end
+
+    -- /arl clearranks
+    elseif cmd == "clearranks" then
+        ARL.db.guildRankPriority = {}
+        Print("Cleared the guild rank priority list.")
+
+    -- /arl moverank <rankname> <position>
+    elseif cmd == "moverank" then
+        -- Use a pattern that captures the position number from the end, allowing
+        -- rank names that contain spaces (e.g. "Senior Officer 2").
+        local name, posStr = arg:match("^(.-)%s+(%d+)%s*$")
+        if not name or not posStr or name == "" then
+            Print("Usage: /arl moverank <rankname> <position>")
+            return
+        end
+        local pos = tonumber(posStr)
+        if not pos or pos < 1 then
+            Print("Position must be a positive integer.")
+            return
+        end
+        local foundAt = nil
+        for i, r in ipairs(ARL.db.guildRankPriority) do
+            if r:lower() == name:lower() then
+                foundAt = i
+                break
+            end
+        end
+        if not foundAt then
+            Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", name))
+            return
+        end
+        pos = math.min(pos, #ARL.db.guildRankPriority)
+        if foundAt == pos then
+            Print(string.format("|cffffd100%s|r is already at position %d.", ARL.db.guildRankPriority[foundAt], pos))
+            return
+        end
+        local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+        table.insert(ARL.db.guildRankPriority, pos, entry)
+        Print(string.format("Moved |cffffd100%s|r to position %d.", entry, pos))
+
     -- /arl settings | /arl options | /arl config
     elseif cmd == "settings" or cmd == "options" or cmd == "config" then
         if ARL.ShowOptions then
@@ -773,6 +950,12 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
+        Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")
+        Print("  |cffffff00/arl addrank <rank>|r     – Add a guild rank to the priority list")
+        Print("  |cffffff00/arl removerank <rank>|r  – Remove a guild rank from the priority list")
+        Print("  |cffffff00/arl ranklist|r            – Show the guild rank priority list")
+        Print("  |cffffff00/arl clearranks|r          – Clear the guild rank priority list")
+        Print("  |cffffff00/arl moverank <rank> <pos>|r – Move a guild rank to a specific position")
         Print("  |cffffff00/arl settings|r           – Open the in-game settings window")
         Print("  |cffffff00/arl help|r               – Show this help message")
 
