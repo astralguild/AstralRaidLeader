@@ -16,14 +16,16 @@ _G[ADDON_NAME] = ARL
 -- ============================================================
 
 local DEFAULTS = {
-    preferredLeaders  = {},   -- ordered list of character names (highest priority first)
-    autoPromote       = true, -- attempt to promote automatically on roster changes
-    reminderEnabled   = true, -- show periodic reminders when holding an unwanted lead
-    reminderInterval  = 30,   -- seconds between reminder messages
-    notifyEnabled     = true, -- show a popup when manual promotion is available
-    notifySound       = true, -- play a UI sound when the popup is shown
-    quietMode         = false, -- suppress all chat output when true
-    groupTypeFilter   = "all", -- "all", "raid", or "party"
+    preferredLeaders       = {},    -- ordered list of character names (highest priority first)
+    autoPromote            = true,  -- attempt to promote automatically on roster changes
+    reminderEnabled        = true,  -- show periodic reminders when holding an unwanted lead
+    reminderInterval       = 30,    -- seconds between reminder messages
+    notifyEnabled          = true,  -- show a popup when manual promotion is available
+    notifySound            = true,  -- play a UI sound when the popup is shown
+    quietMode              = false, -- suppress all chat output when true
+    groupTypeFilter        = "all", -- "all", "raid", or "party"
+    consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
+    trackedConsumables     = {},    -- list of { label=string, spellIds={...} } entries
 }
 
 -- ============================================================
@@ -235,6 +237,87 @@ local function EvaluateLeaderState(trigger)
 end
 
 -- ============================================================
+-- Consumable audit (triggered on READY_CHECK)
+-- ============================================================
+
+-- Return true when unit currently has a buff with the given spell ID.
+local function HasBuff(unit, spellId)
+    local i = 1
+    while i <= 64 do
+        local buffName, _, _, _, _, _, _, _, _, buffSpellId = UnitBuff(unit, i)
+        if not buffName then break end
+        if buffSpellId == spellId then return true end
+        i = i + 1
+    end
+    return false
+end
+
+-- Return the index and table of the consumable category matching label, or nil, nil.
+local function FindConsumableCategory(label)
+    local lower = label:lower()
+    for i, cat in ipairs(ARL.db.trackedConsumables) do
+        if cat.label:lower() == lower then
+            return i, cat
+        end
+    end
+    return nil, nil
+end
+
+-- Scan all group members for missing tracked consumable buffs and print a report.
+local function RunConsumableAudit()
+    if not ARL.db or not ARL.db.consumableAuditEnabled then return end
+    if #ARL.db.trackedConsumables == 0 then return end
+    if not IsInRelevantGroup() then return end
+
+    local units = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            units[#units + 1] = "raid" .. i
+        end
+    else
+        units[#units + 1] = "player"
+        for i = 1, GetNumSubgroupMembers() do
+            units[#units + 1] = "party" .. i
+        end
+    end
+
+    local missing = {}
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            local name = UnitName(unit)
+            if name and name ~= "" then
+                local missingCats = {}
+                for _, consumable in ipairs(ARL.db.trackedConsumables) do
+                    local hasIt = false
+                    for _, spellId in ipairs(consumable.spellIds) do
+                        if HasBuff(unit, spellId) then
+                            hasIt = true
+                            break
+                        end
+                    end
+                    if not hasIt then
+                        missingCats[#missingCats + 1] = consumable.label
+                    end
+                end
+                if #missingCats > 0 then
+                    missing[#missing + 1] = { name = name, cats = missingCats }
+                end
+            end
+        end
+    end
+
+    if #missing == 0 then
+        Print("Ready check: All group members have their consumables!")
+    else
+        Print(string.format("Ready check: %d group member(s) missing consumables:", #missing))
+        for _, entry in ipairs(missing) do
+            Print(string.format("  |cffffd100%s|r – missing: |cffff6666%s|r",
+                entry.name, table.concat(entry.cats, ", ")))
+        end
+    end
+end
+
+-- ============================================================
 -- Reminder timer
 -- ============================================================
 
@@ -300,6 +383,7 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("READY_CHECK")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -318,6 +402,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         ARL:TryShowPendingManualPromotePopup()
+
+    elseif event == "READY_CHECK" then
+        RunConsumableAudit()
 
     elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
         local currentCount = GetNumGroupMembers()
@@ -525,6 +612,119 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.quietMode and "enabled" or "disabled"))
         end
 
+    -- /arl consumable [list|add|remove|delete|clear|audit]
+    elseif cmd == "consumable" then
+        local subcmd, rest = arg:match("^(%S+)%s*(.*)")
+        if not subcmd then subcmd = "" end
+        subcmd = subcmd:lower()
+        rest = rest or ""
+
+        if subcmd == "list" then
+            if #ARL.db.trackedConsumables == 0 then
+                Print("No consumables are being tracked. Use |cffffff00/arl consumable add <label> <spellId>|r to add one.")
+            else
+                Print("Tracked consumables:")
+                for i, cat in ipairs(ARL.db.trackedConsumables) do
+                    Print(string.format("  %d. |cffffd100%s|r – spell IDs: %s",
+                        i, cat.label, table.concat(cat.spellIds, ", ")))
+                end
+            end
+
+        elseif subcmd == "add" then
+            local label, idStr = rest:match("^(.-)%s+(%d+)$")
+            if not label or label == "" or not idStr then
+                Print("Usage: /arl consumable add <label> <spellId>")
+                return
+            end
+            local spellId = tonumber(idStr)
+            if not spellId or spellId < 1 then
+                Print("Invalid spell ID. Must be a positive integer.")
+                return
+            end
+            local _, cat = FindConsumableCategory(label)
+            if cat then
+                for _, id in ipairs(cat.spellIds) do
+                    if id == spellId then
+                        Print(string.format("Spell ID %d is already in the |cffffd100%s|r category.", spellId, cat.label))
+                        return
+                    end
+                end
+                table.insert(cat.spellIds, spellId)
+                Print(string.format("Added spell ID %d to |cffffd100%s|r.", spellId, cat.label))
+            else
+                table.insert(ARL.db.trackedConsumables, { label = label, spellIds = { spellId } })
+                Print(string.format("Created new category |cffffd100%s|r with spell ID %d.", label, spellId))
+            end
+
+        elseif subcmd == "remove" then
+            local label, idStr = rest:match("^(.-)%s+(%d+)$")
+            if not label or label == "" or not idStr then
+                Print("Usage: /arl consumable remove <label> <spellId>")
+                return
+            end
+            local spellId = tonumber(idStr)
+            local idx, cat = FindConsumableCategory(label)
+            if not cat then
+                Print(string.format("Category |cffffd100%s|r not found.", label))
+                return
+            end
+            for i, id in ipairs(cat.spellIds) do
+                if id == spellId then
+                    table.remove(cat.spellIds, i)
+                    Print(string.format("Removed spell ID %d from |cffffd100%s|r.", spellId, cat.label))
+                    if #cat.spellIds == 0 then
+                        table.remove(ARL.db.trackedConsumables, idx)
+                        Print(string.format("Category |cffffd100%s|r removed (no spell IDs remaining).", cat.label))
+                    end
+                    return
+                end
+            end
+            Print(string.format("Spell ID %d was not found in |cffffd100%s|r.", spellId, cat.label))
+
+        elseif subcmd == "delete" then
+            if rest == "" then
+                Print("Usage: /arl consumable delete <label>")
+                return
+            end
+            local idx, cat = FindConsumableCategory(rest)
+            if not cat then
+                Print(string.format("Category |cffffd100%s|r not found.", rest))
+                return
+            end
+            table.remove(ARL.db.trackedConsumables, idx)
+            Print(string.format("Deleted category |cffffd100%s|r.", cat.label))
+
+        elseif subcmd == "clear" then
+            ARL.db.trackedConsumables = {}
+            Print("Cleared all tracked consumable categories.")
+
+        elseif subcmd == "audit" then
+            RunConsumableAudit()
+
+        else
+            Print("Consumable sub-commands:")
+            Print("  |cffffff00/arl consumable list|r                        – List tracked consumable categories")
+            Print("  |cffffff00/arl consumable add <label> <spellId>|r       – Add a spell ID to a category")
+            Print("  |cffffff00/arl consumable remove <label> <spellId>|r    – Remove a spell ID from a category")
+            Print("  |cffffff00/arl consumable delete <label>|r              – Delete an entire category")
+            Print("  |cffffff00/arl consumable clear|r                       – Remove all tracked consumable categories")
+            Print("  |cffffff00/arl consumable audit|r                       – Run the consumable audit now")
+        end
+
+    -- /arl consumableaudit [on|off]
+    elseif cmd == "consumableaudit" then
+        if arg:lower() == "on" then
+            ARL.db.consumableAuditEnabled = true
+            Print("Consumable audit on ready check |cff00ff00enabled|r.")
+        elseif arg:lower() == "off" then
+            ARL.db.consumableAuditEnabled = false
+            Print("Consumable audit on ready check |cffff0000disabled|r.")
+        else
+            Print(string.format("Consumable audit on ready check is currently |cff%s%s|r.",
+                ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
+                ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
+        end
+
     -- /arl grouptype [all|raid|party]
     elseif cmd == "grouptype" then
         local lower = arg:lower()
@@ -571,6 +771,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
+        Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
+        Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl settings|r           – Open the in-game settings window")
         Print("  |cffffff00/arl help|r               – Show this help message")
 

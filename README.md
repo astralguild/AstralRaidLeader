@@ -16,6 +16,7 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Reminder system** – if no preferred leader is present in the group, a periodic in-chat reminder fires until one joins (or you hand off leadership manually).
 - **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
 - **Group-type filter** – restrict auto-promote to raids only, parties only, or all group types. Great for players who run both M+ keys and raids.
+- **Consumable audit** – when a ready check is initiated, the addon scans every group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
 - **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
 - **Persistent settings** – your list and preferences are saved between sessions via `SavedVariables`.
 
@@ -48,6 +49,13 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl notifysound [on\|off]` | Enable or disable sound for the manual-promote popup |
 | `/arl quiet [on\|off]` | Suppress all addon chat output (auto-promote still works silently) |
 | `/arl grouptype [all\|raid\|party]` | Restrict auto-promote to all groups, raids only, or parties only |
+| `/arl consumable list` | List all tracked consumable categories and their spell IDs |
+| `/arl consumable add <label> <spellId>` | Add a spell ID to a consumable category (creates the category if needed) |
+| `/arl consumable remove <label> <spellId>` | Remove a spell ID from a consumable category |
+| `/arl consumable delete <label>` | Delete an entire consumable category |
+| `/arl consumable clear` | Remove all tracked consumable categories |
+| `/arl consumable audit` | Run the consumable audit immediately |
+| `/arl consumableaudit [on\|off]` | Enable or disable the automatic consumable audit on ready check |
 | `/arl settings` | Open the in-game settings window |
 | `/arl help` | Show all available commands |
 
@@ -67,6 +75,19 @@ The addon will now automatically pass Raid Leader to **Thrall** whenever he join
 2. The first name found in the current group is promoted via `PromoteToLeader()`.
 3. If no match is found **and** the reminder is enabled, a timer fires every `reminderInterval` seconds with a chat message listing the preferred leaders.
 4. The reminder is automatically cancelled when the player is no longer the group leader.
+5. When a `READY_CHECK` event fires, the addon scans each group member's active buffs. For every tracked consumable category, it checks whether the member has at least one of the listed spell IDs as an active buff. Anyone missing one or more categories is included in a chat report.
+
+### Setting up consumable tracking
+
+Consumable categories are empty by default. Add them with the spell IDs relevant to your current tier, for example:
+
+```
+/arl consumable add Flask 431972
+/arl consumable add Flask 432021
+/arl consumable add Food  457302
+```
+
+You can look up spell IDs on [Wowhead](https://www.wowhead.com) by searching for the buff name and noting the ID in the URL. Run `/arl consumable list` to review what is currently tracked.
 
 ## Saved variables
 

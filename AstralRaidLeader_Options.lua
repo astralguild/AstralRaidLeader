@@ -25,7 +25,7 @@ local function NamesMatch(a, b)
 end
 
 local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-frame:SetSize(560, 600)
+frame:SetSize(560, 630)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
@@ -100,12 +100,18 @@ local quietCB = CreateCheckbox(
     "TOPLEFT", 16, -170
 )
 
+local consumableAuditCB = CreateCheckbox(
+    "Enable consumable audit on ready check",
+    "When a ready check is initiated, report which group members are missing tracked consumable buffs.",
+    "TOPLEFT", 16, -198
+)
+
 local sliderLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-sliderLabel:SetPoint("TOPLEFT", 16, -208)
+sliderLabel:SetPoint("TOPLEFT", 16, -236)
 sliderLabel:SetText("Reminder interval (seconds)")
 
 local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", frame, "OptionsSliderTemplate")
-reminderSlider:SetPoint("TOPLEFT", 16, -232)
+reminderSlider:SetPoint("TOPLEFT", 16, -260)
 reminderSlider:SetMinMaxValues(5, 120)
 reminderSlider:SetValueStep(5)
 reminderSlider:SetObeyStepOnDrag(true)
@@ -120,13 +126,13 @@ sliderValue:SetText("30s")
 
 -- Group type filter
 local groupTypeLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-groupTypeLabel:SetPoint("TOPLEFT", 16, -278)
+groupTypeLabel:SetPoint("TOPLEFT", 16, -306)
 groupTypeLabel:SetText("Auto-promote in:")
 
 local groupAllCB = CreateCheckbox(
     "All groups",
     "Auto-promote in both raids and parties.",
-    "TOPLEFT", 16, -300
+    "TOPLEFT", 16, -328
 )
 local groupRaidCB = CreateCheckbox(
     "Raids only",
@@ -140,11 +146,11 @@ local groupPartyCB = CreateCheckbox(
 )
 
 local preferredHeader = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-preferredHeader:SetPoint("TOPLEFT", 16, -344)
+preferredHeader:SetPoint("TOPLEFT", 16, -372)
 preferredHeader:SetText("Preferred leaders (highest priority first)")
 
 local listInset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
-listInset:SetPoint("TOPLEFT", 16, -366)
+listInset:SetPoint("TOPLEFT", 16, -394)
 listInset:SetSize(528, 130)
 
 local listText = listInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -154,11 +160,11 @@ listText:SetJustifyH("LEFT")
 listText:SetJustifyV("TOP")
 
 local nameLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-nameLabel:SetPoint("TOPLEFT", 16, -506)
+nameLabel:SetPoint("TOPLEFT", 16, -534)
 nameLabel:SetText("Character")
 
 local nameEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-nameEdit:SetPoint("TOPLEFT", 16, -528)
+nameEdit:SetPoint("TOPLEFT", 16, -556)
 nameEdit:SetSize(180, 24)
 nameEdit:SetAutoFocus(false)
 nameEdit:SetMaxLetters(48)
@@ -184,7 +190,7 @@ promoteButton:SetSize(70, 24)
 promoteButton:SetText("Promote")
 
 local moveUpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-moveUpButton:SetPoint("TOPLEFT", 16, -558)
+moveUpButton:SetPoint("TOPLEFT", 16, -586)
 moveUpButton:SetSize(90, 24)
 moveUpButton:SetText("Move Up")
 
@@ -229,6 +235,7 @@ local function RefreshUI()
     notifyCB:SetChecked(ARL.db.notifyEnabled)
     notifySoundCB:SetChecked(ARL.db.notifySound)
     quietCB:SetChecked(ARL.db.quietMode)
+    consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
 
     local filter = ARL.db.groupTypeFilter or "all"
     groupAllCB:SetChecked(filter == "all")
@@ -291,6 +298,14 @@ quietCB:SetScript("OnClick", function(self)
     else
         Print("Quiet mode |cffff0000disabled|r.")
     end
+end)
+
+consumableAuditCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.consumableAuditEnabled = self:GetChecked() and true or false
+    Print(string.format("Consumable audit on ready check |cff%s%s|r.",
+        ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
+        ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
 end)
 
 local function SetGroupTypeFilter(filter)
