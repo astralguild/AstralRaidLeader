@@ -14,6 +14,9 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Auto-promote** – whenever a roster update fires and you are the group/raid leader, the addon automatically promotes the highest-priority preferred leader who is currently in the group.
 - **Manual-promotion popup** – when auto-promote is off and a preferred leader is present, a configurable popup appears with a one-click **Promote** button. It can reappear after **Not Now** on later roster/instance changes (or periodic reminders), and defers while in combat.
 - **Reminder system** – if no preferred leader is present in the group, a periodic in-chat reminder fires until one joins (or you hand off leadership manually).
+- **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
+- **Group-type filter** – restrict auto-promote to raids only, parties only, or all group types. Great for players who run both M+ keys and raids.
+- **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
 - **Persistent settings** – your list and preferences are saved between sessions via `SavedVariables`.
 
 ## Installation
@@ -35,6 +38,7 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl add <name>` | Add a character to the preferred leaders list |
 | `/arl` | Open the in-game settings window |
 | `/arl remove <name>` | Remove a character from the list |
+| `/arl move <name> <pos>` | Move a character to a specific position in the list |
 | `/arl list` | Show the preferred leaders list (highest priority first) |
 | `/arl clear` | Clear the entire list |
 | `/arl promote` | Manually promote the highest-priority preferred leader currently in the group |
@@ -42,6 +46,8 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl reminder [on\|off\|N]` | Enable/disable reminders, or set the interval in seconds (minimum 5 s) |
 | `/arl notify [on\|off]` | Enable or disable the manual-promote popup when auto-promote is off |
 | `/arl notifysound [on\|off]` | Enable or disable sound for the manual-promote popup |
+| `/arl quiet [on\|off]` | Suppress all addon chat output (auto-promote still works silently) |
+| `/arl grouptype [all\|raid\|party]` | Restrict auto-promote to all groups, raids only, or parties only |
 | `/arl settings` | Open the in-game settings window |
 | `/arl help` | Show all available commands |
 
