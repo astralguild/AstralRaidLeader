@@ -2,6 +2,12 @@
 
 A World of Warcraft addon that keeps your raid leader hand-offs consistent.
 
+## Screenshot
+
+![AstralRaidLeader Settings UI](docs/images/settings-ui.png)
+
+In-game settings window for configuring auto-promote, reminder behavior, popup notifications, and preferred leaders.
+
 ## Features
 
 - **Preferred-leader list** – maintain an ordered list of characters who should hold Raid Leader.
