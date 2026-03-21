@@ -2,7 +2,8 @@
 -- Automatically passes Raid Leader to a configurable list of preferred
 -- characters. When the player holds Raid Leader, the addon first tries to
 -- promote the highest-priority preferred leader that is currently in the
--- group. If none are present, a periodic reminder is shown until one joins
+-- group. If none are present, an event-driven reminder is shown when roster
+-- state changes.
 -- or the player leaves the group.
 
 local ADDON_NAME = "AstralRaidLeader"
@@ -18,8 +19,7 @@ _G[ADDON_NAME] = ARL
 local DEFAULTS = {
     preferredLeaders       = {},    -- ordered list of character names (highest priority first)
     autoPromote            = true,  -- attempt to promote automatically on roster changes
-    reminderEnabled        = true,  -- show periodic reminders when holding an unwanted lead
-    reminderInterval       = 30,    -- seconds between reminder messages
+    reminderEnabled        = true,  -- show event-driven reminders when holding an unwanted lead
     notifyEnabled          = true,  -- show a popup when manual promotion is available
     notifySound            = true,  -- play a UI sound when the popup is shown
     quietMode              = false, -- suppress all chat output when true
@@ -463,7 +463,6 @@ local function RunConsumableAudit(force)
     end
 end
 
-local reminderActive  = false
 -- Expose audit entry points on the ARL namespace so other files
 -- (e.g. the Options window) can invoke them without going through
 -- the slash-command dispatcher.
@@ -473,7 +472,7 @@ ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
 
 
 function ARL:CancelReminder()
-    reminderActive  = false
+    -- Event-driven reminders do not keep timer state.
 end
 
 StartReminder = function(trigger)
@@ -486,7 +485,6 @@ StartReminder = function(trigger)
     -- Event-driven reminders: only announce on join/world-change style triggers.
     if trigger ~= "new_member" and trigger ~= "instance_change" then return end
 
-    reminderActive = true
     PrintLeaderReminderMessage()
 end
 

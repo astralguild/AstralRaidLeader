@@ -148,7 +148,7 @@ local autoCB = CreateCheckbox(p1,
 
 local reminderCB = CreateCheckbox(p1,
     "Enable reminder chat messages",
-    "Show periodic reminder messages when no preferred leader is present.",
+    "Show reminder messages when members join and no preferred leader is present.",
     8, -36)
 
 local notifyCB = CreateCheckbox(p1,
@@ -166,39 +166,28 @@ local quietCB = CreateCheckbox(p1,
     "Suppress all chat output from AstralRaidLeader (auto-promote still works silently).",
     8, -120)
 
-local sliderLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-sliderLabel:SetPoint("TOPLEFT", 8, -160)
-sliderLabel:SetText("Reminder interval (seconds)")
-
-local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", p1, "OptionsSliderTemplate")
-reminderSlider:SetPoint("TOPLEFT", 8, -182)
-reminderSlider:SetMinMaxValues(5, 120)
-reminderSlider:SetValueStep(5)
-reminderSlider:SetObeyStepOnDrag(true)
-reminderSlider:SetWidth(240)
-_G[reminderSlider:GetName() .. "Low"]:SetText("5")
-_G[reminderSlider:GetName() .. "High"]:SetText("120")
-
-local sliderValue = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-sliderValue:SetPoint("LEFT", reminderSlider, "RIGHT", 10, 0)
-sliderValue:SetText("30s")
+local reminderHelpText = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+reminderHelpText:SetPoint("TOPLEFT", 8, -160)
+reminderHelpText:SetWidth(528)
+reminderHelpText:SetJustifyH("LEFT")
+reminderHelpText:SetText("Reminders are event-driven and trigger when party/raid roster changes.")
 
 local groupTypeLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-groupTypeLabel:SetPoint("TOPLEFT", 8, -228)
+groupTypeLabel:SetPoint("TOPLEFT", 8, -196)
 groupTypeLabel:SetText("Auto-promote in:")
 
 local groupAllCB = CreateCheckbox(p1,
     "All groups",
     "Auto-promote in both raids and parties.",
-    8, -250)
+    8, -218)
 
 local groupRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -250)
+groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -218)
 groupRaidCB.Text:SetText("Raids only")
 groupRaidCB.tooltipText = "Only auto-promote when in a raid group."
 
 local groupPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -250)
+groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -218)
 groupPartyCB.Text:SetText("Parties only")
 groupPartyCB.tooltipText = "Only auto-promote when in a party (not a raid)."
 
@@ -570,10 +559,6 @@ local function RefreshUI()
     groupRaidCB:SetChecked(filter == "raid")
     groupPartyCB:SetChecked(filter == "party")
 
-    local interval = tonumber(ARL.db.reminderInterval) or 30
-    reminderSlider:SetValue(interval)
-    sliderValue:SetText(string.format("%ds", interval))
-
     useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
     consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
     deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
@@ -648,16 +633,6 @@ end
 groupAllCB:SetScript("OnClick",  function() if not updating then SetGroupTypeFilter("all")   end end)
 groupRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("raid")  end end)
 groupPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("party") end end)
-
-reminderSlider:SetScript("OnValueChanged", function(self, value)
-    if updating or not ARL.db then return end
-    local rounded = math.floor((value / 5) + 0.5) * 5
-    if rounded < 5   then rounded = 5   end
-    if rounded > 120 then rounded = 120 end
-    self:SetValue(rounded)
-    ARL.db.reminderInterval = rounded
-    sliderValue:SetText(string.format("%ds", rounded))
-end)
 
 -- ============================================================
 -- Tab 2 – Leaders: handlers
