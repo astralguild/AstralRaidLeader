@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  validate-addon:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1 compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Validate Lua syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t lua_files < <(find . -type f -name "*.lua" | sort)
+          if [ "${#lua_files[@]}" -eq 0 ]; then
+            echo "No Lua files found."
+            exit 1
+          fi
+
+          for file in "${lua_files[@]}"; do
+            echo "Checking syntax: ${file}"
+            luac5.1 -p "${file}"
+          done
+
+      - name: Validate TOC references
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          toc_file="AstralRaidLeader.toc"
+          if [ ! -f "${toc_file}"; then
+            echo "Missing ${toc_file}"
+            exit 1
+          fi
+
+          mapfile -t toc_lua_refs < <(
+            awk '
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              /\.lua[[:space:]]*$/ { print $0 }
+            ' "${toc_file}" | sed 's/[[:space:]]*$//' 
+          )
+
+          if [ "${#toc_lua_refs[@]}" -eq 0 ]; then
+            echo "No Lua file references found in ${toc_file}."
+            exit 1
+          fi
+
+          for ref in "${toc_lua_refs[@]}"; do
+            if [ ! -f "${ref}" ]; then
+              echo "TOC references missing file: ${ref}"
+              exit 1
+            fi
+          done
+
+          duplicate_refs=$(printf '%s\n' "${toc_lua_refs[@]}" | sort | uniq -d || true)
+          if [ -n "${duplicate_refs}" ]; then
+            echo "Duplicate Lua entries found in ${toc_file}:"
+            echo "${duplicate_refs}"
+            exit 1
+          fi
+
+      - name: Validate interface metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          toc_file="AstralRaidLeader.toc"
+          interface_line=$(grep -E '^##[[:space:]]+Interface:[[:space:]]*[0-9]+[[:space:]]*$' "${toc_file}" || true)
+
+          if [ -z "${interface_line}" ]; then
+            echo "Could not find a valid ## Interface metadata line in ${toc_file}."
+            exit 1
+          fi
+
+          interface_value=$(echo "${interface_line}" | sed -E 's/^##[[:space:]]+Interface:[[:space:]]*([0-9]+)[[:space:]]*$/\1/')
+
+          if ! [[ "${interface_value}" =~ ^[0-9]{6}$ ]]; then
+            echo "Interface value must be a 6-digit integer (example: 120001). Found: ${interface_value}"
+            exit 1
+          fi
+
+          echo "Interface metadata looks valid: ${interface_value}"
