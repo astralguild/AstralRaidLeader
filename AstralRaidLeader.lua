@@ -25,9 +25,15 @@ local DEFAULTS = {
     quietMode              = false, -- suppress all chat output when true
     groupTypeFilter        = "all", -- "all", "raid", or "party"
     consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
-    trackedConsumables     = {},    -- list of { label=string, spellIds={...} } entries
+    trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
     guildRankPriority      = {},    -- ordered list of guild rank names (highest priority first)
     useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
+}
+
+-- Built-in consumable categories – always checked, never stored in SavedVariables.
+local SYSTEM_CONSUMABLES = {
+    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324 } },
+    { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
 }
 
 -- ============================================================
@@ -44,16 +50,17 @@ local function InitDB()
     if type(AstralRaidLeaderDB) ~= "table" then
         AstralRaidLeaderDB = {}
     end
+    local function DeepCopy(orig)
+        local copy = {}
+        for k, v in pairs(orig) do
+            copy[k] = type(v) == "table" and DeepCopy(v) or v
+        end
+        return copy
+    end
+
     for k, v in pairs(DEFAULTS) do
         if AstralRaidLeaderDB[k] == nil then
-            -- Deep-copy table defaults so each character's db gets its own table.
-            if type(v) == "table" then
-                local copy = {}
-                for i, item in ipairs(v) do copy[i] = item end
-                AstralRaidLeaderDB[k] = copy
-            else
-                AstralRaidLeaderDB[k] = v
-            end
+            AstralRaidLeaderDB[k] = type(v) == "table" and DeepCopy(v) or v
         end
     end
     ARL.db = AstralRaidLeaderDB
@@ -120,12 +127,18 @@ local function GetTopAvailablePreferredLeader()
     return nil, nil
 end
 
+local RequestGuildRosterIfStale
+
 -- Build a map of { name:lower() -> rankName } for all guild members using the
 -- cached guild roster.  Returns an empty table when the player is not in a guild.
 local function GetGuildMemberRankMap()
     if not IsInGuild() then return {} end
     local rankMap = {}
     local numMembers = GetNumGuildMembers()
+    if numMembers == 0 then
+        RequestGuildRosterIfStale()
+        return rankMap
+    end
     for i = 1, numMembers do
         local name, rankName = GetGuildRosterInfo(i)
         if name and rankName then
@@ -204,6 +217,20 @@ local notifyCooldownSeconds = 20
 local lastNotifyAt = 0
 local pendingNotifyName = nil
 local lastGroupMemberCount = 0
+local guildRosterRequestThrottleSeconds = 10
+local lastGuildRosterRequestAt = 0
+
+RequestGuildRosterIfStale = function()
+    if not IsInGuild() then return end
+    local now = GetTime()
+    if (now - lastGuildRosterRequestAt) < guildRosterRequestThrottleSeconds then return end
+    if C_GuildInfo and C_GuildInfo.GuildRoster then
+        C_GuildInfo.GuildRoster()
+    elseif GuildRoster then
+        GuildRoster()
+    end
+    lastGuildRosterRequestAt = now
+end
 
 StaticPopupDialogs["ASTRALRAIDLEADER_MANUAL_PROMOTE"] = {
     text = "A promotion candidate is in your group: %s\n\nPromote now?",
@@ -311,33 +338,39 @@ end
 -- ============================================================
 
 -- Return true when unit currently has a buff with the given spell ID.
+-- the deprecated multi-return UnitBuff signature removed in 11.0+.
 local function HasBuff(unit, spellId)
     local i = 1
     while i <= 64 do
-        local buffName, _, _, _, _, _, _, _, _, buffSpellId = UnitBuff(unit, i)
-        if not buffName then break end
-        if buffSpellId == spellId then return true end
+        local buffData = C_UnitAuras.GetBuffDataByIndex(unit, i)
+        if not buffData then break end
+        if buffData.spellId == spellId then return true end
         i = i + 1
     end
     return false
 end
 
--- Return the index and table of the consumable category matching label, or nil, nil.
+-- Return the index, table, and isSystem flag for the consumable category matching label.
 local function FindConsumableCategory(label)
     local lower = label:lower()
-    for i, cat in ipairs(ARL.db.trackedConsumables) do
+    for i, cat in ipairs(SYSTEM_CONSUMABLES) do
         if cat.label:lower() == lower then
-            return i, cat
+            return i, cat, true
         end
     end
-    return nil, nil
+    for i, cat in ipairs(ARL.db.trackedConsumables) do
+        if cat.label:lower() == lower then
+            return i, cat, false
+        end
+    end
+    return nil, nil, false
 end
 
 -- Scan all group members for missing tracked consumable buffs and print a report.
-local function RunConsumableAudit()
+-- Pass force=true to run even when solo (e.g. from the settings UI).
+local function RunConsumableAudit(force)
     if not ARL.db or not ARL.db.consumableAuditEnabled then return end
-    if #ARL.db.trackedConsumables == 0 then return end
-    if not IsInRelevantGroup() then return end
+    if not force and not IsInRelevantGroup() then return end
 
     local units = {}
     if IsInRaid() then
@@ -351,18 +384,40 @@ local function RunConsumableAudit()
         end
     end
 
+    -- Build full list: system defaults + user additions.
+    local allConsumables = {}
+    for _, cat in ipairs(SYSTEM_CONSUMABLES) do allConsumables[#allConsumables + 1] = cat end
+    for _, cat in ipairs(ARL.db.trackedConsumables) do allConsumables[#allConsumables + 1] = cat end
+    if #allConsumables == 0 then return end
+
     local missing = {}
     for _, unit in ipairs(units) do
         if UnitExists(unit) then
             local name = UnitName(unit)
             if name and name ~= "" then
                 local missingCats = {}
-                for _, consumable in ipairs(ARL.db.trackedConsumables) do
+                for _, consumable in ipairs(allConsumables) do
                     local hasIt = false
                     for _, spellId in ipairs(consumable.spellIds) do
                         if HasBuff(unit, spellId) then
                             hasIt = true
                             break
+                        end
+                    end
+                    -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
+                    if not hasIt and consumable.namePatterns then
+                        for _, pattern in ipairs(consumable.namePatterns) do
+                            local j = 1
+                            while j <= 64 do
+                                    local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
+                                    if not aura then break end
+                                    if aura.name and aura.name:find(pattern, 1, true) then
+                                    hasIt = true
+                                    break
+                                end
+                                j = j + 1
+                            end
+                            if hasIt then break end
                         end
                     end
                     if not hasIt then
@@ -387,13 +442,16 @@ local function RunConsumableAudit()
     end
 end
 
--- ============================================================
--- Reminder timer
--- ============================================================
-
-local reminderFrame   = CreateFrame("Frame")
+local reminderFrame   = CreateFrame("Frame", nil, UIParent)
 local reminderActive  = false
 local reminderElapsed = 0
+-- Expose audit entry points on the ARL namespace so other files
+-- (e.g. the Options window) can invoke them without going through
+-- the slash-command dispatcher.
+ARL.RunConsumableAudit     = RunConsumableAudit
+ARL.FindConsumableCategory = FindConsumableCategory
+ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
+
 
 function ARL:CancelReminder()
     reminderActive  = false
@@ -459,11 +517,12 @@ end)
 -- Event handling
 -- ============================================================
 
-local eventFrame = CreateFrame("Frame")
+local eventFrame = CreateFrame("Frame", nil, UIParent)
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("READY_CHECK")
@@ -472,12 +531,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         InitDB()
         lastGroupMemberCount = GetNumGroupMembers()
+        RequestGuildRosterIfStale()
         Print("Loaded. Type |cffffff00/arl help|r for commands.")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- db may already be set from PLAYER_LOGIN; guard against double-init.
         if not ARL.db then InitDB() end
         lastGroupMemberCount = GetNumGroupMembers()
+        RequestGuildRosterIfStale()
         EvaluateLeaderState("instance_change")
 
     elseif event == "ZONE_CHANGED_NEW_AREA" then
@@ -488,6 +549,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     elseif event == "READY_CHECK" then
         RunConsumableAudit()
+
+    elseif event == "GUILD_ROSTER_UPDATE" then
+        EvaluateLeaderState("roster")
 
     elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
         local currentCount = GetNumGroupMembers()
@@ -708,8 +772,15 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             else
                 Print("Tracked consumables:")
                 for i, cat in ipairs(ARL.db.trackedConsumables) do
-                    Print(string.format("  %d. |cffffd100%s|r – spell IDs: %s",
-                        i, cat.label, table.concat(cat.spellIds, ", ")))
+                        local parts = {}
+                        if #cat.spellIds > 0 then
+                            parts[#parts + 1] = "spell IDs: " .. table.concat(cat.spellIds, ", ")
+                        end
+                        if cat.namePatterns and #cat.namePatterns > 0 then
+                            parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
+                        end
+                        Print(string.format("  %d. |cffffd100%s|r - %s",
+                            i, cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)"))
                 end
             end
 
@@ -782,7 +853,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Cleared all tracked consumable categories.")
 
         elseif subcmd == "audit" then
-            RunConsumableAudit()
+            RunConsumableAudit(true)  -- force=true so it works solo
 
         else
             Print("Consumable sub-commands:")

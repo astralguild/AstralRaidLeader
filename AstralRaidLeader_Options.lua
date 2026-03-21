@@ -25,7 +25,7 @@ local function NamesMatch(a, b)
 end
 
 local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-frame:SetSize(560, 880)
+frame:SetSize(560, 500)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
@@ -45,113 +45,175 @@ dragRegion:SetPoint("TOPRIGHT", -28, -6)
 dragRegion:SetHeight(22)
 dragRegion:EnableMouse(true)
 dragRegion:RegisterForDrag("LeftButton")
-dragRegion:SetScript("OnDragStart", function()
-    frame:StartMoving()
-end)
-dragRegion:SetScript("OnDragStop", function()
-    frame:StopMovingOrSizing()
-end)
+dragRegion:SetScript("OnDragStart", function() frame:StartMoving() end)
+dragRegion:SetScript("OnDragStop",  function() frame:StopMovingOrSizing() end)
 
 table.insert(UISpecialFrames, frame:GetName())
 
 local updating = false
 
-local subtitle = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-subtitle:SetPoint("TOPLEFT", 16, -32)
-subtitle:SetText("Configure automatic and manual raid leader hand-off behavior.")
+-- ============================================================
+-- Tab panels
+-- Each panel is a child of the main frame occupying the content
+-- area below the title/tab bar, leaving room for the Close button.
+-- ============================================================
 
-local function CreateCheckbox(label, tooltip, anchor, x, y)
-    local cb = CreateFrame("CheckButton", nil, frame, "InterfaceOptionsCheckButtonTemplate")
-    cb:SetPoint(anchor, x, y)
-    cb.Text:SetText(label)
-    if tooltip then
-        cb.tooltipText = tooltip
+local function CreatePanel()
+    local p = CreateFrame("Frame", nil, frame)
+    p:SetPoint("TOPLEFT",     frame, "TOPLEFT",      8,  -32)
+    p:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",  -8,  44)
+    p:Hide()
+    return p
+end
+
+local panels = {
+    CreatePanel(),  -- 1: General
+    CreatePanel(),  -- 2: Leaders
+    CreatePanel(),  -- 3: Guild Ranks
+    CreatePanel(),  -- 4: Consumables
+}
+
+-- ============================================================
+-- Tab buttons (PanelTabButtonTemplate)
+-- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
+-- ============================================================
+
+local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables" }
+local tabs = {}
+local currentTabIndex = 0  -- tracked locally; PanelTemplates_SetSelectedTab removed in 12.x
+
+local function SelectTab(index)
+    for i, panel in ipairs(panels) do
+        if i == index then panel:Show() else panel:Hide() end
     end
+    currentTabIndex = index
+    frame.selectedTab = index
+    for i, tab in ipairs(tabs) do
+        if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
+            if i == index then PanelTemplates_SelectTab(tab)
+            else PanelTemplates_DeselectTab(tab) end
+        end
+    end
+end
+
+for i, label in ipairs(TAB_LABELS) do
+    local tab = CreateFrame("Button", frame:GetName() .. "Tab" .. i, frame, "PanelTabButtonTemplate")
+    tab:SetText(label)
+    if i == 1 then
+        tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 4, 2)
+    else
+        tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", -14, 0)
+    end
+    tab:SetID(i)
+    tab:SetScript("OnClick", function(self) SelectTab(self:GetID()) end)
+    PanelTemplates_TabResize(tab, 0)
+    tabs[i] = tab
+end
+
+PanelTemplates_SetNumTabs(frame, #TAB_LABELS)
+
+-- ============================================================
+-- Helper: create a checkbox parented to the given panel frame.
+-- ============================================================
+
+local function CreateCheckbox(parent, label, tooltip, x, y)
+    local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    cb:SetPoint("TOPLEFT", x, y)
+    cb.Text:SetText(label)
+    if tooltip then cb.tooltipText = tooltip end
     return cb
 end
 
-local autoCB = CreateCheckbox(
+-- ============================================================
+-- Close button (always visible on the main frame)
+-- ============================================================
+
+local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
+closeButton:SetSize(100, 24)
+closeButton:SetText("Close")
+closeButton:SetScript("OnClick", function() frame:Hide() end)
+
+-- ============================================================
+-- Tab 1 – General
+-- ============================================================
+
+local p1 = panels[1]
+
+local autoCB = CreateCheckbox(p1,
     "Enable auto-promote",
     "Automatically promote the highest-priority preferred leader when available.",
-    "TOPLEFT", 16, -58
-)
+    8, -8)
 
-local reminderCB = CreateCheckbox(
+local reminderCB = CreateCheckbox(p1,
     "Enable reminder chat messages",
     "Show periodic reminder messages when no preferred leader is present.",
-    "TOPLEFT", 16, -86
-)
+    8, -36)
 
-local notifyCB = CreateCheckbox(
+local notifyCB = CreateCheckbox(p1,
     "Enable manual-promote popup",
     "Show a popup with a Promote button when auto-promote is disabled and a preferred leader is available.",
-    "TOPLEFT", 16, -114
-)
+    8, -64)
 
-local notifySoundCB = CreateCheckbox(
+local notifySoundCB = CreateCheckbox(p1,
     "Enable popup sound",
     "Play a sound when the manual-promote popup is shown.",
-    "TOPLEFT", 16, -142
-)
+    8, -92)
 
-local quietCB = CreateCheckbox(
+local quietCB = CreateCheckbox(p1,
     "Enable quiet mode",
     "Suppress all chat output from AstralRaidLeader (auto-promote still works silently).",
-    "TOPLEFT", 16, -170
-)
+    8, -120)
 
-local consumableAuditCB = CreateCheckbox(
-    "Enable consumable audit on ready check",
-    "When a ready check is initiated, report which group members are missing tracked consumable buffs.",
-    "TOPLEFT", 16, -198
-)
-
-local sliderLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-sliderLabel:SetPoint("TOPLEFT", 16, -236)
+local sliderLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+sliderLabel:SetPoint("TOPLEFT", 8, -160)
 sliderLabel:SetText("Reminder interval (seconds)")
 
-local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", frame, "OptionsSliderTemplate")
-reminderSlider:SetPoint("TOPLEFT", 16, -260)
+local reminderSlider = CreateFrame("Slider", "AstralRaidLeaderReminderSlider", p1, "OptionsSliderTemplate")
+reminderSlider:SetPoint("TOPLEFT", 8, -182)
 reminderSlider:SetMinMaxValues(5, 120)
 reminderSlider:SetValueStep(5)
 reminderSlider:SetObeyStepOnDrag(true)
 reminderSlider:SetWidth(240)
-
 _G[reminderSlider:GetName() .. "Low"]:SetText("5")
 _G[reminderSlider:GetName() .. "High"]:SetText("120")
 
-local sliderValue = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+local sliderValue = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 sliderValue:SetPoint("LEFT", reminderSlider, "RIGHT", 10, 0)
 sliderValue:SetText("30s")
 
--- Group type filter
-local groupTypeLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-groupTypeLabel:SetPoint("TOPLEFT", 16, -306)
+local groupTypeLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+groupTypeLabel:SetPoint("TOPLEFT", 8, -228)
 groupTypeLabel:SetText("Auto-promote in:")
 
-local groupAllCB = CreateCheckbox(
+local groupAllCB = CreateCheckbox(p1,
     "All groups",
     "Auto-promote in both raids and parties.",
-    "TOPLEFT", 16, -328
-)
-local groupRaidCB = CreateCheckbox(
-    "Raids only",
-    "Only auto-promote when in a raid group.",
-    "LEFT", groupAllCB, "RIGHT", 20, 0
-)
-local groupPartyCB = CreateCheckbox(
-    "Parties only",
-    "Only auto-promote when in a party (not a raid).",
-    "LEFT", groupRaidCB, "RIGHT", 20, 0
-)
+    8, -250)
 
-local preferredHeader = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-preferredHeader:SetPoint("TOPLEFT", 16, -372)
+local groupRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
+groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -250)
+groupRaidCB.Text:SetText("Raids only")
+groupRaidCB.tooltipText = "Only auto-promote when in a raid group."
+
+local groupPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
+groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -250)
+groupPartyCB.Text:SetText("Parties only")
+groupPartyCB.tooltipText = "Only auto-promote when in a party (not a raid)."
+
+-- ============================================================
+-- Tab 2 – Leaders
+-- ============================================================
+
+local p2 = panels[2]
+
+local preferredHeader = p2:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+preferredHeader:SetPoint("TOPLEFT", 8, -8)
 preferredHeader:SetText("Preferred leaders (highest priority first)")
 
-local listInset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
-listInset:SetPoint("TOPLEFT", 16, -394)
-listInset:SetSize(528, 130)
+local listInset = CreateFrame("Frame", nil, p2, "InsetFrameTemplate3")
+listInset:SetPoint("TOPLEFT", 8, -28)
+listInset:SetSize(528, 140)
 
 local listText = listInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 listText:SetPoint("TOPLEFT", 8, -8)
@@ -159,74 +221,65 @@ listText:SetPoint("TOPRIGHT", -8, -8)
 listText:SetJustifyH("LEFT")
 listText:SetJustifyV("TOP")
 
-local nameLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-nameLabel:SetPoint("TOPLEFT", 16, -534)
+local nameLabel = p2:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+nameLabel:SetPoint("TOPLEFT", 8, -178)
 nameLabel:SetText("Character")
 
-local nameEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-nameEdit:SetPoint("TOPLEFT", 16, -556)
+local nameEdit = CreateFrame("EditBox", nil, p2, "InputBoxTemplate")
+nameEdit:SetPoint("TOPLEFT", 8, -198)
 nameEdit:SetSize(180, 24)
 nameEdit:SetAutoFocus(false)
 nameEdit:SetMaxLetters(48)
 
-local addButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local addButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
 addButton:SetPoint("LEFT", nameEdit, "RIGHT", 10, 0)
 addButton:SetSize(70, 24)
 addButton:SetText("Add")
 
-local removeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local removeButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
 removeButton:SetPoint("LEFT", addButton, "RIGHT", 8, 0)
 removeButton:SetSize(90, 24)
 removeButton:SetText("Remove")
 
-local clearButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local clearButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
 clearButton:SetPoint("LEFT", removeButton, "RIGHT", 8, 0)
 clearButton:SetSize(70, 24)
 clearButton:SetText("Clear")
 
-local promoteButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local promoteButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
 promoteButton:SetPoint("LEFT", clearButton, "RIGHT", 8, 0)
 promoteButton:SetSize(70, 24)
 promoteButton:SetText("Promote")
 
-local moveUpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-moveUpButton:SetPoint("TOPLEFT", 16, -586)
+local moveUpButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
+moveUpButton:SetPoint("TOPLEFT", 8, -228)
 moveUpButton:SetSize(90, 24)
 moveUpButton:SetText("Move Up")
 
-local moveDownButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local moveDownButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
 moveDownButton:SetPoint("LEFT", moveUpButton, "RIGHT", 8, 0)
 moveDownButton:SetSize(100, 24)
 moveDownButton:SetText("Move Down")
 
 -- ============================================================
--- Guild Rank Priority section
+-- Tab 3 – Guild Ranks
 -- ============================================================
 
-local guildRankSep = frame:CreateTexture(nil, "ARTWORK")
-guildRankSep:SetPoint("TOPLEFT", 8, -596)
-guildRankSep:SetPoint("TOPRIGHT", -8, -596)
-guildRankSep:SetHeight(1)
-guildRankSep:SetColorTexture(0.3, 0.3, 0.3, 1)
+local p3 = panels[3]
 
-local guildRankHeader = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guildRankHeader:SetPoint("TOPLEFT", 16, -606)
-guildRankHeader:SetText("Guild Rank Priority")
-
-local useGuildRankCB = CreateCheckbox(
+local useGuildRankCB = CreateCheckbox(p3,
     "Enable guild rank priority (fallback when no preferred leader is in group)",
     "When no character from the preferred leaders list is present, promote the "
     .. "highest-priority guild rank member instead.",
-    "TOPLEFT", 16, -626
-)
+    8, -8)
 
-local guildRankListLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guildRankListLabel:SetPoint("TOPLEFT", 16, -658)
+local guildRankListLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+guildRankListLabel:SetPoint("TOPLEFT", 8, -44)
 guildRankListLabel:SetText("Guild rank priority (highest priority first)")
 
-local guildRankListInset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate3")
-guildRankListInset:SetPoint("TOPLEFT", 16, -676)
-guildRankListInset:SetSize(528, 85)
+local guildRankListInset = CreateFrame("Frame", nil, p3, "InsetFrameTemplate3")
+guildRankListInset:SetPoint("TOPLEFT", 8, -64)
+guildRankListInset:SetSize(528, 120)
 
 local guildRankListText = guildRankListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 guildRankListText:SetPoint("TOPLEFT", 8, -8)
@@ -234,60 +287,152 @@ guildRankListText:SetPoint("TOPRIGHT", -8, -8)
 guildRankListText:SetJustifyH("LEFT")
 guildRankListText:SetJustifyV("TOP")
 
-local rankNameLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-rankNameLabel:SetPoint("TOPLEFT", 16, -771)
+local rankNameLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+rankNameLabel:SetPoint("TOPLEFT", 8, -194)
 rankNameLabel:SetText("Guild Rank")
 
-local rankNameEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-rankNameEdit:SetPoint("TOPLEFT", 16, -791)
+local rankNameEdit = CreateFrame("EditBox", nil, p3, "InputBoxTemplate")
+rankNameEdit:SetPoint("TOPLEFT", 8, -214)
 rankNameEdit:SetSize(180, 24)
 rankNameEdit:SetAutoFocus(false)
 rankNameEdit:SetMaxLetters(48)
 
-local addRankButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local addRankButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
 addRankButton:SetPoint("LEFT", rankNameEdit, "RIGHT", 10, 0)
 addRankButton:SetSize(70, 24)
 addRankButton:SetText("Add")
 
-local removeRankButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local removeRankButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
 removeRankButton:SetPoint("LEFT", addRankButton, "RIGHT", 8, 0)
 removeRankButton:SetSize(90, 24)
 removeRankButton:SetText("Remove")
 
-local clearRanksButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local clearRanksButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
 clearRanksButton:SetPoint("LEFT", removeRankButton, "RIGHT", 8, 0)
 clearRanksButton:SetSize(70, 24)
 clearRanksButton:SetText("Clear")
 
-local moveRankUpButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-moveRankUpButton:SetPoint("TOPLEFT", 16, -821)
+local moveRankUpButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
+moveRankUpButton:SetPoint("TOPLEFT", 8, -244)
 moveRankUpButton:SetSize(90, 24)
 moveRankUpButton:SetText("Move Up")
 
-local moveRankDownButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local moveRankDownButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
 moveRankDownButton:SetPoint("LEFT", moveRankUpButton, "RIGHT", 8, 0)
 moveRankDownButton:SetSize(100, 24)
 moveRankDownButton:SetText("Move Down")
 
-local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
-closeButton:SetSize(100, 24)
-closeButton:SetText("Close")
-closeButton:SetScript("OnClick", function()
-    frame:Hide()
-end)
+local guildRankPickerLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+guildRankPickerLabel:SetPoint("TOPLEFT", 8, -278)
+guildRankPickerLabel:SetText("Available ranks in your guild (click to add):")
+
+local refreshGuildRanksButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
+refreshGuildRanksButton:SetPoint("LEFT", guildRankPickerLabel, "RIGHT", 10, 0)
+refreshGuildRanksButton:SetSize(80, 22)
+refreshGuildRanksButton:SetText("Refresh")
+
+-- Pool of up to 10 clickable rank buttons (2 columns x 5 rows)
+local MAX_RANK_BUTTONS = 10
+local guildRankButtons = {}
+for _i = 1, MAX_RANK_BUTTONS do
+    local col = (_i - 1) % 2
+    local row = math.floor((_i - 1) / 2)
+    local btn = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
+    btn:SetPoint("TOPLEFT", 8 + col * 266, -300 + row * -28)
+    btn:SetSize(257, 22)
+    btn:SetText("")
+    btn:Hide()
+    guildRankButtons[_i] = btn
+end
+
+local noGuildRanksText = p3:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+noGuildRanksText:SetPoint("TOPLEFT", 8, -304)
+noGuildRanksText:SetText("")
+noGuildRanksText:Hide()
+
+-- ============================================================
+-- Tab 4 – Consumables
+-- ============================================================
+
+local p4 = panels[4]
+
+local consumableAuditCB = CreateCheckbox(p4,
+    "Enable consumable audit on ready check",
+    "When a ready check is initiated, report which group members are missing tracked consumable buffs.",
+    8, -8)
+
+local consumableListLabel = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+consumableListLabel:SetPoint("TOPLEFT", 8, -44)
+consumableListLabel:SetText("Tracked consumable categories")
+
+local consumableListInset = CreateFrame("Frame", nil, p4, "InsetFrameTemplate3")
+consumableListInset:SetPoint("TOPLEFT", 8, -64)
+consumableListInset:SetSize(528, 140)
+
+local consumableListText = consumableListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+consumableListText:SetPoint("TOPLEFT", 8, -8)
+consumableListText:SetPoint("TOPRIGHT", -8, -8)
+consumableListText:SetJustifyH("LEFT")
+consumableListText:SetJustifyV("TOP")
+
+local catLabelTitle = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+catLabelTitle:SetPoint("TOPLEFT", 8, -214)
+catLabelTitle:SetText("Category")
+
+local spellIdTitle = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+spellIdTitle:SetPoint("TOPLEFT", 196, -214)
+spellIdTitle:SetText("Spell ID")
+
+local catEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
+catEdit:SetPoint("TOPLEFT", 8, -234)
+catEdit:SetSize(180, 24)
+catEdit:SetAutoFocus(false)
+catEdit:SetMaxLetters(64)
+
+local spellIdEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
+spellIdEdit:SetPoint("TOPLEFT", 196, -234)
+spellIdEdit:SetSize(100, 24)
+spellIdEdit:SetAutoFocus(false)
+spellIdEdit:SetMaxLetters(12)
+
+local addConsumableButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
+addConsumableButton:SetPoint("LEFT", spellIdEdit, "RIGHT", 10, 0)
+addConsumableButton:SetSize(90, 24)
+addConsumableButton:SetText("Add Spell ID")
+
+local removeSpellIdButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
+removeSpellIdButton:SetPoint("LEFT", addConsumableButton, "RIGHT", 6, 0)
+removeSpellIdButton:SetSize(110, 24)
+removeSpellIdButton:SetText("Remove Spell ID")
+
+local deleteCatButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
+deleteCatButton:SetPoint("TOPLEFT", 8, -264)
+deleteCatButton:SetSize(110, 24)
+deleteCatButton:SetText("Delete Category")
+
+local clearConsumablesButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
+clearConsumablesButton:SetPoint("LEFT", deleteCatButton, "RIGHT", 8, 0)
+clearConsumablesButton:SetSize(80, 24)
+clearConsumablesButton:SetText("Clear All")
+
+local runAuditButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
+runAuditButton:SetPoint("LEFT", clearConsumablesButton, "RIGHT", 8, 0)
+runAuditButton:SetSize(110, 24)
+runAuditButton:SetText("Run Audit Now")
+
+-- ============================================================
+-- Refresh helpers
+-- ============================================================
 
 local function RefreshListText()
     if not ARL.db then
         listText:SetText("Waiting for saved variables to load...")
         return
     end
-
     if #ARL.db.preferredLeaders == 0 then
         listText:SetText("No preferred leaders configured. Add one below.")
         return
     end
-
     local lines = {}
     for i, name in ipairs(ARL.db.preferredLeaders) do
         lines[#lines + 1] = string.format("%d. %s", i, name)
@@ -300,17 +445,85 @@ local function RefreshRankListText()
         guildRankListText:SetText("Waiting for saved variables to load...")
         return
     end
-
     if #ARL.db.guildRankPriority == 0 then
         guildRankListText:SetText("No guild ranks configured. Add a rank name below.")
         return
     end
-
     local lines = {}
     for i, rank in ipairs(ARL.db.guildRankPriority) do
         lines[#lines + 1] = string.format("%d. %s", i, rank)
     end
     guildRankListText:SetText(table.concat(lines, "\n"))
+end
+
+local function RefreshGuildRankButtons()
+    for _, btn in ipairs(guildRankButtons) do btn:Hide() end
+    noGuildRanksText:Hide()
+    if not IsInGuild() then
+        noGuildRanksText:SetText("Not in a guild.")
+        noGuildRanksText:Show()
+        return
+    end
+    if C_GuildInfo and C_GuildInfo.GuildRoster then
+        C_GuildInfo.GuildRoster()
+    elseif GuildRoster then
+        GuildRoster()
+    end
+    local numRanks = GuildControlGetNumRanks()
+    if numRanks == 0 then
+        noGuildRanksText:SetText("Guild data not yet loaded. Click Refresh.")
+        noGuildRanksText:Show()
+        return
+    end
+    for i = 1, math.min(numRanks, MAX_RANK_BUTTONS) do
+        local rankName = GuildControlGetRankName(i)
+        if rankName and rankName ~= "" then
+            guildRankButtons[i]:SetText(rankName)
+            guildRankButtons[i]:Show()
+        end
+    end
+end
+
+local function RefreshConsumableListText()
+    if not ARL.db then
+        consumableListText:SetText("Waiting for saved variables to load...")
+        return
+    end
+    local lines = {}
+    local sys = ARL.SYSTEM_CONSUMABLES or {}
+    lines[#lines + 1] = "|cffffff00System (built-in):|r"
+    if #sys > 0 then
+        for _, cat in ipairs(sys) do
+            local parts = {}
+            if #cat.spellIds > 0 then
+                parts[#parts + 1] = "IDs: " .. table.concat(cat.spellIds, ", ")
+            end
+            if cat.namePatterns and #cat.namePatterns > 0 then
+                parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
+            end
+            lines[#lines + 1] = string.format("  %s - %s",
+                cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)")
+        end
+    else
+        lines[#lines + 1] = "  (none)"
+    end
+    lines[#lines + 1] = "|cffffff00Custom:|r"
+    if #ARL.db.trackedConsumables > 0 then
+        for i, cat in ipairs(ARL.db.trackedConsumables) do
+            local parts = {}
+            if #cat.spellIds > 0 then
+                parts[#parts + 1] = "IDs: " .. table.concat(cat.spellIds, ", ")
+            end
+            if cat.namePatterns and #cat.namePatterns > 0 then
+                parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
+            end
+            lines[#lines + 1] = string.format("  %d. %s - %s",
+                i, cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)")
+        end
+    else
+        lines[#lines + 1] = "  No custom categories. Add one below."
+    end
+    consumableListText:SetText(table.concat(lines, "\n"))
 end
 
 local function RefreshUI()
@@ -323,7 +536,6 @@ local function RefreshUI()
     notifyCB:SetChecked(ARL.db.notifyEnabled)
     notifySoundCB:SetChecked(ARL.db.notifySound)
     quietCB:SetChecked(ARL.db.quietMode)
-    consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
 
     local filter = ARL.db.groupTypeFilter or "all"
     groupAllCB:SetChecked(filter == "all")
@@ -335,12 +547,19 @@ local function RefreshUI()
     sliderValue:SetText(string.format("%ds", interval))
 
     useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
+    consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
 
     RefreshListText()
     RefreshRankListText()
+    RefreshConsumableListText()
+    RefreshGuildRankButtons()
 
     updating = false
 end
+
+-- ============================================================
+-- Tab 1 – General: handlers
+-- ============================================================
 
 autoCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
@@ -353,9 +572,7 @@ end)
 reminderCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.reminderEnabled = self:GetChecked() and true or false
-    if not ARL.db.reminderEnabled and ARL.CancelReminder then
-        ARL:CancelReminder()
-    end
+    if not ARL.db.reminderEnabled and ARL.CancelReminder then ARL:CancelReminder() end
     Print(string.format("Reminder |cff%s%s|r.",
         ARL.db.reminderEnabled and "00ff00" or "ff0000",
         ARL.db.reminderEnabled and "enabled" or "disabled"))
@@ -364,9 +581,7 @@ end)
 notifyCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.notifyEnabled = self:GetChecked() and true or false
-    if not ARL.db.notifyEnabled and ARL.HideManualPromotePopup then
-        ARL:HideManualPromotePopup()
-    end
+    if not ARL.db.notifyEnabled and ARL.HideManualPromotePopup then ARL:HideManualPromotePopup() end
     Print(string.format("Manual-promote popup |cff%s%s|r.",
         ARL.db.notifyEnabled and "00ff00" or "ff0000",
         ARL.db.notifyEnabled and "enabled" or "disabled"))
@@ -384,19 +599,10 @@ quietCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.quietMode = self:GetChecked() and true or false
     if ARL.db.quietMode then
-        -- Print the confirmation before going silent.
         Print("Quiet mode |cff00ff00enabled|r. Chat output suppressed.")
     else
         Print("Quiet mode |cffff0000disabled|r.")
     end
-end)
-
-consumableAuditCB:SetScript("OnClick", function(self)
-    if updating or not ARL.db then return end
-    ARL.db.consumableAuditEnabled = self:GetChecked() and true or false
-    Print(string.format("Consumable audit on ready check |cff%s%s|r.",
-        ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
-        ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
 end)
 
 local function SetGroupTypeFilter(filter)
@@ -409,44 +615,34 @@ local function SetGroupTypeFilter(filter)
     Print(string.format("Group type filter set to |cffffff00%s|r.", labels[filter]))
 end
 
-groupAllCB:SetScript("OnClick", function()
-    if updating then return end
-    SetGroupTypeFilter("all")
-end)
-
-groupRaidCB:SetScript("OnClick", function()
-    if updating then return end
-    SetGroupTypeFilter("raid")
-end)
-
-groupPartyCB:SetScript("OnClick", function()
-    if updating then return end
-    SetGroupTypeFilter("party")
-end)
+groupAllCB:SetScript("OnClick",  function() if not updating then SetGroupTypeFilter("all")   end end)
+groupRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("raid")  end end)
+groupPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("party") end end)
 
 reminderSlider:SetScript("OnValueChanged", function(self, value)
     if updating or not ARL.db then return end
     local rounded = math.floor((value / 5) + 0.5) * 5
-    if rounded < 5 then rounded = 5 end
+    if rounded < 5   then rounded = 5   end
     if rounded > 120 then rounded = 120 end
-
     self:SetValue(rounded)
     ARL.db.reminderInterval = rounded
     sliderValue:SetText(string.format("%ds", rounded))
 end)
 
+-- ============================================================
+-- Tab 2 – Leaders: handlers
+-- ============================================================
+
 addButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local name = Normalize(nameEdit:GetText())
     if name == "" then return end
-
     for _, existing in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(existing, name) then
             Print(string.format("|cffffd100%s|r is already in the preferred leaders list.", name))
             return
         end
     end
-
     table.insert(ARL.db.preferredLeaders, name)
     nameEdit:SetText("")
     RefreshListText()
@@ -456,11 +652,7 @@ end)
 removeButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local name = Normalize(nameEdit:GetText())
-    if name == "" then
-        Print("Enter a character name to remove.")
-        return
-    end
-
+    if name == "" then Print("Enter a character name to remove.") return end
     for i, existing in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(existing, name) then
             table.remove(ARL.db.preferredLeaders, i)
@@ -470,19 +662,14 @@ removeButton:SetScript("OnClick", function()
             return
         end
     end
-
     Print(string.format("|cffffd100%s|r was not found in the preferred leaders list.", name))
 end)
 
 clearButton:SetScript("OnClick", function()
     if not ARL.db then return end
     ARL.db.preferredLeaders = {}
-    if ARL.CancelReminder then
-        ARL:CancelReminder()
-    end
-    if ARL.HideManualPromotePopup then
-        ARL:HideManualPromotePopup()
-    end
+    if ARL.CancelReminder then ARL:CancelReminder() end
+    if ARL.HideManualPromotePopup then ARL:HideManualPromotePopup() end
     RefreshListText()
     Print("Cleared the preferred leaders list.")
 end)
@@ -496,10 +683,7 @@ end)
 moveUpButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local name = Normalize(nameEdit:GetText())
-    if name == "" then
-        Print("Enter a character name to move.")
-        return
-    end
+    if name == "" then Print("Enter a character name to move.") return end
     local foundAt = nil
     for i, n in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(n, name) then foundAt = i break end
@@ -521,10 +705,7 @@ end)
 moveDownButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local name = Normalize(nameEdit:GetText())
-    if name == "" then
-        Print("Enter a character name to move.")
-        return
-    end
+    if name == "" then Print("Enter a character name to move.") return end
     local foundAt = nil
     for i, n in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(n, name) then foundAt = i break end
@@ -543,12 +724,10 @@ moveDownButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
 end)
 
-nameEdit:SetScript("OnEnterPressed", function()
-    addButton:Click()
-end)
+nameEdit:SetScript("OnEnterPressed", function() addButton:Click() end)
 
 -- ============================================================
--- Guild Rank Priority button handlers
+-- Tab 3 – Guild Ranks: handlers
 -- ============================================================
 
 useGuildRankCB:SetScript("OnClick", function(self)
@@ -563,14 +742,12 @@ addRankButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local rank = Normalize(rankNameEdit:GetText())
     if rank == "" then return end
-
     for _, existing in ipairs(ARL.db.guildRankPriority) do
         if existing:lower() == rank:lower() then
             Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", rank))
             return
         end
     end
-
     table.insert(ARL.db.guildRankPriority, rank)
     rankNameEdit:SetText("")
     RefreshRankListText()
@@ -580,11 +757,7 @@ end)
 removeRankButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local rank = Normalize(rankNameEdit:GetText())
-    if rank == "" then
-        Print("Enter a guild rank name to remove.")
-        return
-    end
-
+    if rank == "" then Print("Enter a guild rank name to remove.") return end
     for i, existing in ipairs(ARL.db.guildRankPriority) do
         if existing:lower() == rank:lower() then
             table.remove(ARL.db.guildRankPriority, i)
@@ -594,7 +767,6 @@ removeRankButton:SetScript("OnClick", function()
             return
         end
     end
-
     Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
 end)
 
@@ -608,10 +780,7 @@ end)
 moveRankUpButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local rank = Normalize(rankNameEdit:GetText())
-    if rank == "" then
-        Print("Enter a guild rank name to move.")
-        return
-    end
+    if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
         if r:lower() == rank:lower() then foundAt = i break end
@@ -633,10 +802,7 @@ end)
 moveRankDownButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local rank = Normalize(rankNameEdit:GetText())
-    if rank == "" then
-        Print("Enter a guild rank name to move.")
-        return
-    end
+    if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
         if r:lower() == rank:lower() then foundAt = i break end
@@ -655,17 +821,152 @@ moveRankDownButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
 end)
 
-rankNameEdit:SetScript("OnEnterPressed", function()
-    addRankButton:Click()
+rankNameEdit:SetScript("OnEnterPressed", function() addRankButton:Click() end)
+
+refreshGuildRanksButton:SetScript("OnClick", function()
+    RefreshGuildRankButtons()
 end)
+
+for _, btn in ipairs(guildRankButtons) do
+    btn:SetScript("OnClick", function(self)
+        if not ARL.db then return end
+        local rank = self:GetText()
+        if rank == "" then return end
+        for _, existing in ipairs(ARL.db.guildRankPriority) do
+            if existing:lower() == rank:lower() then
+                Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", rank))
+                return
+            end
+        end
+        table.insert(ARL.db.guildRankPriority, rank)
+        RefreshRankListText()
+        Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", rank))
+    end)
+end
+
+-- ============================================================
+-- Tab 4 – Consumables: handlers
+-- ============================================================
+
+consumableAuditCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.consumableAuditEnabled = self:GetChecked() and true or false
+    Print(string.format("Consumable audit on ready check |cff%s%s|r.",
+        ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
+        ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
+end)
+
+local FindConsumableCategory = ARL.FindConsumableCategory or function(label)
+    local lower = label:lower()
+    local sys = ARL.SYSTEM_CONSUMABLES or {}
+    for i, cat in ipairs(sys) do
+        if cat.label:lower() == lower then return i, cat, true end
+    end
+    for i, cat in ipairs(ARL.db.trackedConsumables) do
+        if cat.label:lower() == lower then return i, cat, false end
+    end
+    return nil, nil, false
+end
+
+addConsumableButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local label   = Normalize(catEdit:GetText())
+    local spellId = tonumber(spellIdEdit:GetText())
+    if label == "" then Print("Enter a category name.") return end
+    if not spellId or spellId < 1 then Print("Enter a valid spell ID.") return end
+    local _, cat, isSystem = FindConsumableCategory(label)
+    if isSystem then
+        Print(string.format("|cffffd100%s|r is a built-in category and cannot be modified.", label))
+        return
+    end
+    if cat then
+        for _, id in ipairs(cat.spellIds) do
+            if id == spellId then
+                Print(string.format("Spell ID %d is already in |cffffd100%s|r.", spellId, cat.label))
+                return
+            end
+        end
+        table.insert(cat.spellIds, spellId)
+        Print(string.format("Added spell ID %d to |cffffd100%s|r.", spellId, cat.label))
+    else
+        table.insert(ARL.db.trackedConsumables, { label = label, spellIds = { spellId } })
+        Print(string.format("Created category |cffffd100%s|r with spell ID %d.", label, spellId))
+    end
+    spellIdEdit:SetText("")
+    RefreshConsumableListText()
+end)
+
+removeSpellIdButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local label   = Normalize(catEdit:GetText())
+    local spellId = tonumber(spellIdEdit:GetText())
+    if label == "" then Print("Enter a category name.") return end
+    if not spellId or spellId < 1 then Print("Enter a valid spell ID.") return end
+    local idx, cat, isSystem = FindConsumableCategory(label)
+    if not cat then Print(string.format("Category |cffffd100%s|r not found.", label)) return end
+    if isSystem then
+        Print(string.format("|cffffd100%s|r is a built-in category and cannot be modified.", label))
+        return
+    end
+    for i, id in ipairs(cat.spellIds) do
+        if id == spellId then
+            table.remove(cat.spellIds, i)
+            Print(string.format("Removed spell ID %d from |cffffd100%s|r.", spellId, cat.label))
+            if #cat.spellIds == 0 then
+                table.remove(ARL.db.trackedConsumables, idx)
+                Print(string.format("Category |cffffd100%s|r deleted (no spell IDs remaining).", cat.label))
+            end
+            spellIdEdit:SetText("")
+            RefreshConsumableListText()
+            return
+        end
+    end
+    Print(string.format("Spell ID %d was not found in |cffffd100%s|r.", spellId, cat.label))
+end)
+
+deleteCatButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    local label = Normalize(catEdit:GetText())
+    if label == "" then Print("Enter a category name to delete.") return end
+    local idx, cat, isSystem = FindConsumableCategory(label)
+    if not cat then Print(string.format("Category |cffffd100%s|r not found.", label)) return end
+    if isSystem then
+        Print(string.format("|cffffd100%s|r is a built-in category and cannot be deleted.", label))
+        return
+    end
+    table.remove(ARL.db.trackedConsumables, idx)
+    catEdit:SetText("")
+    RefreshConsumableListText()
+    Print(string.format("Deleted category |cffffd100%s|r.", cat.label))
+end)
+
+clearConsumablesButton:SetScript("OnClick", function()
+    if not ARL.db then return end
+    ARL.db.trackedConsumables = {}
+    RefreshConsumableListText()
+    Print("Cleared all custom consumable categories.")
+end)
+
+runAuditButton:SetScript("OnClick", function()
+    if ARL.RunConsumableAudit then ARL.RunConsumableAudit(true) end
+end)
+
+catEdit:SetScript("OnEnterPressed",    function() spellIdEdit:SetFocus() end)
+spellIdEdit:SetScript("OnEnterPressed", function() addConsumableButton:Click() end)
+
+-- ============================================================
+-- ShowOptions
+-- ============================================================
 
 function ARL:ShowOptions()
     if not self.db then
         Print("Not fully loaded yet. Please wait a moment.")
         return
     end
-
     RefreshUI()
     frame:Show()
     frame:Raise()
+    if currentTabIndex == 0 then
+        SelectTab(1)
+    end
 end
