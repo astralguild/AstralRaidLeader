@@ -1,0 +1,8 @@
+## Interface: 110100
+## Title: AstralRaidLeader
+## Notes: Automatically passes Raid Leader to a configurable list of preferred characters. Provides reminders when a hand-off is needed.
+## Author: AstralGuild
+## Version: 1.0.0
+## SavedVariables: AstralRaidLeaderDB
+
+AstralRaidLeader.lua
