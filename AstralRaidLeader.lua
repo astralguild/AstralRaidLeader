@@ -135,8 +135,9 @@ end
 
 local RequestGuildRosterIfStale
 
--- Build a map of { name:lower() -> rankName } for all guild members using the
--- cached guild roster.  Returns an empty table when the player is not in a guild.
+-- Build a map of { name:lower() -> {rankName, rankIndex} } for all guild members
+-- using the cached guild roster.  rankIndex is 1-based (matches GuildControlGetRankName).
+-- Returns an empty table when the player is not in a guild.
 local function GetGuildMemberRankMap()
     if not IsInGuild() then return {} end
     local rankMap = {}
@@ -146,11 +147,14 @@ local function GetGuildMemberRankMap()
         return rankMap
     end
     for i = 1, numMembers do
-        local name, rankName = GetGuildRosterInfo(i)
+        -- GetGuildRosterInfo: name, rankName, rankIndex (0-based), ...
+        local name, rankName, rankIndex0 = GetGuildRosterInfo(i)
         if name and rankName then
             local shortName = (name:match("^([^%-]+)") or name):lower()
-            rankMap[shortName]    = rankName
-            rankMap[name:lower()] = rankName
+            -- Convert 0-based rankIndex to 1-based so it aligns with GuildControlGetRankName(i).
+            local entry = { rankName = rankName, rankIndex = (tonumber(rankIndex0) or 0) + 1 }
+            rankMap[shortName]    = entry
+            rankMap[name:lower()] = entry
         end
     end
     return rankMap
@@ -159,6 +163,9 @@ end
 -- Return the highest-priority group member found via the guild rank priority list.
 -- Skips the current player (who already holds leadership).
 -- Returns rankName, rosterName or nil, nil.
+-- Priority entries may be plain strings (legacy) or {name, rankIndex} tables.
+-- When rankIndex is known, matching is done by index so duplicate-named ranks are
+-- handled correctly.
 local function GetTopAvailableByGuildRank()
     if not ARL.db.useGuildRankPriority then return nil, nil end
     if #ARL.db.guildRankPriority == 0 then return nil, nil end
@@ -168,13 +175,25 @@ local function GetTopAvailableByGuildRank()
     local guildRankMap = GetGuildMemberRankMap()
     local playerName   = UnitName("player")
 
-    for _, priorityRank in ipairs(ARL.db.guildRankPriority) do
-        local priorityLower = priorityRank:lower()
+    for _, priorityEntry in ipairs(ARL.db.guildRankPriority) do
+        -- Support legacy string entries and new {name, rankIndex} table entries.
+        local priorityName  = type(priorityEntry) == "table" and priorityEntry.name  or tostring(priorityEntry)
+        local priorityIndex = type(priorityEntry) == "table" and (priorityEntry.rankIndex or 0) or 0
+        local priorityLower = priorityName:lower()
+
         for memberLower, memberName in pairs(memberMap) do
-            local memberRank = guildRankMap[memberLower]
-            if memberRank and memberRank:lower() == priorityLower then
-                if not playerName or memberName:lower() ~= playerName:lower() then
-                    return priorityRank, memberName
+            local memberData = guildRankMap[memberLower]
+            if memberData then
+                local matched
+                if priorityIndex > 0 and memberData.rankIndex and memberData.rankIndex > 0 then
+                    -- Unambiguous: compare by rank slot index.
+                    matched = (memberData.rankIndex == priorityIndex)
+                else
+                    -- Fall back to name comparison for legacy entries.
+                    matched = (memberData.rankName:lower() == priorityLower)
+                end
+                if matched and (not playerName or memberName:lower() ~= playerName:lower()) then
+                    return priorityName, memberName
                 end
             end
         end
@@ -305,8 +324,12 @@ local function PrintLeaderReminderMessage()
             .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
     end
     if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        local rankNames = {}
+        for _, e in ipairs(ARL.db.guildRankPriority) do
+            rankNames[#rankNames + 1] = type(e) == "table" and e.name or tostring(e)
+        end
         parts[#parts + 1] = "guild rank priority: |cffffd100"
-            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
+            .. table.concat(rankNames, ", ") .. "|r"
     end
     local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
     Print("Reminder: You are the Raid Leader." .. detail
@@ -993,13 +1016,28 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Usage: /arl addrank <GuildRankName>")
             return
         end
-        for _, rank in ipairs(ARL.db.guildRankPriority) do
-            if rank:lower() == arg:lower() then
+        -- Resolve the rank index so duplicate-named ranks are stored unambiguously.
+        local resolvedIndex = 0
+        if IsInGuild() then
+            local numRanks = GuildControlGetNumRanks()
+            for ri = 1, numRanks do
+                if (GuildControlGetRankName(ri) or ""):lower() == arg:lower() then
+                    resolvedIndex = ri
+                    break
+                end
+            end
+        end
+        for _, entry in ipairs(ARL.db.guildRankPriority) do
+            local entryName  = type(entry) == "table" and entry.name  or tostring(entry)
+            local entryIndex = type(entry) == "table" and (entry.rankIndex or 0) or 0
+            local isDup = (resolvedIndex > 0 and entryIndex == resolvedIndex)
+                       or (resolvedIndex == 0 and entryName:lower() == arg:lower())
+            if isDup then
                 Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", arg))
                 return
             end
         end
-        table.insert(ARL.db.guildRankPriority, arg)
+        table.insert(ARL.db.guildRankPriority, { name = arg, rankIndex = resolvedIndex })
         Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", arg))
 
     -- /arl removerank <rankname>
@@ -1008,10 +1046,11 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Usage: /arl removerank <GuildRankName>")
             return
         end
-        for i, rank in ipairs(ARL.db.guildRankPriority) do
-            if rank:lower() == arg:lower() then
+        for i, entry in ipairs(ARL.db.guildRankPriority) do
+            local entryName = type(entry) == "table" and entry.name or tostring(entry)
+            if entryName:lower() == arg:lower() then
                 table.remove(ARL.db.guildRankPriority, i)
-                Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", rank))
+                Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", entryName))
                 return
             end
         end
@@ -1023,8 +1062,9 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("The guild rank priority list is empty. Add ranks with /arl addrank <rankname>.")
         else
             Print("Guild rank priority (highest priority first):")
-            for i, rank in ipairs(ARL.db.guildRankPriority) do
-                Print(string.format("  %d. |cffffd100%s|r", i, rank))
+            for i, entry in ipairs(ARL.db.guildRankPriority) do
+                local entryName = type(entry) == "table" and entry.name or tostring(entry)
+                Print(string.format("  %d. |cffffd100%s|r", i, entryName))
             end
         end
 
@@ -1049,7 +1089,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         end
         local foundAt = nil
         for i, r in ipairs(ARL.db.guildRankPriority) do
-            if r:lower() == name:lower() then
+            local rName = type(r) == "table" and r.name or tostring(r)
+            if rName:lower() == name:lower() then
                 foundAt = i
                 break
             end
@@ -1059,13 +1100,15 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             return
         end
         pos = math.min(pos, #ARL.db.guildRankPriority)
+        local currentName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
         if foundAt == pos then
-            Print(string.format("|cffffd100%s|r is already at position %d.", ARL.db.guildRankPriority[foundAt], pos))
+            Print(string.format("|cffffd100%s|r is already at position %d.", currentName, pos))
             return
         end
         local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+        local entryName = type(entry) == "table" and entry.name or tostring(entry)
         table.insert(ARL.db.guildRankPriority, pos, entry)
-        Print(string.format("Moved |cffffd100%s|r to position %d.", entry, pos))
+        Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, pos))
 
     -- /arl settings | /arl options | /arl config
     elseif cmd == "settings" or cmd == "options" or cmd == "config" then
