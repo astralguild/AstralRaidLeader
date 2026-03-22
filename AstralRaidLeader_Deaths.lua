@@ -14,7 +14,7 @@ end
 
 local FRAME_W, FRAME_H = 520, 430
 
-local frame = CreateFrame("Frame", "AstralRaidLeaderDeathRecapFrame", UIParent, "BasicFrameTemplateWithInset")
+local frame = CreateFrame("Frame", "AstralRaidLeaderDeathRecapFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
 frame:SetSize(FRAME_W, FRAME_H)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
@@ -22,11 +22,66 @@ frame:SetFrameStrata("DIALOG")
 frame:SetFrameLevel(110)
 frame:SetToplevel(true)
 frame:SetMovable(true)
-frame:EnableMouse(true)
+frame:EnableMouse(false)
+frame:SetAlpha(0)
 frame:Hide()
 
-if frame.TitleText then
-    frame.TitleText:SetText("Death Recap")
+frame:HookScript("OnShow", function(self)
+    self:SetAlpha(1)
+    self:EnableMouse(true)
+end)
+
+frame:HookScript("OnHide", function(self)
+    self:SetAlpha(0)
+    self:EnableMouse(false)
+end)
+
+if frame.SetBackdrop then
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    frame:SetBackdropColor(0.03, 0.05, 0.08, 0.985)
+    frame:SetBackdropBorderColor(0.34, 0.42, 0.54, 0.96)
+end
+
+local header = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+header:SetPoint("TOPLEFT", 7, -7)
+header:SetPoint("TOPRIGHT", -30, -7)
+header:SetHeight(28)
+header:SetFrameLevel(frame:GetFrameLevel() + 8)
+if header.SetBackdrop then
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    header:SetBackdropColor(0.05, 0.09, 0.15, 0.88)
+end
+
+local headerDivider = header:CreateTexture(nil, "BORDER")
+headerDivider:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 0, 0)
+headerDivider:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0)
+headerDivider:SetHeight(1)
+headerDivider:SetColorTexture(0.44, 0.54, 0.68, 0.70)
+
+local titleText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+titleText:SetPoint("CENTER", header, "CENTER", 0, 0)
+titleText:SetText("Death Recap")
+titleText:SetTextColor(1.0, 0.96, 0.78)
+titleText:SetShadowColor(0.0, 0.0, 0.0, 0.95)
+titleText:SetShadowOffset(1, -1)
+titleText:SetAlpha(1)
+
+local topCloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+topCloseButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -3, -3)
+topCloseButton:SetScript("OnClick", function() frame:Hide() end)
+
+local SkinPanel = ARL.UI and ARL.UI.SkinPanel
+local SkinActionButton = ARL.UI and ARL.UI.SkinActionButton
+if not SkinPanel or not SkinActionButton then
+    Print("UI helpers are unavailable; death recap window is disabled.")
+    return
 end
 
 local dragRegion = CreateFrame("Frame", nil, frame)
@@ -40,24 +95,47 @@ dragRegion:SetScript("OnDragStop",  function() frame:StopMovingOrSizing() end)
 
 table.insert(UISpecialFrames, frame:GetName())
 
+local contentPanel = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+contentPanel:SetPoint("TOPLEFT", 8, -40)
+contentPanel:SetPoint("BOTTOMRIGHT", -8, 44)
+SkinPanel(contentPanel, 0.05, 0.08, 0.12, 0.86, 0.23, 0.30, 0.40, 0.42)
+
 -- Subtitle line (encounter + date)
-local subtitleText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-subtitleText:SetPoint("TOPLEFT", 16, -32)
-subtitleText:SetWidth(FRAME_W - 40)
+local subtitleText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+subtitleText:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 10, -10)
+subtitleText:SetWidth(FRAME_W - 56)
 subtitleText:SetJustifyH("LEFT")
+subtitleText:SetTextColor(0.82, 0.86, 0.93)
 subtitleText:SetText("")
 
 -- Summary line (e.g. "5 deaths recorded")
-local summaryText = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-summaryText:SetPoint("TOPLEFT", 16, -52)
-summaryText:SetWidth(FRAME_W - 40)
+local summaryText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+summaryText:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 10, -30)
+summaryText:SetWidth(FRAME_W - 56)
 summaryText:SetJustifyH("LEFT")
+summaryText:SetTextColor(0.96, 0.82, 0.22)
 summaryText:SetText("")
 
 -- Scroll frame for the death list
+-- Right inset is -30 to leave room for the scroll bar track inside the panel.
 local scrollFrame = CreateFrame("ScrollFrame", "AstralRaidLeaderDeathScroll", frame, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT",  16, -80)
-scrollFrame:SetPoint("BOTTOMRIGHT", -32, 44)
+scrollFrame:SetPoint("TOPLEFT",  contentPanel, "TOPLEFT", 10, -56)
+scrollFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -30, 10)
+
+-- Reanchor the template scrollbar so it sits inside contentPanel rather than
+-- spilling outside (the template default is +24px right of the scroll frame).
+local _sb = _G["AstralRaidLeaderDeathScrollScrollBar"]
+if _sb then
+    _sb:ClearAllPoints()
+    _sb:SetPoint("TOPRIGHT",    contentPanel, "TOPRIGHT",    -4, -56)
+    _sb:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -4,  10)
+end
+
+local listInset = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+listInset:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -4, 4)
+listInset:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 4, -4)
+SkinPanel(listInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
+listInset:SetFrameLevel(scrollFrame:GetFrameLevel() - 1)
 
 local content = CreateFrame("Frame", nil, scrollFrame)
 content:SetSize(scrollFrame:GetWidth() or (FRAME_W - 48), 1)
@@ -69,6 +147,7 @@ listText:SetPoint("TOPRIGHT", -4, -4)
 listText:SetJustifyH("LEFT")
 listText:SetJustifyV("TOP")
 listText:SetSpacing(3)
+listText:SetTextColor(0.90, 0.92, 0.96)
 listText:SetText("")
 
 -- Close button
@@ -77,6 +156,7 @@ closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
 closeButton:SetSize(100, 24)
 closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function() frame:Hide() end)
+SkinActionButton(closeButton)
 
 -- ============================================================
 -- Populate helpers

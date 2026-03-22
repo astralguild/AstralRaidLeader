@@ -24,20 +24,68 @@ local function NamesMatch(a, b)
     return ShortName(al) == ShortName(bl)
 end
 
-local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-frame:SetSize(560, 500)
+local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+frame:SetSize(760, 500)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
 frame:SetFrameLevel(100)
 frame:SetToplevel(true)
 frame:SetMovable(true)
-frame:EnableMouse(true)
+frame:EnableMouse(false)
+frame:SetAlpha(0)
 frame:Hide()
 
-if frame.TitleText then
-    frame.TitleText:SetText("AstralRaidLeader Settings")
+frame:HookScript("OnShow", function(self)
+    self:SetAlpha(1)
+    self:EnableMouse(true)
+end)
+
+frame:HookScript("OnHide", function(self)
+    self:SetAlpha(0)
+    self:EnableMouse(false)
+end)
+
+if frame.SetBackdrop then
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    frame:SetBackdropColor(0.03, 0.05, 0.08, 0.985)
+    frame:SetBackdropBorderColor(0.34, 0.42, 0.54, 0.96)
 end
+
+local header = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+header:SetPoint("TOPLEFT", 7, -7)
+header:SetPoint("TOPRIGHT", -30, -7)
+header:SetHeight(28)
+header:SetFrameLevel(frame:GetFrameLevel() + 8)
+if header.SetBackdrop then
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    header:SetBackdropColor(0.05, 0.09, 0.15, 0.88)
+end
+
+local headerDivider = header:CreateTexture(nil, "BORDER")
+headerDivider:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 0, 0)
+headerDivider:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0)
+headerDivider:SetHeight(1)
+headerDivider:SetColorTexture(0.44, 0.54, 0.68, 0.70)
+
+local titleText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+titleText:SetPoint("CENTER", header, "CENTER", 0, 0)
+titleText:SetText("AstralRaidLeader Settings")
+titleText:SetTextColor(1.0, 0.96, 0.78)
+titleText:SetShadowColor(0.0, 0.0, 0.0, 0.95)
+titleText:SetShadowOffset(1, -1)
+titleText:SetAlpha(1)
+
+local topCloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+topCloseButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -3, -3)
+topCloseButton:SetScript("OnClick", function() frame:Hide() end)
 
 local dragRegion = CreateFrame("Frame", nil, frame)
 dragRegion:SetPoint("TOPLEFT", 8, -6)
@@ -52,16 +100,114 @@ table.insert(UISpecialFrames, frame:GetName())
 
 local updating = false
 
+local THEME = {
+    goldActiveText = { 0.95, 0.81, 0.24 },
+    mutedText = { 0.80, 0.82, 0.86 },
+    tabIdleBG = { 0.11, 0.13, 0.17, 0.24 },
+    tabActiveBG = { 0.16, 0.19, 0.25, 0.34 },
+    hover = { 1.0, 1.0, 1.0, 0.04 },
+    accent = { 0.86, 0.69, 0.22, 1.0 },
+}
+
+local SkinPanel = ARL.UI and ARL.UI.SkinPanel
+local SkinActionButton = ARL.UI and ARL.UI.SkinActionButton
+if not SkinPanel or not SkinActionButton then
+    Print("UI helpers are unavailable; settings window is disabled.")
+    return
+end
+
+local function SkinInputBox(edit)
+    if not edit or edit._arlSkinned then return end
+
+    local regions = { edit:GetRegions() }
+    for _, region in ipairs(regions) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            region:SetAlpha(0)
+        end
+    end
+
+    local skin = CreateFrame("Frame", nil, edit, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    skin:SetPoint("TOPLEFT", edit, "TOPLEFT", -2, 2)
+    skin:SetPoint("BOTTOMRIGHT", edit, "BOTTOMRIGHT", 2, -2)
+    skin:SetFrameLevel(math.max(1, edit:GetFrameLevel() - 1))
+    skin:EnableMouse(false)
+    SkinPanel(skin, 0.05, 0.08, 0.12, 0.96, 0.32, 0.41, 0.53, 0.92)
+
+    if edit.SetTextInsets then
+        edit:SetTextInsets(8, 8, 4, 4)
+    end
+
+    edit._arlSkinned = true
+end
+
+local function StyleCheckbox(cb)
+    if not cb or cb._arlStyled then return end
+
+    local label = cb.Text or cb:GetFontString()
+    if label and label.SetTextColor then
+        label:SetTextColor(THEME.mutedText[1], THEME.mutedText[2], THEME.mutedText[3])
+    end
+
+    cb:HookScript("OnEnter", function(self)
+        local text = self.Text or self:GetFontString()
+        if text and text.SetTextColor then
+            text:SetTextColor(0.92, 0.94, 0.98)
+        end
+    end)
+
+    cb:HookScript("OnLeave", function(self)
+        local text = self.Text or self:GetFontString()
+        if text and text.SetTextColor then
+            text:SetTextColor(THEME.mutedText[1], THEME.mutedText[2], THEME.mutedText[3])
+        end
+    end)
+
+    cb._arlStyled = true
+end
+
 -- ============================================================
 -- Tab panels
 -- Each panel is a child of the main frame occupying the content
 -- area below the title/tab bar, leaving room for the Close button.
 -- ============================================================
 
+local navContainer = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+navContainer:SetPoint("TOPLEFT", 8, -58)
+navContainer:SetPoint("BOTTOMRIGHT", -8, 44)
+SkinPanel(navContainer, 0.05, 0.08, 0.12, 0.86, 0.23, 0.30, 0.40, 0.42)
+
+local navBG = navContainer:CreateTexture(nil, "BACKGROUND")
+navBG:SetAllPoints()
+navBG:SetColorTexture(0.03, 0.04, 0.06, 0.18)
+
+local subTabSidebar = CreateFrame("Frame", nil, navContainer, BackdropTemplateMixin and "BackdropTemplate" or nil)
+subTabSidebar:SetPoint("TOPLEFT", 8, -8)
+subTabSidebar:SetPoint("BOTTOMLEFT", 8, 8)
+subTabSidebar:SetWidth(165)
+SkinPanel(subTabSidebar, 0.08, 0.11, 0.16, 0.72, 0.24, 0.31, 0.42, 0.40)
+
+local sidebarBG = subTabSidebar:CreateTexture(nil, "BACKGROUND")
+sidebarBG:SetAllPoints()
+sidebarBG:SetColorTexture(0.06, 0.08, 0.12, 0.20)
+
+local contentHost = CreateFrame("Frame", nil, navContainer)
+contentHost:SetPoint("TOPLEFT", subTabSidebar, "TOPRIGHT", 10, 0)
+contentHost:SetPoint("BOTTOMRIGHT", navContainer, "BOTTOMRIGHT", -8, 8)
+
+local contentBG = contentHost:CreateTexture(nil, "BACKGROUND")
+contentBG:SetAllPoints()
+contentBG:SetColorTexture(0.05, 0.07, 0.10, 0.24)
+
+local sidebarDivider = navContainer:CreateTexture(nil, "BORDER")
+sidebarDivider:SetColorTexture(0.62, 0.69, 0.78, 0.08)
+sidebarDivider:SetPoint("TOPLEFT", subTabSidebar, "TOPRIGHT", 4, -4)
+sidebarDivider:SetPoint("BOTTOMLEFT", subTabSidebar, "BOTTOMRIGHT", 4, 4)
+sidebarDivider:SetWidth(1)
+
 local function CreatePanel()
-    local p = CreateFrame("Frame", nil, frame)
-    p:SetPoint("TOPLEFT",     frame, "TOPLEFT",      8,  -32)
-    p:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",  -8,  44)
+    local p = CreateFrame("Frame", nil, contentHost)
+    p:SetPoint("TOPLEFT", 4, -4)
+    p:SetPoint("BOTTOMRIGHT", -4, 4)
     p:Hide()
     return p
 end
@@ -75,43 +221,201 @@ local panels = {
 }
 
 -- ============================================================
--- Tab buttons (PanelTabButtonTemplate)
--- Names must be frame:GetName().."Tab"..i for PanelTemplates_* to work.
+-- Navigation buttons
 -- ============================================================
 
-local TAB_LABELS = { "General", "Leaders", "Guild Ranks", "Consumables", "Deaths" }
-local tabs = {}
-local currentTabIndex = 0  -- tracked locally; PanelTemplates_SetSelectedTab removed in 12.x
+local MAIN_TABS = {
+    {
+        label = "Auto Invite",
+        subTabs = {
+            { label = "General", panel = 1 },
+            { label = "Leaders", panel = 2 },
+            { label = "Guild Ranks", panel = 3 },
+        },
+    },
+    {
+        label = "Consumable Checks",
+        subTabs = {
+            { label = "Consumables", panel = 4 },
+        },
+    },
+    {
+        label = "Death Recaps",
+        subTabs = {
+            { label = "Death Recap", panel = 5 },
+        },
+    },
+}
 
-local function SelectTab(index)
+local mainTabs = {}
+local subTabButtons = {}
+local currentMainTabIndex = 0
+local currentSubTabIndex = 1
+local SelectMainTab
+
+local function ShowOnlyPanel(panelIndex)
     for i, panel in ipairs(panels) do
-        if i == index then panel:Show() else panel:Hide() end
+        if i == panelIndex then panel:Show() else panel:Hide() end
     end
-    currentTabIndex = index
-    frame.selectedTab = index
-    for i, tab in ipairs(tabs) do
-        if PanelTemplates_SelectTab and PanelTemplates_DeselectTab then
-            if i == index then PanelTemplates_SelectTab(tab)
-            else PanelTemplates_DeselectTab(tab) end
+end
+
+for i, tabConfig in ipairs(MAIN_TABS) do
+    local tab = CreateFrame("Button", nil, frame)
+    tab:SetSize(170, 24)
+    if i == 1 then
+        tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -34)
+    else
+        tab:SetPoint("LEFT", mainTabs[i - 1], "RIGHT", 6, 0)
+    end
+    tab:SetID(i)
+
+    local bg = tab:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4])
+    tab._bg = bg
+
+    local hover = tab:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(THEME.hover[1], THEME.hover[2], THEME.hover[3], THEME.hover[4])
+
+    local indicator = tab:CreateTexture(nil, "ARTWORK")
+    indicator:SetPoint("BOTTOMLEFT", 1, 0)
+    indicator:SetPoint("BOTTOMRIGHT", -1, 0)
+    indicator:SetHeight(3)
+    indicator:SetColorTexture(THEME.accent[1], THEME.accent[2], THEME.accent[3], THEME.accent[4])
+    indicator:Hide()
+    tab._indicator = indicator
+
+    local label = tab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    label:SetPoint("LEFT", 10, 0)
+    label:SetPoint("RIGHT", -10, 0)
+    label:SetJustifyH("CENTER")
+    label:SetWordWrap(false)
+    label:SetText(tabConfig.label)
+    tab.Label = label
+
+    tab:SetScript("OnClick", function(self) SelectMainTab(self:GetID()) end)
+    mainTabs[i] = tab
+end
+
+for i = 1, 6 do
+    local btn = CreateFrame("Button", nil, subTabSidebar)
+    btn:SetSize(145, 24)
+    if i == 1 then
+        btn:SetPoint("TOPLEFT", 10, -10)
+    else
+        btn:SetPoint("TOPLEFT", subTabButtons[i - 1], "BOTTOMLEFT", 0, -4)
+    end
+    btn:EnableMouse(true)
+
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4])
+    btn._bg = bg
+
+    local hover = btn:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(THEME.hover[1], THEME.hover[2], THEME.hover[3], THEME.hover[4])
+
+    local indicator = btn:CreateTexture(nil, "ARTWORK")
+    indicator:SetPoint("TOPLEFT", 0, -1)
+    indicator:SetPoint("BOTTOMLEFT", 0, 1)
+    indicator:SetWidth(3)
+    indicator:SetColorTexture(THEME.accent[1], THEME.accent[2], THEME.accent[3], THEME.accent[4])
+    indicator:Hide()
+    btn._indicator = indicator
+
+    local label = btn:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    label:SetPoint("LEFT", 12, 0)
+    label:SetPoint("RIGHT", -8, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    btn.Label = label
+
+    btn:Hide()
+    subTabButtons[i] = btn
+end
+
+local function SetTabLabelColor(tab, r, g, b)
+    local label = tab.Text or tab.Label or tab:GetFontString()
+    if label and label.SetTextColor then
+        label:SetTextColor(r, g, b)
+    end
+end
+
+local function SetMainTabVisual(selectedIndex)
+    for i, tab in ipairs(mainTabs) do
+        if i == selectedIndex then
+            SetTabLabelColor(tab, THEME.goldActiveText[1], THEME.goldActiveText[2], THEME.goldActiveText[3])
+            if tab._bg then
+                tab._bg:SetColorTexture(THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4])
+            end
+            if tab._indicator then tab._indicator:Show() end
+        else
+            SetTabLabelColor(tab, THEME.mutedText[1], THEME.mutedText[2], THEME.mutedText[3])
+            if tab._bg then
+                tab._bg:SetColorTexture(THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4])
+            end
+            if tab._indicator then tab._indicator:Hide() end
         end
     end
 end
 
-for i, label in ipairs(TAB_LABELS) do
-    local tab = CreateFrame("Button", frame:GetName() .. "Tab" .. i, frame, "PanelTabButtonTemplate")
-    tab:SetText(label)
-    if i == 1 then
-        tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 4, 2)
-    else
-        tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", -14, 0)
+local function SetSubTabVisual(selectedIndex)
+    for i, tab in ipairs(subTabButtons) do
+        if tab:IsShown() then
+            if i == selectedIndex then
+                SetTabLabelColor(tab, THEME.goldActiveText[1], THEME.goldActiveText[2], THEME.goldActiveText[3])
+                if tab._bg then
+                    tab._bg:SetColorTexture(THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4])
+                end
+                if tab._indicator then tab._indicator:Show() end
+            else
+                SetTabLabelColor(tab, THEME.mutedText[1], THEME.mutedText[2], THEME.mutedText[3])
+                if tab._bg then
+                    tab._bg:SetColorTexture(THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4])
+                end
+                if tab._indicator then tab._indicator:Hide() end
+            end
+        end
     end
-    tab:SetID(i)
-    tab:SetScript("OnClick", function(self) SelectTab(self:GetID()) end)
-    PanelTemplates_TabResize(tab, 0)
-    tabs[i] = tab
 end
 
-PanelTemplates_SetNumTabs(frame, #TAB_LABELS)
+local function SelectSubTab(index)
+    local mainConfig = MAIN_TABS[currentMainTabIndex]
+    if not mainConfig then return end
+    local subConfig = mainConfig.subTabs[index]
+    if not subConfig then return end
+
+    currentSubTabIndex = index
+    SetSubTabVisual(index)
+    ShowOnlyPanel(subConfig.panel)
+end
+
+local function BuildSubTabs(mainIndex)
+    local mainConfig = MAIN_TABS[mainIndex]
+    if not mainConfig then return end
+
+    for i, btn in ipairs(subTabButtons) do
+        local subConfig = mainConfig.subTabs[i]
+        if subConfig then
+            btn.Label:SetText(subConfig.label)
+            btn:SetScript("OnClick", function() SelectSubTab(i) end)
+            btn:Show()
+        else
+            btn.Label:SetText("")
+            btn:Hide()
+        end
+    end
+end
+
+SelectMainTab = function(index)
+    currentMainTabIndex = index
+    SetMainTabVisual(index)
+
+    BuildSubTabs(index)
+    SelectSubTab(1)
+end
 
 -- ============================================================
 -- Helper: create a checkbox parented to the given panel frame.
@@ -201,9 +505,10 @@ local preferredHeader = p2:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 preferredHeader:SetPoint("TOPLEFT", 8, -8)
 preferredHeader:SetText("Preferred leaders (highest priority first)")
 
-local listInset = CreateFrame("Frame", nil, p2, "InsetFrameTemplate3")
+local listInset = CreateFrame("Frame", nil, p2, BackdropTemplateMixin and "BackdropTemplate" or nil)
 listInset:SetPoint("TOPLEFT", 8, -28)
 listInset:SetSize(528, 140)
+SkinPanel(listInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
 
 local listText = listInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 listText:SetPoint("TOPLEFT", 8, -8)
@@ -267,9 +572,10 @@ local guildRankListLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 guildRankListLabel:SetPoint("TOPLEFT", 8, -44)
 guildRankListLabel:SetText("Guild rank priority (highest priority first)")
 
-local guildRankListInset = CreateFrame("Frame", nil, p3, "InsetFrameTemplate3")
+local guildRankListInset = CreateFrame("Frame", nil, p3, BackdropTemplateMixin and "BackdropTemplate" or nil)
 guildRankListInset:SetPoint("TOPLEFT", 8, -64)
-guildRankListInset:SetSize(528, 120)
+guildRankListInset:SetSize(528, 96)
+SkinPanel(guildRankListInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
 
 local guildRankListText = guildRankListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 guildRankListText:SetPoint("TOPLEFT", 8, -8)
@@ -278,11 +584,11 @@ guildRankListText:SetJustifyH("LEFT")
 guildRankListText:SetJustifyV("TOP")
 
 local rankNameLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-rankNameLabel:SetPoint("TOPLEFT", 8, -194)
+rankNameLabel:SetPoint("TOPLEFT", 8, -170)
 rankNameLabel:SetText("Guild Rank")
 
 local rankNameEdit = CreateFrame("EditBox", nil, p3, "InputBoxTemplate")
-rankNameEdit:SetPoint("TOPLEFT", 8, -214)
+rankNameEdit:SetPoint("TOPLEFT", 8, -190)
 rankNameEdit:SetSize(180, 24)
 rankNameEdit:SetAutoFocus(false)
 rankNameEdit:SetMaxLetters(48)
@@ -303,7 +609,7 @@ clearRanksButton:SetSize(70, 24)
 clearRanksButton:SetText("Clear")
 
 local moveRankUpButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-moveRankUpButton:SetPoint("TOPLEFT", 8, -244)
+moveRankUpButton:SetPoint("TOPLEFT", 8, -220)
 moveRankUpButton:SetSize(90, 24)
 moveRankUpButton:SetText("Move Up")
 
@@ -313,7 +619,7 @@ moveRankDownButton:SetSize(100, 24)
 moveRankDownButton:SetText("Move Down")
 
 local guildRankPickerLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guildRankPickerLabel:SetPoint("TOPLEFT", 8, -278)
+guildRankPickerLabel:SetPoint("TOPLEFT", 8, -252)
 guildRankPickerLabel:SetText("Available ranks in your guild (click to add):")
 
 local refreshGuildRanksButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
@@ -328,15 +634,15 @@ for _i = 1, MAX_RANK_BUTTONS do
     local col = (_i - 1) % 2
     local row = math.floor((_i - 1) / 2)
     local btn = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-    btn:SetPoint("TOPLEFT", 8 + col * 266, -300 + row * -28)
-    btn:SetSize(257, 22)
+    btn:SetPoint("TOPLEFT", 8 + col * 266, -270 + row * -22)
+    btn:SetSize(257, 20)
     btn:SetText("")
     btn:Hide()
     guildRankButtons[_i] = btn
 end
 
 local noGuildRanksText = p3:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-noGuildRanksText:SetPoint("TOPLEFT", 8, -304)
+noGuildRanksText:SetPoint("TOPLEFT", 8, -274)
 noGuildRanksText:SetText("")
 noGuildRanksText:Hide()
 
@@ -355,9 +661,10 @@ local consumableListLabel = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal"
 consumableListLabel:SetPoint("TOPLEFT", 8, -44)
 consumableListLabel:SetText("Tracked consumable categories")
 
-local consumableListInset = CreateFrame("Frame", nil, p4, "InsetFrameTemplate3")
+local consumableListInset = CreateFrame("Frame", nil, p4, BackdropTemplateMixin and "BackdropTemplate" or nil)
 consumableListInset:SetPoint("TOPLEFT", 8, -64)
 consumableListInset:SetSize(528, 140)
+SkinPanel(consumableListInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
 
 local consumableListText = consumableListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 consumableListText:SetPoint("TOPLEFT", 8, -8)
@@ -370,44 +677,44 @@ catLabelTitle:SetPoint("TOPLEFT", 8, -214)
 catLabelTitle:SetText("Category")
 
 local spellIdTitle = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-spellIdTitle:SetPoint("TOPLEFT", 196, -214)
+spellIdTitle:SetPoint("TOPLEFT", 270, -214)
 spellIdTitle:SetText("Spell ID")
 
 local catEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
 catEdit:SetPoint("TOPLEFT", 8, -234)
-catEdit:SetSize(180, 24)
+catEdit:SetSize(250, 24)
 catEdit:SetAutoFocus(false)
 catEdit:SetMaxLetters(64)
 
 local spellIdEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
-spellIdEdit:SetPoint("TOPLEFT", 196, -234)
-spellIdEdit:SetSize(100, 24)
+spellIdEdit:SetPoint("TOPLEFT", 270, -234)
+spellIdEdit:SetSize(90, 24)
 spellIdEdit:SetAutoFocus(false)
 spellIdEdit:SetMaxLetters(12)
 
 local addConsumableButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-addConsumableButton:SetPoint("LEFT", spellIdEdit, "RIGHT", 10, 0)
-addConsumableButton:SetSize(90, 24)
+addConsumableButton:SetPoint("TOPLEFT", 8, -266)
+addConsumableButton:SetSize(160, 24)
 addConsumableButton:SetText("Add Spell ID")
 
 local removeSpellIdButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-removeSpellIdButton:SetPoint("LEFT", addConsumableButton, "RIGHT", 6, 0)
-removeSpellIdButton:SetSize(110, 24)
+removeSpellIdButton:SetPoint("LEFT", addConsumableButton, "RIGHT", 10, 0)
+removeSpellIdButton:SetSize(160, 24)
 removeSpellIdButton:SetText("Remove Spell ID")
 
 local deleteCatButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-deleteCatButton:SetPoint("TOPLEFT", 8, -264)
-deleteCatButton:SetSize(110, 24)
+deleteCatButton:SetPoint("LEFT", removeSpellIdButton, "RIGHT", 10, 0)
+deleteCatButton:SetSize(160, 24)
 deleteCatButton:SetText("Delete Category")
 
 local clearConsumablesButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-clearConsumablesButton:SetPoint("LEFT", deleteCatButton, "RIGHT", 8, 0)
-clearConsumablesButton:SetSize(80, 24)
+clearConsumablesButton:SetPoint("TOPLEFT", 8, -298)
+clearConsumablesButton:SetSize(160, 24)
 clearConsumablesButton:SetText("Clear All")
 
 local runAuditButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-runAuditButton:SetPoint("LEFT", clearConsumablesButton, "RIGHT", 8, 0)
-runAuditButton:SetSize(110, 24)
+runAuditButton:SetPoint("LEFT", clearConsumablesButton, "RIGHT", 10, 0)
+runAuditButton:SetSize(160, 24)
 runAuditButton:SetText("Run Audit Now")
 
 -- ============================================================
@@ -436,6 +743,33 @@ local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
 openRecapButton:SetPoint("TOPLEFT", 8, -100)
 openRecapButton:SetSize(140, 24)
 openRecapButton:SetText("Open Last Recap")
+
+for _, cb in ipairs({
+    autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
+    groupAllCB, groupRaidCB, groupPartyCB,
+    useGuildRankCB, consumableAuditCB,
+    deathTrackingCB, showRecapCB,
+}) do
+    StyleCheckbox(cb)
+end
+
+for _, edit in ipairs({ nameEdit, rankNameEdit, catEdit, spellIdEdit }) do
+    SkinInputBox(edit)
+end
+
+for _, btn in ipairs({
+    closeButton,
+    addButton, removeButton, clearButton, promoteButton, moveUpButton, moveDownButton,
+    addRankButton, removeRankButton, clearRanksButton, moveRankUpButton, moveRankDownButton, refreshGuildRanksButton,
+    addConsumableButton, removeSpellIdButton, deleteCatButton, clearConsumablesButton, runAuditButton,
+    openRecapButton,
+}) do
+    SkinActionButton(btn)
+end
+
+for _, btn in ipairs(guildRankButtons) do
+    SkinActionButton(btn)
+end
 
 -- ============================================================
 -- Refresh helpers
@@ -467,8 +801,9 @@ local function RefreshRankListText()
         return
     end
     local lines = {}
-    for i, rank in ipairs(ARL.db.guildRankPriority) do
-        lines[#lines + 1] = string.format("%d. %s", i, rank)
+    for i, entry in ipairs(ARL.db.guildRankPriority) do
+        local name = type(entry) == "table" and entry.name or tostring(entry)
+        lines[#lines + 1] = string.format("%d. %s", i, name)
     end
     guildRankListText:SetText(table.concat(lines, "\n"))
 end
@@ -496,6 +831,7 @@ local function RefreshGuildRankButtons()
         local rankName = GuildControlGetRankName(i)
         if rankName and rankName ~= "" then
             guildRankButtons[i]:SetText(rankName)
+            guildRankButtons[i]._rankIndex = i
             guildRankButtons[i]:Show()
         end
     end
@@ -747,13 +1083,28 @@ addRankButton:SetScript("OnClick", function()
     if not ARL.db then return end
     local rank = Normalize(rankNameEdit:GetText())
     if rank == "" then return end
+    -- Resolve rank index for unambiguous storage when duplicate rank names exist.
+    local rankIndex = 0
+    if IsInGuild() then
+        local numRanks = GuildControlGetNumRanks()
+        for ri = 1, numRanks do
+            if (GuildControlGetRankName(ri) or ""):lower() == rank:lower() then
+                rankIndex = ri
+                break
+            end
+        end
+    end
     for _, existing in ipairs(ARL.db.guildRankPriority) do
-        if existing:lower() == rank:lower() then
+        local existingName  = type(existing) == "table" and existing.name  or tostring(existing)
+        local existingIndex = type(existing) == "table" and (existing.rankIndex or 0) or 0
+        local isDup = (rankIndex > 0 and existingIndex == rankIndex)
+                   or (rankIndex == 0 and existingName:lower() == rank:lower())
+        if isDup then
             Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", rank))
             return
         end
     end
-    table.insert(ARL.db.guildRankPriority, rank)
+    table.insert(ARL.db.guildRankPriority, { name = rank, rankIndex = rankIndex })
     rankNameEdit:SetText("")
     RefreshRankListText()
     Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", rank))
@@ -764,11 +1115,12 @@ removeRankButton:SetScript("OnClick", function()
     local rank = Normalize(rankNameEdit:GetText())
     if rank == "" then Print("Enter a guild rank name to remove.") return end
     for i, existing in ipairs(ARL.db.guildRankPriority) do
-        if existing:lower() == rank:lower() then
+        local existingName = type(existing) == "table" and existing.name or tostring(existing)
+        if existingName:lower() == rank:lower() then
             table.remove(ARL.db.guildRankPriority, i)
             rankNameEdit:SetText("")
             RefreshRankListText()
-            Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", existing))
+            Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", existingName))
             return
         end
     end
@@ -788,20 +1140,23 @@ moveRankUpButton:SetScript("OnClick", function()
     if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
-        if r:lower() == rank:lower() then foundAt = i break end
+        local rName = type(r) == "table" and r.name or tostring(r)
+        if rName:lower() == rank:lower() then foundAt = i break end
     end
     if not foundAt then
         Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
         return
     end
     if foundAt == 1 then
-        Print(string.format("|cffffd100%s|r is already at the top of the list.", ARL.db.guildRankPriority[foundAt]))
+        local topName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
+        Print(string.format("|cffffd100%s|r is already at the top of the list.", topName))
         return
     end
     local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+    local entryName = type(entry) == "table" and entry.name or tostring(entry)
     table.insert(ARL.db.guildRankPriority, foundAt - 1, entry)
     RefreshRankListText()
-    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt - 1))
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, foundAt - 1))
 end)
 
 moveRankDownButton:SetScript("OnClick", function()
@@ -810,20 +1165,23 @@ moveRankDownButton:SetScript("OnClick", function()
     if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
-        if r:lower() == rank:lower() then foundAt = i break end
+        local rName = type(r) == "table" and r.name or tostring(r)
+        if rName:lower() == rank:lower() then foundAt = i break end
     end
     if not foundAt then
         Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
         return
     end
     if foundAt == #ARL.db.guildRankPriority then
-        Print(string.format("|cffffd100%s|r is already at the bottom of the list.", ARL.db.guildRankPriority[foundAt]))
+        local botName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
+        Print(string.format("|cffffd100%s|r is already at the bottom of the list.", botName))
         return
     end
     local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+    local entryName = type(entry) == "table" and entry.name or tostring(entry)
     table.insert(ARL.db.guildRankPriority, foundAt + 1, entry)
     RefreshRankListText()
-    Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
+    Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, foundAt + 1))
 end)
 
 rankNameEdit:SetScript("OnEnterPressed", function() addRankButton:Click() end)
@@ -836,14 +1194,19 @@ for _, btn in ipairs(guildRankButtons) do
     btn:SetScript("OnClick", function(self)
         if not ARL.db then return end
         local rank = self:GetText()
+        local rankIndex = self._rankIndex or 0
         if rank == "" then return end
         for _, existing in ipairs(ARL.db.guildRankPriority) do
-            if existing:lower() == rank:lower() then
+            local existingName  = type(existing) == "table" and existing.name  or tostring(existing)
+            local existingIndex = type(existing) == "table" and (existing.rankIndex or 0) or 0
+            local isDup = (rankIndex > 0 and existingIndex == rankIndex)
+                       or (rankIndex == 0 and existingName:lower() == rank:lower())
+            if isDup then
                 Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", rank))
                 return
             end
         end
-        table.insert(ARL.db.guildRankPriority, rank)
+        table.insert(ARL.db.guildRankPriority, { name = rank, rankIndex = rankIndex })
         RefreshRankListText()
         Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", rank))
     end)
@@ -861,17 +1224,7 @@ consumableAuditCB:SetScript("OnClick", function(self)
         ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
 end)
 
-local FindConsumableCategory = ARL.FindConsumableCategory or function(label)
-    local lower = label:lower()
-    local sys = ARL.SYSTEM_CONSUMABLES or {}
-    for i, cat in ipairs(sys) do
-        if cat.label:lower() == lower then return i, cat, true end
-    end
-    for i, cat in ipairs(ARL.db.trackedConsumables) do
-        if cat.label:lower() == lower then return i, cat, false end
-    end
-    return nil, nil, false
-end
+local FindConsumableCategory = ARL.FindConsumableCategory
 
 addConsumableButton:SetScript("OnClick", function()
     if not ARL.db then return end
@@ -999,7 +1352,10 @@ function ARL:ShowOptions()
     RefreshUI()
     frame:Show()
     frame:Raise()
-    if currentTabIndex == 0 then
-        SelectTab(1)
+    if currentMainTabIndex == 0 then
+        currentSubTabIndex = 1
+        SelectMainTab(1)
+    else
+        SelectMainTab(currentMainTabIndex)
     end
 end

@@ -4,7 +4,6 @@
 -- promote the highest-priority preferred leader that is currently in the
 -- group. If none are present, an event-driven reminder is shown when roster
 -- state changes.
--- or the player leaves the group.
 
 local ADDON_NAME = "AstralRaidLeader"
 
@@ -26,7 +25,7 @@ local DEFAULTS = {
     groupTypeFilter        = "all", -- "all", "raid", or "party"
     consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
     trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
-    guildRankPriority      = {},    -- ordered list of guild rank names (highest priority first)
+    guildRankPriority      = {},    -- ordered list of {name, rankIndex} tables (highest priority first)
     useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
@@ -36,7 +35,7 @@ local DEFAULTS = {
     lastWipeDate           = "",    -- human-readable timestamp of the wipe
 }
 
--- Built-in consumable categories – always checked, never stored in SavedVariables.
+-- Built-in consumable categories - always checked, never stored in SavedVariables.
 local SYSTEM_CONSUMABLES = {
     { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324 } },
     { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
@@ -50,6 +49,79 @@ local function Print(msg)
     if ARL.db and ARL.db.quietMode then return end
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
+
+-- Shared UI helpers consumed by the options and death-recap windows.
+ARL.UI = ARL.UI or {}
+
+local function UISkinPanel(panel, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
+    if not panel or not panel.SetBackdrop then return end
+    panel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    panel:SetBackdropColor(bgR, bgG, bgB, bgA)
+    panel:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
+end
+
+local function UISkinActionButton(btn)
+    if not btn or btn._arlSkinned then return end
+
+    local regions = { btn:GetRegions() }
+    for _, region in ipairs(regions) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            region:SetAlpha(0)
+        end
+    end
+
+    if btn.Left and btn.Left.SetAlpha then btn.Left:SetAlpha(0) end
+    if btn.Middle and btn.Middle.SetAlpha then btn.Middle:SetAlpha(0) end
+    if btn.Right and btn.Right.SetAlpha then btn.Right:SetAlpha(0) end
+
+    local normal = btn.GetNormalTexture and btn:GetNormalTexture() or nil
+    if normal and normal.SetAlpha then normal:SetAlpha(0) end
+    local pushed = btn.GetPushedTexture and btn:GetPushedTexture() or nil
+    if pushed and pushed.SetAlpha then pushed:SetAlpha(0) end
+    local highlight = btn.GetHighlightTexture and btn:GetHighlightTexture() or nil
+    if highlight and highlight.SetAlpha then highlight:SetAlpha(0) end
+
+    local skin = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    skin:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+    skin:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+    skin:SetFrameLevel(math.max(1, btn:GetFrameLevel() - 1))
+    skin:EnableMouse(false)
+    UISkinPanel(skin, 0.10, 0.14, 0.20, 0.92, 0.30, 0.40, 0.54, 0.78)
+
+    local function UpdateButtonState()
+        if not btn:IsEnabled() then
+            skin:SetBackdropColor(0.08, 0.10, 0.14, 0.72)
+            skin:SetBackdropBorderColor(0.23, 0.29, 0.36, 0.56)
+        elseif btn:IsMouseOver() then
+            skin:SetBackdropColor(0.13, 0.18, 0.26, 0.95)
+            skin:SetBackdropBorderColor(0.44, 0.56, 0.74, 0.88)
+        else
+            skin:SetBackdropColor(0.10, 0.14, 0.20, 0.92)
+            skin:SetBackdropBorderColor(0.30, 0.40, 0.54, 0.78)
+        end
+    end
+
+    btn:HookScript("OnEnter", UpdateButtonState)
+    btn:HookScript("OnLeave", UpdateButtonState)
+    btn:HookScript("OnEnable", UpdateButtonState)
+    btn:HookScript("OnDisable", UpdateButtonState)
+    btn:HookScript("OnShow", UpdateButtonState)
+
+    local text = btn.Text or btn:GetFontString()
+    if text and text.SetTextColor then
+        text:SetTextColor(0.90, 0.92, 0.96)
+    end
+
+    btn._arlSkinned = true
+end
+
+ARL.UI.SkinPanel = UISkinPanel
+ARL.UI.SkinActionButton = UISkinActionButton
 
 -- Initialise (or migrate) the saved-variable database.
 local function InitDB()
@@ -135,8 +207,9 @@ end
 
 local RequestGuildRosterIfStale
 
--- Build a map of { name:lower() -> rankName } for all guild members using the
--- cached guild roster.  Returns an empty table when the player is not in a guild.
+-- Build a map of { name:lower() -> {rankName, rankIndex} } for all guild members
+-- using the cached guild roster.  rankIndex is 1-based (matches GuildControlGetRankName).
+-- Returns an empty table when the player is not in a guild.
 local function GetGuildMemberRankMap()
     if not IsInGuild() then return {} end
     local rankMap = {}
@@ -146,11 +219,14 @@ local function GetGuildMemberRankMap()
         return rankMap
     end
     for i = 1, numMembers do
-        local name, rankName = GetGuildRosterInfo(i)
+        -- GetGuildRosterInfo: name, rankName, rankIndex (0-based), ...
+        local name, rankName, rankIndex0 = GetGuildRosterInfo(i)
         if name and rankName then
             local shortName = (name:match("^([^%-]+)") or name):lower()
-            rankMap[shortName]    = rankName
-            rankMap[name:lower()] = rankName
+            -- Convert 0-based rankIndex to 1-based so it aligns with GuildControlGetRankName(i).
+            local entry = { rankName = rankName, rankIndex = (tonumber(rankIndex0) or 0) + 1 }
+            rankMap[shortName]    = entry
+            rankMap[name:lower()] = entry
         end
     end
     return rankMap
@@ -159,6 +235,9 @@ end
 -- Return the highest-priority group member found via the guild rank priority list.
 -- Skips the current player (who already holds leadership).
 -- Returns rankName, rosterName or nil, nil.
+-- Priority entries may be plain strings (legacy) or {name, rankIndex} tables.
+-- When rankIndex is known, matching is done by index so duplicate-named ranks are
+-- handled correctly.
 local function GetTopAvailableByGuildRank()
     if not ARL.db.useGuildRankPriority then return nil, nil end
     if #ARL.db.guildRankPriority == 0 then return nil, nil end
@@ -168,13 +247,25 @@ local function GetTopAvailableByGuildRank()
     local guildRankMap = GetGuildMemberRankMap()
     local playerName   = UnitName("player")
 
-    for _, priorityRank in ipairs(ARL.db.guildRankPriority) do
-        local priorityLower = priorityRank:lower()
+    for _, priorityEntry in ipairs(ARL.db.guildRankPriority) do
+        -- Support legacy string entries and new {name, rankIndex} table entries.
+        local priorityName  = type(priorityEntry) == "table" and priorityEntry.name  or tostring(priorityEntry)
+        local priorityIndex = type(priorityEntry) == "table" and (priorityEntry.rankIndex or 0) or 0
+        local priorityLower = priorityName:lower()
+
         for memberLower, memberName in pairs(memberMap) do
-            local memberRank = guildRankMap[memberLower]
-            if memberRank and memberRank:lower() == priorityLower then
-                if not playerName or memberName:lower() ~= playerName:lower() then
-                    return priorityRank, memberName
+            local memberData = guildRankMap[memberLower]
+            if memberData then
+                local matched
+                if priorityIndex > 0 and memberData.rankIndex and memberData.rankIndex > 0 then
+                    -- Unambiguous: compare by rank slot index.
+                    matched = (memberData.rankIndex == priorityIndex)
+                else
+                    -- Fall back to name comparison for legacy entries.
+                    matched = (memberData.rankName:lower() == priorityLower)
+                end
+                if matched and (not playerName or memberName:lower() ~= playerName:lower()) then
+                    return priorityName, memberName
                 end
             end
         end
@@ -305,8 +396,12 @@ local function PrintLeaderReminderMessage()
             .. table.concat(ARL.db.preferredLeaders, ", ") .. "|r"
     end
     if ARL.db.useGuildRankPriority and #ARL.db.guildRankPriority > 0 then
+        local rankNames = {}
+        for _, e in ipairs(ARL.db.guildRankPriority) do
+            rankNames[#rankNames + 1] = type(e) == "table" and e.name or tostring(e)
+        end
         parts[#parts + 1] = "guild rank priority: |cffffd100"
-            .. table.concat(ARL.db.guildRankPriority, ", ") .. "|r"
+            .. table.concat(rankNames, ", ") .. "|r"
     end
     local detail = #parts > 0 and (" " .. table.concat(parts, "; ") .. ".") or ""
     Print("Reminder: You are the Raid Leader." .. detail
@@ -430,9 +525,9 @@ local function RunConsumableAudit(force)
                         for _, pattern in ipairs(consumable.namePatterns) do
                             local j = 1
                             while j <= 64 do
-                                    local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
-                                    if not aura then break end
-                                    if aura.name and aura.name:find(pattern, 1, true) then
+                                local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
+                                if not aura then break end
+                                if aura.name and aura.name:find(pattern, 1, true) then
                                     hasIt = true
                                     break
                                 end
@@ -851,15 +946,15 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             else
                 Print("Tracked consumables:")
                 for i, cat in ipairs(ARL.db.trackedConsumables) do
-                        local parts = {}
-                        if #cat.spellIds > 0 then
-                            parts[#parts + 1] = "spell IDs: " .. table.concat(cat.spellIds, ", ")
-                        end
-                        if cat.namePatterns and #cat.namePatterns > 0 then
-                            parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
-                        end
-                        Print(string.format("  %d. |cffffd100%s|r - %s",
-                            i, cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)"))
+                    local parts = {}
+                    if #cat.spellIds > 0 then
+                        parts[#parts + 1] = "spell IDs: " .. table.concat(cat.spellIds, ", ")
+                    end
+                    if cat.namePatterns and #cat.namePatterns > 0 then
+                        parts[#parts + 1] = 'names: "' .. table.concat(cat.namePatterns, '", "') .. '"'
+                    end
+                    Print(string.format("  %d. |cffffd100%s|r - %s",
+                        i, cat.label, #parts > 0 and table.concat(parts, "; ") or "(empty)"))
                 end
             end
 
@@ -993,13 +1088,28 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Usage: /arl addrank <GuildRankName>")
             return
         end
-        for _, rank in ipairs(ARL.db.guildRankPriority) do
-            if rank:lower() == arg:lower() then
+        -- Resolve the rank index so duplicate-named ranks are stored unambiguously.
+        local resolvedIndex = 0
+        if IsInGuild() then
+            local numRanks = GuildControlGetNumRanks()
+            for ri = 1, numRanks do
+                if (GuildControlGetRankName(ri) or ""):lower() == arg:lower() then
+                    resolvedIndex = ri
+                    break
+                end
+            end
+        end
+        for _, entry in ipairs(ARL.db.guildRankPriority) do
+            local entryName  = type(entry) == "table" and entry.name  or tostring(entry)
+            local entryIndex = type(entry) == "table" and (entry.rankIndex or 0) or 0
+            local isDup = (resolvedIndex > 0 and entryIndex == resolvedIndex)
+                       or (resolvedIndex == 0 and entryName:lower() == arg:lower())
+            if isDup then
                 Print(string.format("|cffffd100%s|r is already in the guild rank priority list.", arg))
                 return
             end
         end
-        table.insert(ARL.db.guildRankPriority, arg)
+        table.insert(ARL.db.guildRankPriority, { name = arg, rankIndex = resolvedIndex })
         Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", arg))
 
     -- /arl removerank <rankname>
@@ -1008,10 +1118,11 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Usage: /arl removerank <GuildRankName>")
             return
         end
-        for i, rank in ipairs(ARL.db.guildRankPriority) do
-            if rank:lower() == arg:lower() then
+        for i, entry in ipairs(ARL.db.guildRankPriority) do
+            local entryName = type(entry) == "table" and entry.name or tostring(entry)
+            if entryName:lower() == arg:lower() then
                 table.remove(ARL.db.guildRankPriority, i)
-                Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", rank))
+                Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", entryName))
                 return
             end
         end
@@ -1023,8 +1134,9 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("The guild rank priority list is empty. Add ranks with /arl addrank <rankname>.")
         else
             Print("Guild rank priority (highest priority first):")
-            for i, rank in ipairs(ARL.db.guildRankPriority) do
-                Print(string.format("  %d. |cffffd100%s|r", i, rank))
+            for i, entry in ipairs(ARL.db.guildRankPriority) do
+                local entryName = type(entry) == "table" and entry.name or tostring(entry)
+                Print(string.format("  %d. |cffffd100%s|r", i, entryName))
             end
         end
 
@@ -1049,7 +1161,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         end
         local foundAt = nil
         for i, r in ipairs(ARL.db.guildRankPriority) do
-            if r:lower() == name:lower() then
+            local rName = type(r) == "table" and r.name or tostring(r)
+            if rName:lower() == name:lower() then
                 foundAt = i
                 break
             end
@@ -1059,13 +1172,15 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             return
         end
         pos = math.min(pos, #ARL.db.guildRankPriority)
+        local currentName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
         if foundAt == pos then
-            Print(string.format("|cffffd100%s|r is already at position %d.", ARL.db.guildRankPriority[foundAt], pos))
+            Print(string.format("|cffffd100%s|r is already at position %d.", currentName, pos))
             return
         end
         local entry = table.remove(ARL.db.guildRankPriority, foundAt)
+        local entryName = type(entry) == "table" and entry.name or tostring(entry)
         table.insert(ARL.db.guildRankPriority, pos, entry)
-        Print(string.format("Moved |cffffd100%s|r to position %d.", entry, pos))
+        Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, pos))
 
     -- /arl settings | /arl options | /arl config
     elseif cmd == "settings" or cmd == "options" or cmd == "config" then
