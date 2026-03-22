@@ -12,7 +12,7 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 
 - **Preferred-leader list** – maintain an ordered list of characters who should hold Raid Leader.
 - **Auto-promote** – whenever a roster update fires and you are the group/raid leader, the addon automatically promotes the highest-priority preferred leader who is currently in the group.
-- **Guild rank priority** – define an ordered list of guild ranks; when no preferred leader is present the addon automatically promotes the highest-priority guild rank member in the group instead.
+- **Guild rank priority (index-safe)** – define an ordered list of guild ranks; when no preferred leader is present the addon automatically promotes the highest-priority guild rank member in the group, and stores both rank name and rank index so duplicate rank names remain unambiguous.
 - **Manual-promotion popup** – when auto-promote is off and a preferred leader is present, a configurable popup appears with a one-click **Promote** button. It can reappear after **Not Now** on later roster/instance changes, and defers while in combat.
 - **Reminder system** – if no preferred leader is present in the group, an event-driven in-chat reminder fires on member-join/instance-change style triggers.
 - **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
@@ -64,7 +64,10 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl ranklist` | Show the guild rank priority list (highest priority first) |
 | `/arl clearranks` | Clear the entire guild rank priority list |
 | `/arl moverank <rank> <pos>` | Move a guild rank to a specific position in the list |
+| `/arl deaths` or `/arl wipe` | Open the last wipe death recap window |
+| `/arl deathtracking [on\|off]` | Enable or disable death tracking during encounters |
 | `/arl settings` | Open the in-game settings window |
+| `/arl options` / `/arl config` | Alias for opening the in-game settings window |
 | `/arl help` | Show all available commands |
 
 ### Quick-start example
@@ -75,7 +78,7 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 /arl list
 ```
 
-The addon will now automatically pass Raid Leader to **Thrall** whenever he joins your group while you are the leader. If Thrall is absent, it will try **Jaina** next. If neither is present, a reminder is printed every 30 seconds (configurable).
+The addon will now automatically pass Raid Leader to **Thrall** whenever he joins your group while you are the leader. If Thrall is absent, it will try **Jaina** next. If neither is present, reminders are event-driven (for example on roster or instance context changes).
 
 ### Guild rank priority quick-start
 
@@ -98,14 +101,14 @@ The recap records who died and when during a failed encounter attempt. Death sou
 
 1. On every `GROUP_ROSTER_UPDATE` / `RAID_ROSTER_UPDATE` event, if the local player is the group/raid leader, the addon walks the preferred-leaders list from top to bottom.
 2. The first name found in the current group is promoted via `PromoteToLeader()`.
-3. If no match is found **and** guild rank priority is enabled, the addon walks the guild rank priority list and promotes the first group member whose guild rank matches the highest-priority entry.
+3. If no match is found **and** guild rank priority is enabled, the addon walks the guild rank priority list and promotes the first group member whose guild rank matches the highest-priority entry. Matching prefers rank index (when known) and falls back to rank name for legacy entries.
 4. If still no match is found **and** the reminder is enabled, an event-driven chat reminder can fire on relevant roster/instance triggers.
 5. Popup prompts are subject to their own cooldown after **Not Now** and can bypass cooldown on specific high-signal triggers like member joins.
 6. When a `READY_CHECK` event fires, the addon scans each group member's active buffs. For every tracked consumable category, it checks whether the member has at least one of the listed spell IDs as an active buff. Anyone missing one or more categories is included in a chat report.
 
 ### Setting up consumable tracking
 
-Consumable categories are empty by default. Add them with the spell IDs relevant to your current tier, for example:
+Built-in categories include **Flasks** and **Food** (`Well Fed` name match). You can add your own categories or extend existing ones with spell IDs relevant to your current tier, for example:
 
 ```
 /arl consumable add Flask 431972
@@ -124,4 +127,4 @@ WTF/Account/<account>/SavedVariables/AstralRaidLeader.lua
 
 ## Compatibility
 
-Targets **WoW Retail** (currently tested with Interface 12.0.1). The addon uses only standard group/raid APIs that have been stable for many expansion cycles.
+Targets **WoW Retail** (Interface `120001`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.

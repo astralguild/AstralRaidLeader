@@ -109,72 +109,11 @@ local THEME = {
     accent = { 0.86, 0.69, 0.22, 1.0 },
 }
 
-local function SkinPanel(panel, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-    if not panel or not panel.SetBackdrop then return end
-    panel:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    panel:SetBackdropColor(bgR, bgG, bgB, bgA)
-    panel:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
-end
-
-local function SkinActionButton(btn)
-    if not btn or btn._arlSkinned then return end
-
-    local regions = { btn:GetRegions() }
-    for _, region in ipairs(regions) do
-        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-            region:SetAlpha(0)
-        end
-    end
-
-    if btn.Left and btn.Left.SetAlpha then btn.Left:SetAlpha(0) end
-    if btn.Middle and btn.Middle.SetAlpha then btn.Middle:SetAlpha(0) end
-    if btn.Right and btn.Right.SetAlpha then btn.Right:SetAlpha(0) end
-
-    local normal = btn.GetNormalTexture and btn:GetNormalTexture() or nil
-    if normal and normal.SetAlpha then normal:SetAlpha(0) end
-    local pushed = btn.GetPushedTexture and btn:GetPushedTexture() or nil
-    if pushed and pushed.SetAlpha then pushed:SetAlpha(0) end
-    local highlight = btn.GetHighlightTexture and btn:GetHighlightTexture() or nil
-    if highlight and highlight.SetAlpha then highlight:SetAlpha(0) end
-
-    local skin = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    skin:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-    skin:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-    skin:SetFrameLevel(math.max(1, btn:GetFrameLevel() - 1))
-    skin:EnableMouse(false)
-    SkinPanel(skin, 0.10, 0.14, 0.20, 0.92, 0.30, 0.40, 0.54, 0.78)
-    btn._arlSkin = skin
-
-    local function UpdateButtonState()
-        if not btn:IsEnabled() then
-            skin:SetBackdropColor(0.08, 0.10, 0.14, 0.72)
-            skin:SetBackdropBorderColor(0.23, 0.29, 0.36, 0.56)
-        elseif btn:IsMouseOver() then
-            skin:SetBackdropColor(0.13, 0.18, 0.26, 0.95)
-            skin:SetBackdropBorderColor(0.44, 0.56, 0.74, 0.88)
-        else
-            skin:SetBackdropColor(0.10, 0.14, 0.20, 0.92)
-            skin:SetBackdropBorderColor(0.30, 0.40, 0.54, 0.78)
-        end
-    end
-
-    btn:HookScript("OnEnter", UpdateButtonState)
-    btn:HookScript("OnLeave", UpdateButtonState)
-    btn:HookScript("OnEnable", UpdateButtonState)
-    btn:HookScript("OnDisable", UpdateButtonState)
-    btn:HookScript("OnShow", UpdateButtonState)
-
-    local text = btn.Text or btn:GetFontString()
-    if text and text.SetTextColor then
-        text:SetTextColor(0.90, 0.92, 0.96)
-    end
-
-    btn._arlSkinned = true
+local SkinPanel = ARL.UI and ARL.UI.SkinPanel
+local SkinActionButton = ARL.UI and ARL.UI.SkinActionButton
+if not SkinPanel or not SkinActionButton then
+    Print("UI helpers are unavailable; settings window is disabled.")
+    return
 end
 
 local function SkinInputBox(edit)
@@ -1146,7 +1085,7 @@ addRankButton:SetScript("OnClick", function()
     if rank == "" then return end
     -- Resolve rank index for unambiguous storage when duplicate rank names exist.
     local rankIndex = 0
-    if IsInGuild then
+    if IsInGuild() then
         local numRanks = GuildControlGetNumRanks()
         for ri = 1, numRanks do
             if (GuildControlGetRankName(ri) or ""):lower() == rank:lower() then
@@ -1285,17 +1224,7 @@ consumableAuditCB:SetScript("OnClick", function(self)
         ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
 end)
 
-local FindConsumableCategory = ARL.FindConsumableCategory or function(label)
-    local lower = label:lower()
-    local sys = ARL.SYSTEM_CONSUMABLES or {}
-    for i, cat in ipairs(sys) do
-        if cat.label:lower() == lower then return i, cat, true end
-    end
-    for i, cat in ipairs(ARL.db.trackedConsumables) do
-        if cat.label:lower() == lower then return i, cat, false end
-    end
-    return nil, nil, false
-end
+local FindConsumableCategory = ARL.FindConsumableCategory
 
 addConsumableButton:SetScript("OnClick", function()
     if not ARL.db then return end
