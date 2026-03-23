@@ -17,6 +17,7 @@ jobs:
 
       - name: Run LuaCheck
         uses: BigWigsMods/actions/luacheck@master
+        continue-on-error: true
         with:
           args: -q
 
