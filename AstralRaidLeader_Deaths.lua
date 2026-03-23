@@ -14,7 +14,12 @@ end
 
 local FRAME_W, FRAME_H = 520, 430
 
-local frame = CreateFrame("Frame", "AstralRaidLeaderDeathRecapFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+local frame = CreateFrame(
+    "Frame",
+    "AstralRaidLeaderDeathRecapFrame",
+    UIParent,
+    BackdropTemplateMixin and "BackdropTemplate" or nil
+)
 frame:SetSize(FRAME_W, FRAME_H)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
@@ -231,7 +236,7 @@ end
 -- Public API
 -- ============================================================
 
-function ARL:ShowDeathRecap()
+function ARL.ShowDeathRecap()
     RefreshRecap()
     frame:Show()
     frame:Raise()
@@ -239,6 +244,6 @@ function ARL:ShowDeathRecap()
     scrollFrame:SetVerticalScroll(0)
 end
 
-function ARL:HideDeathRecap()
+function ARL.HideDeathRecap()
     frame:Hide()
 end

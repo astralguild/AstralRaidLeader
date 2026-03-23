@@ -24,7 +24,12 @@ local function NamesMatch(a, b)
     return ShortName(al) == ShortName(bl)
 end
 
-local frame = CreateFrame("Frame", "AstralRaidLeaderOptionsFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+local frame = CreateFrame(
+    "Frame",
+    "AstralRaidLeaderOptionsFrame",
+    UIParent,
+    BackdropTemplateMixin and "BackdropTemplate" or nil
+)
 frame:SetSize(760, 500)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
@@ -250,7 +255,6 @@ local MAIN_TABS = {
 local mainTabs = {}
 local subTabButtons = {}
 local currentMainTabIndex = 0
-local currentSubTabIndex = 1
 local SelectMainTab
 
 local function ShowOnlyPanel(panelIndex)
@@ -348,7 +352,9 @@ local function SetMainTabVisual(selectedIndex)
         if i == selectedIndex then
             SetTabLabelColor(tab, THEME.goldActiveText[1], THEME.goldActiveText[2], THEME.goldActiveText[3])
             if tab._bg then
-                tab._bg:SetColorTexture(THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4])
+                tab._bg:SetColorTexture(
+                    THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4]
+                )
             end
             if tab._indicator then tab._indicator:Show() end
         else
@@ -367,13 +373,17 @@ local function SetSubTabVisual(selectedIndex)
             if i == selectedIndex then
                 SetTabLabelColor(tab, THEME.goldActiveText[1], THEME.goldActiveText[2], THEME.goldActiveText[3])
                 if tab._bg then
-                    tab._bg:SetColorTexture(THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4])
+                    tab._bg:SetColorTexture(
+                        THEME.tabActiveBG[1], THEME.tabActiveBG[2], THEME.tabActiveBG[3], THEME.tabActiveBG[4]
+                    )
                 end
                 if tab._indicator then tab._indicator:Show() end
             else
                 SetTabLabelColor(tab, THEME.mutedText[1], THEME.mutedText[2], THEME.mutedText[3])
                 if tab._bg then
-                    tab._bg:SetColorTexture(THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4])
+                    tab._bg:SetColorTexture(
+                        THEME.tabIdleBG[1], THEME.tabIdleBG[2], THEME.tabIdleBG[3], THEME.tabIdleBG[4]
+                    )
                 end
                 if tab._indicator then tab._indicator:Hide() end
             end
@@ -387,7 +397,6 @@ local function SelectSubTab(index)
     local subConfig = mainConfig.subTabs[index]
     if not subConfig then return end
 
-    currentSubTabIndex = index
     SetSubTabVisual(index)
     ShowOnlyPanel(subConfig.panel)
 end
@@ -1148,7 +1157,8 @@ moveRankUpButton:SetScript("OnClick", function()
         return
     end
     if foundAt == 1 then
-        local topName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
+        local topEntry = ARL.db.guildRankPriority[foundAt]
+        local topName = type(topEntry) == "table" and topEntry.name or tostring(topEntry)
         Print(string.format("|cffffd100%s|r is already at the top of the list.", topName))
         return
     end
@@ -1173,7 +1183,8 @@ moveRankDownButton:SetScript("OnClick", function()
         return
     end
     if foundAt == #ARL.db.guildRankPriority then
-        local botName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
+        local bottomEntry = ARL.db.guildRankPriority[foundAt]
+        local botName = type(bottomEntry) == "table" and bottomEntry.name or tostring(bottomEntry)
         Print(string.format("|cffffd100%s|r is already at the bottom of the list.", botName))
         return
     end
@@ -1353,7 +1364,6 @@ function ARL:ShowOptions()
     frame:Show()
     frame:Raise()
     if currentMainTabIndex == 0 then
-        currentSubTabIndex = 1
         SelectMainTab(1)
     else
         SelectMainTab(currentMainTabIndex)
