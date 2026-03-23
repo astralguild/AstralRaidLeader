@@ -15,6 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Run LuaCheck
+        uses: BigWigsMods/actions/luacheck@master
+        with:
+          args: -q
+
       - name: Install Lua 5.1 compiler
         run: |
           sudo apt-get update
