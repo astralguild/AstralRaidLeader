@@ -346,7 +346,7 @@ StaticPopupDialogs["ASTRALRAIDLEADER_MANUAL_PROMOTE"] = {
     preferredIndex = STATICPOPUP_NUMDIALOGS,
 }
 
-function ARL:HideManualPromotePopup()
+function ARL.HideManualPromotePopup()
     pendingNotifyName = nil
     StaticPopup_Hide("ASTRALRAIDLEADER_MANUAL_PROMOTE")
 end
@@ -566,7 +566,7 @@ ARL.FindConsumableCategory = FindConsumableCategory
 ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
 
 
-function ARL:CancelReminder()
+function ARL.CancelReminder()
     -- Event-driven reminders do not keep timer state.
 end
 
@@ -651,8 +651,6 @@ end)
 -- Per-session state (not persisted).
 local currentEncounterDeaths = {}   -- death records for the active encounter
 local currentEncounterName   = ""
-local currentEncounterStart  = 0
-local inEncounter            = false
 local currentEncounterID     = 0
 
 -- Format seconds as M:SS for the recap display.
@@ -674,7 +672,10 @@ local function BuildDeathsFromDamageMeter()
         sessionId = C_DamageMeter.GetLastCombatSessionID()
     end
 
-    if (not sessionId or sessionId == 0) and currentEncounterID ~= 0 and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function" then
+    if (not sessionId or sessionId == 0)
+        and currentEncounterID ~= 0
+        and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
+    then
         sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(currentEncounterID)
     end
 
@@ -712,13 +713,10 @@ HandleDeathTrackingEvent = function(event, ...)
         local encounterID, encounterName = ...
         currentEncounterID     = tonumber(encounterID) or 0
         currentEncounterName   = encounterName or "Unknown"
-        currentEncounterStart  = GetTime()
         currentEncounterDeaths = {}
-        inEncounter            = true
 
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
-        inEncounter = false
 
         if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
             local deaths = BuildDeathsFromDamageMeter()
@@ -942,7 +940,10 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
 
         if subcmd == "list" then
             if #ARL.db.trackedConsumables == 0 then
-                Print("No consumables are being tracked. Use |cffffff00/arl consumable add <label> <spellId>|r to add one.")
+                Print(
+                    "No consumables are being tracked. "
+                    .. "Use |cffffff00/arl consumable add <label> <spellId>|r to add one."
+                )
             else
                 Print("Tracked consumables:")
                 for i, cat in ipairs(ARL.db.trackedConsumables) do
@@ -973,7 +974,11 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             if cat then
                 for _, id in ipairs(cat.spellIds) do
                     if id == spellId then
-                        Print(string.format("Spell ID %d is already in the |cffffd100%s|r category.", spellId, cat.label))
+                        Print(string.format(
+                            "Spell ID %d is already in the |cffffd100%s|r category.",
+                            spellId,
+                            cat.label
+                        ))
                         return
                     end
                 end
@@ -981,7 +986,11 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 Print(string.format("Added spell ID %d to |cffffd100%s|r.", spellId, cat.label))
             else
                 table.insert(ARL.db.trackedConsumables, { label = label, spellIds = { spellId } })
-                Print(string.format("Created new category |cffffd100%s|r with spell ID %d.", label, spellId))
+                Print(string.format(
+                    "Created new category |cffffd100%s|r with spell ID %d.",
+                    label,
+                    spellId
+                ))
             end
 
         elseif subcmd == "remove" then
@@ -1033,9 +1042,14 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Consumable sub-commands:")
             Print("  |cffffff00/arl consumable list|r                        – List tracked consumable categories")
             Print("  |cffffff00/arl consumable add <label> <spellId>|r       – Add a spell ID to a category")
-            Print("  |cffffff00/arl consumable remove <label> <spellId>|r    – Remove a spell ID from a category")
+            Print(
+                "  |cffffff00/arl consumable remove <label> <spellId>|r    – Remove a spell ID from a category"
+            )
             Print("  |cffffff00/arl consumable delete <label>|r              – Delete an entire category")
-            Print("  |cffffff00/arl consumable clear|r                       – Remove all tracked consumable categories")
+            Print(
+                "  |cffffff00/arl consumable clear|r                       "
+                .. "– Remove all tracked consumable categories"
+            )
             Print("  |cffffff00/arl consumable audit|r                       – Run the consumable audit now")
         end
 
@@ -1048,7 +1062,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             ARL.db.consumableAuditEnabled = false
             Print("Consumable audit on ready check |cffff0000disabled|r.")
         else
-            Print(string.format("Consumable audit on ready check is currently |cff%s%s|r.",
+            Print(string.format(
+                "Consumable audit on ready check is currently |cff%s%s|r.",
                 ARL.db.consumableAuditEnabled and "00ff00" or "ff0000",
                 ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
         end
@@ -1172,7 +1187,8 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             return
         end
         pos = math.min(pos, #ARL.db.guildRankPriority)
-        local currentName = type(ARL.db.guildRankPriority[foundAt]) == "table" and ARL.db.guildRankPriority[foundAt].name or tostring(ARL.db.guildRankPriority[foundAt])
+        local currentEntry = ARL.db.guildRankPriority[foundAt]
+        local currentName = type(currentEntry) == "table" and currentEntry.name or tostring(currentEntry)
         if foundAt == pos then
             Print(string.format("|cffffd100%s|r is already at position %d.", currentName, pos))
             return
