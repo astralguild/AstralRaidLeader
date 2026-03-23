@@ -651,8 +651,6 @@ end)
 -- Per-session state (not persisted).
 local currentEncounterDeaths = {}   -- death records for the active encounter
 local currentEncounterName   = ""
-local currentEncounterStart  = 0
-local inEncounter            = false
 local currentEncounterID     = 0
 
 -- Format seconds as M:SS for the recap display.
@@ -715,13 +713,10 @@ HandleDeathTrackingEvent = function(event, ...)
         local encounterID, encounterName = ...
         currentEncounterID     = tonumber(encounterID) or 0
         currentEncounterName   = encounterName or "Unknown"
-        currentEncounterStart  = GetTime()
         currentEncounterDeaths = {}
-        inEncounter            = true
 
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
-        inEncounter = false
 
         if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
             local deaths = BuildDeathsFromDamageMeter()
