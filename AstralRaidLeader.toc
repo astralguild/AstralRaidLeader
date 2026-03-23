@@ -2,10 +2,11 @@
 ## Title: Astral |cffff8000Raid Leader|r
 ## Notes: Automatically passes Raid Leader to a configurable list of preferred characters. Provides reminders when a hand-off is needed.
 ## Author: AstralGuild
-## Version: 1.3.0
+## Version: @project-version@
 ## IconTexture: Interface\AddOns\AstralRaidLeader\Media\Texture\Logo@2x
 ## SavedVariables: AstralRaidLeaderDB
 ## Category-enUS: |cffFF0000Astral|r Addons
+## X-Curse-Project-ID: 1491447
 
 AstralRaidLeader.lua
 AstralRaidLeader_Options.lua

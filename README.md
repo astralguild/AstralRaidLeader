@@ -128,3 +128,16 @@ WTF/Account/<account>/SavedVariables/AstralRaidLeader.lua
 ## Compatibility
 
 Targets **WoW Retail** (Interface `120001`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.
+
+## Release workflow
+
+This repository uses GitHub Actions with `BigWigsMods/packager@v2` to publish tagged releases to CurseForge.
+
+### How to release
+
+1. Merge your changes into `main` (or `master`).
+2. Create an annotated tag like `v1.3.1` or `v1.3.2-beta.1`.
+3. Push the tag.
+4. GitHub Actions runs [.github/workflows/release.yml](.github/workflows/release.yml) and publishes the package.
+
+The TOC uses `## Version: @project-version@`, so the packaged addon version follows the git tag automatically.
