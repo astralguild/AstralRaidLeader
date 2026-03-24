@@ -796,8 +796,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     local session = GetSessionByID(sessionId)
     if not session then
         -- Fall back to session-type lookup when an ID is unavailable at wipe end.
-        local currentSessionType = (_G.Enum and _G.Enum.DamageMeterSessionType and _G.Enum.DamageMeterSessionType.Current) or 1
-        local expiredSessionType = (_G.Enum and _G.Enum.DamageMeterSessionType and _G.Enum.DamageMeterSessionType.Expired) or 2
+        local dmSessionType = _G.Enum and _G.Enum.DamageMeterSessionType
+        local currentSessionType = (dmSessionType and dmSessionType.Current) or 1
+        local expiredSessionType = (dmSessionType and dmSessionType.Expired) or 2
         session = GetSessionByType(currentSessionType) or GetSessionByType(expiredSessionType)
     end
 
