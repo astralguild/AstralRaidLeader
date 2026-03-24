@@ -28,7 +28,15 @@ The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `AR
   ```lua
   if frame.SetBackdrop then frame:SetBackdrop({...}) end
   ```
-- **`SetNormalTexture(nil)` crashes** — never call it. Use `btn:GetNormalTexture():SetAlpha(0)` instead.
+- **`SetNormalTexture(nil)` crashes** — never call it.
+- **Do not call `btn:GetNormalTexture()`, `btn:GetPushedTexture()`, or `btn:GetHighlightTexture()` in button skinning for Midnight.** Hide texture regions via `btn:GetRegions()` plus named `Left/Middle/Right` regions only.
+- **`COMBAT_LOG_EVENT_UNFILTERED` is protected in Midnight for addon `RegisterEvent` usage.** Do not use CLEU registration as a death-tracking source in this addon.
+
+### Death Tracking (Midnight)
+- **Primary/only authoritative source:** `C_DamageMeter` session data.
+- On wipe (`ENCOUNTER_END`, `success == 0`), use a short retry window before finalizing recap because session payload may arrive slightly late.
+- If retries still return no deaths, persist an empty recap and show an explicit "no reliable death-cause data" message.
+- Do **not** use `UNIT_HEALTH` fallback when recap quality requires death cause/source data.
 
 ### Texture / Backdrop conventions
 - Background: `"Interface\\Buttons\\WHITE8x8"` for both `bgFile` and `edgeFile`.
@@ -61,6 +69,7 @@ The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `AR
 - Create a `BackdropTemplate` child frame (`skin`) anchored to all four corners, set to `frameLevel - 1`, with `EnableMouse(false)`.
 - Hook `OnEnter`, `OnLeave`, `OnEnable`, `OnDisable`, `OnShow` to update the skin backdrop colors for idle/hover/disabled states.
 - Set font string color explicitly: `btn:GetFontString():SetTextColor(0.90, 0.92, 0.96)`.
+- Do not reintroduce `GetNormalTexture`/`GetPushedTexture`/`GetHighlightTexture` calls in this skin function.
 
 ### CheckButton
 - `cb.Text` is the label `FontString` for `InterfaceOptionsCheckButtonTemplate` buttons.
@@ -196,10 +205,12 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 
 ## Common Pitfalls to Avoid
 
-1. **Never call `SetNormalTexture(nil)`** — use `GetNormalTexture():SetAlpha(0)`.
+1. **Never call `SetNormalTexture(nil)`** and do not rely on `GetNormalTexture()`/`GetPushedTexture()`/`GetHighlightTexture()` in Midnight skinning paths.
 2. **Text behind backdrop** — if text appears faded/invisible, check that the FontString's parent frame has a higher `FrameLevel` than the backdrop frame covering it. Move it to `"OVERLAY"` layer or reparent to the covering frame.
 3. **Scrollbar outside container** — `UIPanelScrollFrameTemplate` anchors its bar +24px right of the scroll frame; always inset the scroll frame and reanchor the named scrollbar child.
 4. **Guild rank name collision** — always store `{name, rankIndex}` not bare strings so duplicate-named ranks are distinguishable.
 5. **Backward compatibility** — saved variables may contain legacy plain strings in `guildRankPriority`; always guard with `type(entry) == "table" and entry.name or tostring(entry)`.
 6. **Tab label field** — custom tab buttons use `.Label` not `.Text`; `InterfaceOptionsCheckButtonTemplate` uses `.Text`.
 7. **`frame:EnableMouse`** — the main frame starts with `EnableMouse(false)` and an alpha of 0, then enables on `OnShow`. This prevents click-through issues when hidden.
+8. **Auto-promote self-target spam** — preferred-leader matching must skip the current player, otherwise roster churn can print repeated "Promoted X" lines when X already holds leader.
+9. **Death recap source drift** — do not mix in low-fidelity fallbacks when the requirement is "why they died"; keep recap rows tied to `C_DamageMeter` only.
