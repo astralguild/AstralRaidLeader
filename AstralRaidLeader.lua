@@ -671,7 +671,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return {}
     end
 
-    local deathsType = (Enum and Enum.DamageMeterType and Enum.DamageMeterType.Deaths) or 9
+    local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
 
     local sessionId = nil
     if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
@@ -690,11 +690,11 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     local function ResolveRecapCause(entry)
         local recapID = tonumber(entry and entry.deathRecapID) or 0
         if recapID <= 0 then return nil, nil end
-        if not C_DeathRecap or type(C_DeathRecap.GetRecapEvents) ~= "function" then
+        if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
             return nil, nil
         end
 
-        local ok, recapEvents = pcall(C_DeathRecap.GetRecapEvents, recapID)
+        local ok, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
         if not ok or type(recapEvents) ~= "table" then return nil, nil end
 
         local eventData = recapEvents[1]
@@ -704,7 +704,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         if not mechanic or mechanic == "" then
             local eventType = eventData.event
             if eventType == "SWING_DAMAGE" then
-                mechanic = ACTION_SWING or "Melee"
+                mechanic = _G.ACTION_SWING or "Melee"
             elseif eventType == "ENVIRONMENTAL_DAMAGE" then
                 local envType = string.upper(tostring(eventData.environmentalType or ""))
                 mechanic = _G["ACTION_ENVIRONMENTAL_DAMAGE_" .. envType] or "Environmental"
@@ -796,8 +796,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     local session = GetSessionByID(sessionId)
     if not session then
         -- Fall back to session-type lookup when an ID is unavailable at wipe end.
-        local currentSessionType = (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Current) or 1
-        local expiredSessionType = (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Expired) or 2
+        local currentSessionType = (_G.Enum and _G.Enum.DamageMeterSessionType and _G.Enum.DamageMeterSessionType.Current) or 1
+        local expiredSessionType = (_G.Enum and _G.Enum.DamageMeterSessionType and _G.Enum.DamageMeterSessionType.Expired) or 2
         session = GetSessionByType(currentSessionType) or GetSessionByType(expiredSessionType)
     end
 
@@ -829,7 +829,7 @@ local function FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt)
     end
 
     if attempt < WIPE_FINALIZE_MAX_RETRIES then
-        C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
+        _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
             FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt + 1)
         end)
         return
