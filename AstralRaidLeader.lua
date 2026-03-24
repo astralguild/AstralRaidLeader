@@ -37,7 +37,7 @@ local DEFAULTS = {
 
 -- Built-in consumable categories - always checked, never stored in SavedVariables.
 local SYSTEM_CONSUMABLES = {
-    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324 } },
+    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324, 1235110 } },
     { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
 }
 
@@ -78,13 +78,9 @@ local function UISkinActionButton(btn)
     if btn.Left and btn.Left.SetAlpha then btn.Left:SetAlpha(0) end
     if btn.Middle and btn.Middle.SetAlpha then btn.Middle:SetAlpha(0) end
     if btn.Right and btn.Right.SetAlpha then btn.Right:SetAlpha(0) end
-
-    local normal = btn.GetNormalTexture and btn:GetNormalTexture() or nil
-    if normal and normal.SetAlpha then normal:SetAlpha(0) end
-    local pushed = btn.GetPushedTexture and btn:GetPushedTexture() or nil
-    if pushed and pushed.SetAlpha then pushed:SetAlpha(0) end
-    local highlight = btn.GetHighlightTexture and btn:GetHighlightTexture() or nil
-    if highlight and highlight.SetAlpha then highlight:SetAlpha(0) end
+    -- GetNormalTexture/GetPushedTexture/GetHighlightTexture are intentionally omitted:
+    -- GetRegions() above already covers those, and calling these Get* methods in
+    -- Midnight triggers an internal SetNormalTexture(nil) error.
 
     local skin = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate" or nil)
     skin:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
@@ -192,12 +188,15 @@ end
 -- Returns preferredName, rosterName or nil, nil when no match is found.
 local function GetTopAvailablePreferredLeader()
     local memberMap = GetGroupMemberMap()
+    local playerName = UnitName("player") or ""
+    local playerShort = (playerName:match("^([^%-]+)") or playerName):lower()
 
     for _, leaderName in ipairs(ARL.db.preferredLeaders) do
         local normalized = leaderName:lower()
         local shortName = (leaderName:match("^([^%-]+)") or leaderName):lower()
         local target = memberMap[normalized] or memberMap[shortName]
-        if target then
+        local targetShort = target and (target:match("^([^%-]+)") or target):lower() or ""
+        if target and targetShort ~= playerShort then
             return leaderName, target
         end
     end
@@ -281,9 +280,15 @@ end
 local function TryAutoPromote()
     if not UnitIsGroupLeader("player") then return false end
     if not IsInRelevantGroup() then return false end
+    local playerName = UnitName("player") or ""
+    local playerShort = (playerName:match("^([^%-]+)") or playerName):lower()
 
     local leaderName, target = GetTopAvailablePreferredLeader()
     if leaderName and target then
+        local targetShort = (target:match("^([^%-]+)") or target):lower()
+        if targetShort == playerShort then
+            return false
+        end
         PromoteToLeader(target)
         Print(string.format("Promoted |cffffd100%s|r to Raid Leader.", leaderName))
         ARL:CancelReminder()
@@ -649,9 +654,10 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local currentEncounterDeaths = {}   -- death records for the active encounter
 local currentEncounterName   = ""
 local currentEncounterID     = 0
+local WIPE_FINALIZE_MAX_RETRIES = 8
+local WIPE_FINALIZE_RETRY_DELAY = 0.15
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
@@ -660,10 +666,12 @@ local function FormatEncounterTime(seconds)
     return string.format("%d:%02d", m, s)
 end
 
-local function BuildDeathsFromDamageMeter()
+local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     if not C_DamageMeter or type(C_DamageMeter.GetCombatSessionFromID) ~= "function" then
         return {}
     end
+
+    local deathsType = (Enum and Enum.DamageMeterType and Enum.DamageMeterType.Deaths) or 9
 
     local sessionId = nil
     if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
@@ -673,39 +681,161 @@ local function BuildDeathsFromDamageMeter()
     end
 
     if (not sessionId or sessionId == 0)
-        and currentEncounterID ~= 0
+        and (encounterIDForLookup or 0) ~= 0
         and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
     then
-        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(currentEncounterID)
+        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
     end
 
-    if not sessionId then return {} end
-
-    local ok, session = pcall(C_DamageMeter.GetCombatSessionFromID, sessionId)
-    if not ok or type(session) ~= "table" then return {} end
-
-    local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
-    if type(deathList) ~= "table" then return {} end
-
-    local results = {}
-    for _, entry in ipairs(deathList) do
-        if type(entry) == "table" then
-            local playerName = entry.playerName or entry.destName or entry.name or entry.player or "Unknown"
-            local mechanic   = entry.mechanic or entry.spellName or entry.abilityName or entry.cause or "Unknown"
-            local source     = entry.sourceName or entry.source or entry.killerName or "Unknown"
-            local timeOffset = tonumber(entry.timeOffset or entry.elapsedTime or entry.time) or 0
-            if timeOffset < 0 then timeOffset = 0 end
-            results[#results + 1] = {
-                playerName = playerName,
-                mechanic   = mechanic,
-                source     = source,
-                timeOffset = timeOffset,
-                timeStr    = FormatEncounterTime(math.floor(timeOffset)),
-            }
+    local function ResolveRecapCause(entry)
+        local recapID = tonumber(entry and entry.deathRecapID) or 0
+        if recapID <= 0 then return nil, nil end
+        if not C_DeathRecap or type(C_DeathRecap.GetRecapEvents) ~= "function" then
+            return nil, nil
         end
+
+        local ok, recapEvents = pcall(C_DeathRecap.GetRecapEvents, recapID)
+        if not ok or type(recapEvents) ~= "table" then return nil, nil end
+
+        local eventData = recapEvents[1]
+        if type(eventData) ~= "table" then return nil, nil end
+
+        local mechanic = eventData.spellName
+        if not mechanic or mechanic == "" then
+            local eventType = eventData.event
+            if eventType == "SWING_DAMAGE" then
+                mechanic = ACTION_SWING or "Melee"
+            elseif eventType == "ENVIRONMENTAL_DAMAGE" then
+                local envType = string.upper(tostring(eventData.environmentalType or ""))
+                mechanic = _G["ACTION_ENVIRONMENTAL_DAMAGE_" .. envType] or "Environmental"
+            else
+                mechanic = eventType or nil
+            end
+        end
+
+        local source = nil
+        if not eventData.hideCaster then
+            source = eventData.sourceName
+        end
+
+        return mechanic, source
     end
 
-    return results
+    local function ParseDeathEntries(container)
+        if type(container) ~= "table" then return {} end
+        local parsed = {}
+        for _, entry in pairs(container) do
+            if type(entry) == "table" then
+                local playerName = entry.playerName or entry.destName or entry.name or entry.player or "Unknown"
+                local mechanic   = entry.mechanic or entry.spellName or entry.abilityName or entry.cause or "Unknown"
+                local source     = entry.sourceName or entry.source or entry.killerName or "Unknown"
+                local recapMechanic, recapSource = ResolveRecapCause(entry)
+                if recapMechanic and recapMechanic ~= "" then
+                    mechanic = recapMechanic
+                end
+                if recapSource and recapSource ~= "" then
+                    source = recapSource
+                end
+                local timeOffset = tonumber(
+                    entry.timeOffset
+                    or entry.deathTimeSeconds
+                    or entry.elapsedTime
+                    or entry.time
+                ) or 0
+                if timeOffset < 0 then timeOffset = 0 end
+                parsed[#parsed + 1] = {
+                    playerName = playerName,
+                    mechanic   = mechanic,
+                    source     = source,
+                    timeOffset = timeOffset,
+                    timeStr    = FormatEncounterTime(math.floor(timeOffset)),
+                }
+            end
+        end
+        table.sort(parsed, function(a, b)
+            return (a.timeOffset or 0) < (b.timeOffset or 0)
+        end)
+        return parsed
+    end
+
+    local function ExtractDeathsFromSession(session)
+        if type(session) ~= "table" then return {} end
+
+        -- Older/alternate layouts.
+        local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
+        local parsed = ParseDeathEntries(deathList)
+        if #parsed > 0 then return parsed end
+
+        -- Midnight 12.x layout for Deaths meter type.
+        parsed = ParseDeathEntries(session.combatSources)
+        if #parsed > 0 then return parsed end
+
+        return {}
+    end
+
+    local function GetSessionByID(id)
+        if not id then return nil end
+        local ok, session = pcall(C_DamageMeter.GetCombatSessionFromID, id, deathsType)
+        if ok and type(session) == "table" then
+            return session
+        end
+        return nil
+    end
+
+    local function GetSessionByType(sessionType)
+        if type(C_DamageMeter.GetCombatSessionFromType) ~= "function" then
+            return nil
+        end
+        local ok, session = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, deathsType)
+        if ok and type(session) == "table" then
+            return session
+        end
+        return nil
+    end
+
+    local session = GetSessionByID(sessionId)
+    if not session then
+        -- Fall back to session-type lookup when an ID is unavailable at wipe end.
+        local currentSessionType = (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Current) or 1
+        local expiredSessionType = (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Expired) or 2
+        session = GetSessionByType(currentSessionType) or GetSessionByType(expiredSessionType)
+    end
+
+    return ExtractDeathsFromSession(session)
+end
+
+local function PersistAndShowWipeRecap(encounterName, deaths)
+    if not ARL.db then return end
+    ARL.db.lastWipeDeaths = deaths
+    ARL.db.lastWipeEncounter = encounterName
+    ARL.db.lastWipeDate = date("%Y-%m-%d %H:%M")
+    Print(string.format(
+        "Wipe recorded on |cffffd100%s|r - %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+        ARL.db.lastWipeEncounter,
+        #deaths
+    ))
+    if ARL.db.showRecapOnWipe and ARL.ShowDeathRecap then
+        ARL:ShowDeathRecap()
+    end
+end
+
+local function FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt)
+    if not ARL.db or not ARL.db.deathTrackingEnabled then return end
+
+    local meterDeaths = BuildDeathsFromDamageMeter(encounterID)
+    if #meterDeaths > 0 then
+        PersistAndShowWipeRecap(encounterName, meterDeaths)
+        return
+    end
+
+    if attempt < WIPE_FINALIZE_MAX_RETRIES then
+        C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
+            FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt + 1)
+        end)
+        return
+    end
+
+    PersistAndShowWipeRecap(encounterName, {})
 end
 
 HandleDeathTrackingEvent = function(event, ...)
@@ -713,33 +843,18 @@ HandleDeathTrackingEvent = function(event, ...)
         local encounterID, encounterName = ...
         currentEncounterID     = tonumber(encounterID) or 0
         currentEncounterName   = encounterName or "Unknown"
-        currentEncounterDeaths = {}
 
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
 
         if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
-            local deaths = BuildDeathsFromDamageMeter()
-            if #deaths > 0 then
-                currentEncounterDeaths = deaths
-            end
-
-            -- Persist deaths recorded for this attempt.
-            ARL.db.lastWipeDeaths    = currentEncounterDeaths
-            ARL.db.lastWipeEncounter = encounterName or currentEncounterName
-            ARL.db.lastWipeDate      = date("%Y-%m-%d %H:%M")
-            Print(string.format(
-                "Wipe recorded on |cffffd100%s|r – %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
-                ARL.db.lastWipeEncounter,
-                #currentEncounterDeaths
-            ))
-            if ARL.db.showRecapOnWipe and ARL.ShowDeathRecap then
-                ARL:ShowDeathRecap()
-            end
+            local finalEncounterName = encounterName or currentEncounterName
+            local finalEncounterID = currentEncounterID
+            FinalizeWipeRecapWithRetries(finalEncounterName, finalEncounterID, 0)
         end
 
-        currentEncounterDeaths = {}
         currentEncounterID     = 0
+        currentEncounterName   = ""
     end
 end
 

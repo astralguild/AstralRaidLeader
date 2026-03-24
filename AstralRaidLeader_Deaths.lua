@@ -207,8 +207,8 @@ local function RefreshRecap()
     end
 
     if not deaths or #deaths == 0 then
-        summaryText:SetText("No deaths recorded.")
-        listText:SetText("(No data – death tracking may have been disabled, or no wipe has occurred.)")
+        summaryText:SetText("No reliable death-cause data found.")
+        listText:SetText("(C_DamageMeter did not provide death details for this wipe.)")
 
         -- Resize content to fit the message
         content:SetHeight(40)
