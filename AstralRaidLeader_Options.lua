@@ -742,14 +742,19 @@ local showRecapCB = CreateCheckbox(p5,
     "Show the Death Recap window automatically when an encounter ends in a wipe.",
     8, -36)
 
+local showRecapOnAnyEndCB = CreateCheckbox(p5,
+    "Open recap window on encounter kill",
+    "Also open the Death Recap when the encounter ends successfully.",
+    8, -64)
+
 local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-recapInfoText:SetPoint("TOPLEFT", 8, -70)
+recapInfoText:SetPoint("TOPLEFT", 8, -96)
 recapInfoText:SetWidth(520)
 recapInfoText:SetJustifyH("LEFT")
 recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
 
 local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
-openRecapButton:SetPoint("TOPLEFT", 8, -100)
+openRecapButton:SetPoint("TOPLEFT", 8, -126)
 openRecapButton:SetSize(140, 24)
 openRecapButton:SetText("Open Last Recap")
 
@@ -757,7 +762,7 @@ for _, cb in ipairs({
     autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
     groupAllCB, groupRaidCB, groupPartyCB,
     useGuildRankCB, consumableAuditCB,
-    deathTrackingCB, showRecapCB,
+    deathTrackingCB, showRecapCB, showRecapOnAnyEndCB,
 }) do
     StyleCheckbox(cb)
 end
@@ -908,6 +913,7 @@ local function RefreshUI()
     consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
     deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
     showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
+    showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
 
     RefreshListText()
     RefreshRankListText()
@@ -1342,6 +1348,14 @@ showRecapCB:SetScript("OnClick", function(self)
         ARL.db.showRecapOnWipe and "00ff00" or "ff0000",
         ARL.db.showRecapOnWipe and "enabled" or "disabled"))
 end)
+
+    showRecapOnAnyEndCB:SetScript("OnClick", function(self)
+        if updating or not ARL.db then return end
+        ARL.db.showRecapOnEncounterEnd = self:GetChecked() and true or false
+        Print(string.format("Auto-open death recap on encounter kill |cff%s%s|r.",
+        ARL.db.showRecapOnEncounterEnd and "00ff00" or "ff0000",
+        ARL.db.showRecapOnEncounterEnd and "enabled" or "disabled"))
+    end)
 
 openRecapButton:SetScript("OnClick", function()
     if ARL.ShowDeathRecap then

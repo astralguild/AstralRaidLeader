@@ -4,6 +4,9 @@
 local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
+local GameTooltip = _G.GameTooltip
+local GetSpellInfo = _G.GetSpellInfo
+
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
@@ -155,6 +158,66 @@ listText:SetSpacing(3)
 listText:SetTextColor(0.90, 0.92, 0.96)
 listText:SetText("")
 
+local deathRows = {}
+local DEATH_ROW_HEIGHT = 18
+
+local function HideAllDeathRows()
+    for _, row in ipairs(deathRows) do
+        row.entry = nil
+        row:Hide()
+    end
+end
+
+local function AcquireDeathRow(index)
+    local row = deathRows[index]
+    if row then
+        return row
+    end
+
+    row = CreateFrame("Button", nil, content)
+    row:SetHeight(DEATH_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", 4, -4 - ((index - 1) * DEATH_ROW_HEIGHT))
+    row:SetPoint("TOPRIGHT", -4, -4 - ((index - 1) * DEATH_ROW_HEIGHT))
+    row:EnableMouse(true)
+
+    local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    text:SetAllPoints()
+    text:SetJustifyH("LEFT")
+    text:SetJustifyV("MIDDLE")
+    text:SetTextColor(0.90, 0.92, 0.96)
+    row.text = text
+
+    row:SetScript("OnEnter", function(self)
+        local spellId = self.entry and self.entry.spellId or nil
+        if not spellId or spellId <= 0 then
+            return
+        end
+
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT")
+        local ok = false
+        if GameTooltip.SetSpellByID then
+            ok = pcall(GameTooltip.SetSpellByID, GameTooltip, spellId)
+        end
+
+        if not ok then
+            local spellName = GetSpellInfo(spellId)
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
+            GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
+            GameTooltip:Show()
+        end
+    end)
+
+    row:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+
+    deathRows[index] = row
+    return row
+end
+
 -- Close button
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 closeButton:SetPoint("BOTTOMRIGHT", -12, 12)
@@ -189,6 +252,7 @@ local function RefreshRecap()
         subtitleText:SetText("Waiting for saved variables to load...")
         summaryText:SetText("")
         listText:SetText("")
+        HideAllDeathRows()
         return
     end
 
@@ -209,6 +273,8 @@ local function RefreshRecap()
     if not deaths or #deaths == 0 then
         summaryText:SetText("No reliable death-cause data found.")
         listText:SetText("(C_DamageMeter did not provide death details for this wipe.)")
+        listText:Show()
+        HideAllDeathRows()
 
         -- Resize content to fit the message
         content:SetHeight(40)
@@ -216,20 +282,27 @@ local function RefreshRecap()
     end
 
     summaryText:SetText(string.format(
-        "%d death%s recorded during this attempt.",
+        "%d death%s recorded during this attempt. Hover rows to inspect the killing spell.",
         #deaths,
         #deaths == 1 and "" or "s"
     ))
 
-    local lines = {}
+    listText:SetText("")
+    listText:Hide()
+
     for i, entry in ipairs(deaths) do
-        lines[#lines + 1] = BuildDeathLine(i, entry)
+        local row = AcquireDeathRow(i)
+        row.entry = entry
+        row.text:SetText(BuildDeathLine(i, entry))
+        row:Show()
     end
-    listText:SetText(table.concat(lines, "\n"))
+    for i = #deaths + 1, #deathRows do
+        deathRows[i].entry = nil
+        deathRows[i]:Hide()
+    end
 
     -- Allow the content frame to resize so the scroll frame works correctly.
-    listText:SetWidth((scrollFrame:GetWidth() or (FRAME_W - 48)) - 8)
-    content:SetHeight(listText:GetStringHeight() + 12)
+    content:SetHeight((#deaths * DEATH_ROW_HEIGHT) + 8)
 end
 
 -- ============================================================

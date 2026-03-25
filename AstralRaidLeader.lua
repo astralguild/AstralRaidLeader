@@ -30,6 +30,7 @@ local DEFAULTS = {
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
     showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
+    showRecapOnEncounterEnd = false, -- automatically open the recap window after any encounter end (kill or wipe)
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
     lastWipeEncounter      = "",    -- name of the encounter that wiped
     lastWipeDate           = "",    -- human-readable timestamp of the wipe
@@ -671,6 +672,22 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return {}
     end
 
+    -- Some Blizzard APIs can surface protected "secret number" values.
+    -- Never call tonumber() on opaque values; accept only plain number/string inputs.
+    local function SafeNumber(value)
+        local valueType = type(value)
+        if valueType == "number" then
+            return value
+        end
+        if valueType == "string" then
+            local parsed = tonumber(value)
+            if type(parsed) == "number" then
+                return parsed
+            end
+        end
+        return nil
+    end
+
     local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
 
     local sessionId = nil
@@ -688,7 +705,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     end
 
     local function ResolveRecapCause(entry)
-        local recapID = tonumber(entry and entry.deathRecapID) or 0
+        local recapID = SafeNumber(entry and entry.deathRecapID) or 0
         if recapID <= 0 then return nil, nil end
         if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
             return nil, nil
@@ -718,7 +735,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             source = eventData.sourceName
         end
 
-        return mechanic, source
+        local spellId = SafeNumber(eventData.spellID or eventData.spellId or eventData.abilityId)
+
+        return mechanic, source, spellId
     end
 
     local function ParseDeathEntries(container)
@@ -727,19 +746,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         local function ToPlainNumber(...)
             for i = 1, select("#", ...) do
                 local value = select(i, ...)
-                if value ~= nil then
-                    local okToString, asString = pcall(tostring, value)
-                    if okToString and type(asString) == "string" then
-                        local parsed = tonumber(asString)
-                        if parsed then
-                            return parsed
-                        end
-                    end
-
-                    local okToNumber, asNumber = pcall(tonumber, value)
-                    if okToNumber and type(asNumber) == "number" then
-                        return asNumber
-                    end
+                local parsed = SafeNumber(value)
+                if parsed ~= nil then
+                    return parsed
                 end
             end
             return 0
@@ -761,12 +770,19 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 local playerName = entry.playerName or entry.destName or entry.name or entry.player or "Unknown"
                 local mechanic   = entry.mechanic or entry.spellName or entry.abilityName or entry.cause or "Unknown"
                 local source     = entry.sourceName or entry.source or entry.killerName or "Unknown"
-                local recapMechanic, recapSource = ResolveRecapCause(entry)
+                local spellId    = SafeNumber(
+                    entry.spellID or entry.spellId or entry.abilityId
+                    or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId
+                )
+                local recapMechanic, recapSource, recapSpellId = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
                 if recapSource and recapSource ~= "" then
                     source = recapSource
+                end
+                if recapSpellId and recapSpellId > 0 then
+                    spellId = recapSpellId
                 end
                 local timeOffset = ToPlainNumber(
                     entry.timeOffset,
@@ -779,6 +795,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     playerName = playerName,
                     mechanic   = mechanic,
                     source     = source,
+                    spellId    = spellId,
                     timeOffset = timeOffset,
                     timeStr    = FormatEncounterTime(math.floor(timeOffset)),
                 }
@@ -845,38 +862,42 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     return ExtractDeathsFromSession(session)
 end
 
-local function PersistAndShowWipeRecap(encounterName, deaths)
+local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, autoOpen)
     if not ARL.db then return end
     ARL.db.lastWipeDeaths = deaths
     ARL.db.lastWipeEncounter = encounterName
     ARL.db.lastWipeDate = date("%Y-%m-%d %H:%M")
+
+    local outcomeText = (encounterOutcome == "wipe") and "wipe" or "kill"
     Print(string.format(
-        "Wipe recorded on |cffffd100%s|r - %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+        "Encounter (%s) recorded on |cffffd100%s|r - %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+        outcomeText,
         ARL.db.lastWipeEncounter,
         #deaths
     ))
-    if ARL.db.showRecapOnWipe and ARL.ShowDeathRecap then
+
+    if autoOpen and ARL.ShowDeathRecap then
         ARL:ShowDeathRecap()
     end
 end
 
-local function FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt)
+local function FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt)
     if not ARL.db or not ARL.db.deathTrackingEnabled then return end
 
     local meterDeaths = BuildDeathsFromDamageMeter(encounterID)
     if #meterDeaths > 0 then
-        PersistAndShowWipeRecap(encounterName, meterDeaths)
+        PersistEncounterRecap(encounterName, meterDeaths, encounterOutcome, autoOpen)
         return
     end
 
     if attempt < WIPE_FINALIZE_MAX_RETRIES then
         _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
-            FinalizeWipeRecapWithRetries(encounterName, encounterID, attempt + 1)
+            FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt + 1)
         end)
         return
     end
 
-    PersistAndShowWipeRecap(encounterName, {})
+    PersistEncounterRecap(encounterName, {}, encounterOutcome, autoOpen)
 end
 
 HandleDeathTrackingEvent = function(event, ...)
@@ -888,10 +909,26 @@ HandleDeathTrackingEvent = function(event, ...)
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
 
-        if success == 0 and ARL.db and ARL.db.deathTrackingEnabled then
+        if ARL.db and ARL.db.deathTrackingEnabled then
             local finalEncounterName = encounterName or currentEncounterName
             local finalEncounterID = currentEncounterID
-            FinalizeWipeRecapWithRetries(finalEncounterName, finalEncounterID, 0)
+            if success == 0 then
+                FinalizeEncounterRecapWithRetries(
+                    finalEncounterName,
+                    finalEncounterID,
+                    "wipe",
+                    ARL.db.showRecapOnWipe,
+                    0
+                )
+            elseif ARL.db.showRecapOnEncounterEnd then
+                FinalizeEncounterRecapWithRetries(
+                    finalEncounterName,
+                    finalEncounterID,
+                    "kill",
+                    true,
+                    0
+                )
+            end
         end
 
         currentEncounterID     = 0
