@@ -4,6 +4,9 @@
 local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
+local GameTooltip = _G.GameTooltip
+local GetSpellInfo = _G.GetSpellInfo
+
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
@@ -185,7 +188,7 @@ local function AcquireDeathRow(index)
     row.text = text
 
     row:SetScript("OnEnter", function(self)
-        local spellId = self.entry and tonumber(self.entry.spellId) or nil
+        local spellId = self.entry and self.entry.spellId or nil
         if not spellId or spellId <= 0 then
             return
         end
@@ -206,7 +209,9 @@ local function AcquireDeathRow(index)
     end)
 
     row:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
     end)
 
     deathRows[index] = row

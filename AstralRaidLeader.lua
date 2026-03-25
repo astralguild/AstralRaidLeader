@@ -770,7 +770,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 local playerName = entry.playerName or entry.destName or entry.name or entry.player or "Unknown"
                 local mechanic   = entry.mechanic or entry.spellName or entry.abilityName or entry.cause or "Unknown"
                 local source     = entry.sourceName or entry.source or entry.killerName or "Unknown"
-                local spellId    = SafeNumber(entry.spellID or entry.spellId or entry.abilityId or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId)
+                local spellId    = SafeNumber(
+                    entry.spellID or entry.spellId or entry.abilityId
+                    or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId
+                )
                 local recapMechanic, recapSource, recapSpellId = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
