@@ -723,6 +723,38 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local function ParseDeathEntries(container)
         if type(container) ~= "table" then return {} end
+
+        local function ToPlainNumber(...)
+            for i = 1, select("#", ...) do
+                local value = select(i, ...)
+                if value ~= nil then
+                    local okToString, asString = pcall(tostring, value)
+                    if okToString and type(asString) == "string" then
+                        local parsed = tonumber(asString)
+                        if parsed then
+                            return parsed
+                        end
+                    end
+
+                    local okToNumber, asNumber = pcall(tonumber, value)
+                    if okToNumber and type(asNumber) == "number" then
+                        return asNumber
+                    end
+                end
+            end
+            return 0
+        end
+
+        local function ClampNonNegative(value)
+            local okIsNegative, isNegative = pcall(function()
+                return value < 0
+            end)
+            if okIsNegative and isNegative then
+                return 0
+            end
+            return value
+        end
+
         local parsed = {}
         for _, entry in pairs(container) do
             if type(entry) == "table" then
@@ -736,13 +768,13 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if recapSource and recapSource ~= "" then
                     source = recapSource
                 end
-                local timeOffset = tonumber(
-                    entry.timeOffset
-                    or entry.deathTimeSeconds
-                    or entry.elapsedTime
-                    or entry.time
-                ) or 0
-                if timeOffset < 0 then timeOffset = 0 end
+                local timeOffset = ToPlainNumber(
+                    entry.timeOffset,
+                    entry.deathTimeSeconds,
+                    entry.elapsedTime,
+                    entry.time
+                )
+                timeOffset = ClampNonNegative(timeOffset)
                 parsed[#parsed + 1] = {
                     playerName = playerName,
                     mechanic   = mechanic,
@@ -753,7 +785,15 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             end
         end
         table.sort(parsed, function(a, b)
-            return (a.timeOffset or 0) < (b.timeOffset or 0)
+            local left = ToPlainNumber(a and a.timeOffset)
+            local right = ToPlainNumber(b and b.timeOffset)
+            local okCompare, result = pcall(function()
+                return left < right
+            end)
+            if okCompare then
+                return result
+            end
+            return tostring(left) < tostring(right)
         end)
         return parsed
     end
