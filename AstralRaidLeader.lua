@@ -673,11 +673,14 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     end
 
     -- Some Blizzard APIs can surface protected "secret number" values.
-    -- Never call tonumber() on opaque values; accept only plain number/string inputs.
+    -- These have type "number" but raise an error on any arithmetic operation.
+    -- Use pcall to probe the value; if arithmetic fails it is a secret number.
     local function SafeNumber(value)
         local valueType = type(value)
         if valueType == "number" then
-            return value
+            local ok, plain = pcall(function() return value + 0 end)
+            if ok then return plain end
+            return nil
         end
         if valueType == "string" then
             local parsed = tonumber(value)
@@ -706,16 +709,16 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local function ResolveRecapCause(entry)
         local recapID = SafeNumber(entry and entry.deathRecapID) or 0
-        if recapID <= 0 then return nil, nil end
+        if recapID <= 0 then return nil, nil, nil end
         if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
-            return nil, nil
+            return nil, nil, nil
         end
 
         local ok, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
-        if not ok or type(recapEvents) ~= "table" then return nil, nil end
+        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil end
 
         local eventData = recapEvents[1]
-        if type(eventData) ~= "table" then return nil, nil end
+        if type(eventData) ~= "table" then return nil, nil, nil end
 
         local mechanic = eventData.spellName
         if not mechanic or mechanic == "" then
@@ -736,11 +739,20 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local spellId = SafeNumber(eventData.spellID or eventData.spellId or eventData.abilityId)
+        local recapTimeOffset = SafeNumber(
+            eventData.timeOffset
+            or eventData.deathTimeOffset
+            or eventData.deathTimeOffsetSeconds
+            or eventData.timeSinceEncounterStart
+            or eventData.deathTimeSeconds
+            or eventData.timestamp
+            or eventData.time
+        )
 
-        return mechanic, source, spellId
+        return mechanic, source, spellId, recapTimeOffset
     end
 
-    local function ParseDeathEntries(container)
+    local function ParseDeathEntries(container, encounterDuration, sessionStartTime)
         if type(container) ~= "table" then return {} end
 
         local function ToPlainNumber(...)
@@ -764,6 +776,46 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return value
         end
 
+        local function IsPlausibleOffset(value)
+            if value == nil then return false end
+            local bounded = ClampNonNegative(value)
+            local maxExpected = 7200
+            if encounterDuration and encounterDuration > 0 then
+                maxExpected = encounterDuration + 5
+            end
+            return bounded <= maxExpected
+        end
+
+        local function ResolveEncounterTimeOffset(entry, recapTimeOffset)
+            local rawCandidates = {
+                entry and entry.timeOffset,
+                entry and entry.deathTimeOffset,
+                entry and entry.deathTimeOffsetSeconds,
+                entry and entry.deathTimeSeconds,
+                entry and entry.deathTime,
+                recapTimeOffset,
+            }
+
+            for _, raw in ipairs(rawCandidates) do
+                local candidate = SafeNumber(raw)
+                if candidate ~= nil then
+                    candidate = ClampNonNegative(candidate)
+                    if IsPlausibleOffset(candidate) then
+                        return candidate
+                    end
+
+                    if sessionStartTime and sessionStartTime > 0 and candidate > sessionStartTime then
+                        local relative = ClampNonNegative(candidate - sessionStartTime)
+                        if IsPlausibleOffset(relative) then
+                            return relative
+                        end
+                    end
+                end
+            end
+
+            return nil
+        end
+
         local parsed = {}
         for _, entry in pairs(container) do
             if type(entry) == "table" then
@@ -774,7 +826,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.spellID or entry.spellId or entry.abilityId
                     or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId
                 )
-                local recapMechanic, recapSource, recapSpellId = ResolveRecapCause(entry)
+                local recapMechanic, recapSource, recapSpellId, recapTimeOffset = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
@@ -784,26 +836,29 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if recapSpellId and recapSpellId > 0 then
                     spellId = recapSpellId
                 end
-                local timeOffset = ToPlainNumber(
-                    entry.timeOffset,
-                    entry.deathTimeSeconds,
-                    entry.elapsedTime,
-                    entry.time
-                )
-                timeOffset = ClampNonNegative(timeOffset)
+                local timeOffset = ResolveEncounterTimeOffset(entry, recapTimeOffset)
+                local timeStr = "?:??"
+                if timeOffset ~= nil then
+                    timeStr = FormatEncounterTime(math.floor(timeOffset))
+                end
                 parsed[#parsed + 1] = {
                     playerName = playerName,
                     mechanic   = mechanic,
                     source     = source,
                     spellId    = spellId,
                     timeOffset = timeOffset,
-                    timeStr    = FormatEncounterTime(math.floor(timeOffset)),
+                    timeStr    = timeStr,
                 }
             end
         end
         table.sort(parsed, function(a, b)
-            local left = ToPlainNumber(a and a.timeOffset)
-            local right = ToPlainNumber(b and b.timeOffset)
+            local left = (a and a.timeOffset)
+            local right = (b and b.timeOffset)
+            if left == nil and right == nil then return false end
+            if left == nil then return false end
+            if right == nil then return true end
+            left = ToPlainNumber(left)
+            right = ToPlainNumber(right)
             local okCompare, result = pcall(function()
                 return left < right
             end)
@@ -818,13 +873,25 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     local function ExtractDeathsFromSession(session)
         if type(session) ~= "table" then return {} end
 
+        local encounterDuration = SafeNumber(session.durationSeconds)
+            or SafeNumber(session.combatDurationSeconds)
+            or SafeNumber(session.elapsedTime)
+            or SafeNumber(session.duration)
+            or 0
+        local sessionStartTime = SafeNumber(
+            session.startTimeSeconds
+            or session.combatStartTimeSeconds
+            or session.startTime
+            or session.combatStartTime
+        )
+
         -- Older/alternate layouts.
         local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
-        local parsed = ParseDeathEntries(deathList)
+        local parsed = ParseDeathEntries(deathList, encounterDuration, sessionStartTime)
         if #parsed > 0 then return parsed end
 
         -- Midnight 12.x layout for Deaths meter type.
-        parsed = ParseDeathEntries(session.combatSources)
+        parsed = ParseDeathEntries(session.combatSources, encounterDuration, sessionStartTime)
         if #parsed > 0 then return parsed end
 
         return {}
