@@ -786,29 +786,78 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return bounded <= maxExpected
         end
 
+        local function NormalizeCandidateSeconds(candidate)
+            candidate = ClampNonNegative(candidate)
+            if IsPlausibleOffset(candidate) then
+                return candidate
+            end
+
+            -- Some APIs expose milliseconds; convert when plausible.
+            local asSeconds = candidate / 1000
+            if IsPlausibleOffset(asSeconds) then
+                return asSeconds
+            end
+
+            return nil
+        end
+
+        local function ResolveRelativeSeconds(candidate, startTime)
+            if not startTime or startTime <= 0 then return nil end
+
+            local delta = NormalizeCandidateSeconds(candidate - startTime)
+            if delta ~= nil then
+                return delta
+            end
+
+            -- Handle mixed precision (seconds vs milliseconds) timestamps.
+            delta = NormalizeCandidateSeconds((candidate / 1000) - startTime)
+            if delta ~= nil then
+                return delta
+            end
+            delta = NormalizeCandidateSeconds(candidate - (startTime / 1000))
+            if delta ~= nil then
+                return delta
+            end
+            delta = NormalizeCandidateSeconds((candidate / 1000) - (startTime / 1000))
+            if delta ~= nil then
+                return delta
+            end
+
+            return nil
+        end
+
         local function ResolveEncounterTimeOffset(entry, recapTimeOffset)
+            -- Special handling for deathTimeSeconds, which may be a tainted "secret number"
+            -- that fails arithmetic checks but is still usable.
+            if entry and type(entry.deathTimeSeconds) == "number" then
+                local val = ClampNonNegative(entry.deathTimeSeconds)
+                if val > 0 and val <= 7200 then
+                    return val
+                end
+            end
+
             local rawCandidates = {
                 entry and entry.timeOffset,
                 entry and entry.deathTimeOffset,
                 entry and entry.deathTimeOffsetSeconds,
-                entry and entry.deathTimeSeconds,
                 entry and entry.deathTime,
                 recapTimeOffset,
+                -- Last-resort fields for clients that only expose generic time values.
+                entry and entry.elapsedTime,
+                entry and entry.time,
             }
 
             for _, raw in ipairs(rawCandidates) do
                 local candidate = SafeNumber(raw)
                 if candidate ~= nil then
-                    candidate = ClampNonNegative(candidate)
-                    if IsPlausibleOffset(candidate) then
-                        return candidate
+                    local normalized = NormalizeCandidateSeconds(candidate)
+                    if normalized ~= nil then
+                        return normalized
                     end
 
-                    if sessionStartTime and sessionStartTime > 0 and candidate > sessionStartTime then
-                        local relative = ClampNonNegative(candidate - sessionStartTime)
-                        if IsPlausibleOffset(relative) then
-                            return relative
-                        end
+                    local relative = ResolveRelativeSeconds(candidate, sessionStartTime)
+                    if relative ~= nil then
+                        return relative
                     end
                 end
             end
