@@ -747,14 +747,33 @@ local showRecapOnAnyEndCB = CreateCheckbox(p5,
     "Also open the Death Recap when the encounter ends successfully.",
     8, -64)
 
+local deathGroupFilterLabel = p5:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -96)
+deathGroupFilterLabel:SetText("Track recap data in:")
+
+local deathGroupAllCB = CreateCheckbox(p5,
+    "All groups",
+    "Track death recap data in both raids and parties.",
+    8, -118)
+
+local deathGroupRaidCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
+deathGroupRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 140, -118)
+deathGroupRaidCB.Text:SetText("Raids only")
+deathGroupRaidCB.tooltipText = "Track death recap data only in raid groups."
+
+local deathGroupPartyCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
+deathGroupPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 270, -118)
+deathGroupPartyCB.Text:SetText("Parties only")
+deathGroupPartyCB.tooltipText = "Track death recap data only in parties (not raids)."
+
 local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-recapInfoText:SetPoint("TOPLEFT", 8, -96)
+recapInfoText:SetPoint("TOPLEFT", 8, -156)
 recapInfoText:SetWidth(520)
 recapInfoText:SetJustifyH("LEFT")
 recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
 
 local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
-openRecapButton:SetPoint("TOPLEFT", 8, -126)
+openRecapButton:SetPoint("TOPLEFT", 8, -186)
 openRecapButton:SetSize(140, 24)
 openRecapButton:SetText("Open Last Recap")
 
@@ -763,6 +782,7 @@ for _, cb in ipairs({
     groupAllCB, groupRaidCB, groupPartyCB,
     useGuildRankCB, consumableAuditCB,
     deathTrackingCB, showRecapCB, showRecapOnAnyEndCB,
+    deathGroupAllCB, deathGroupRaidCB, deathGroupPartyCB,
 }) do
     StyleCheckbox(cb)
 end
@@ -914,6 +934,11 @@ local function RefreshUI()
     deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
     showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
     showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
+
+    local deathFilter = ARL.db.deathGroupTypeFilter or "raid"
+    deathGroupAllCB:SetChecked(deathFilter == "all")
+    deathGroupRaidCB:SetChecked(deathFilter == "raid")
+    deathGroupPartyCB:SetChecked(deathFilter == "party")
 
     RefreshListText()
     RefreshRankListText()
@@ -1356,6 +1381,20 @@ end)
         ARL.db.showRecapOnEncounterEnd and "00ff00" or "ff0000",
         ARL.db.showRecapOnEncounterEnd and "enabled" or "disabled"))
     end)
+
+local function SetDeathGroupTypeFilter(filter)
+    if not ARL.db then return end
+    ARL.db.deathGroupTypeFilter = filter
+    deathGroupAllCB:SetChecked(filter == "all")
+    deathGroupRaidCB:SetChecked(filter == "raid")
+    deathGroupPartyCB:SetChecked(filter == "party")
+    local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+    Print(string.format("Death recap group filter set to |cffffff00%s|r.", labels[filter]))
+end
+
+deathGroupAllCB:SetScript("OnClick",  function() if not updating then SetDeathGroupTypeFilter("all")   end end)
+deathGroupRaidCB:SetScript("OnClick", function() if not updating then SetDeathGroupTypeFilter("raid")  end end)
+deathGroupPartyCB:SetScript("OnClick",function() if not updating then SetDeathGroupTypeFilter("party") end end)
 
 openRecapButton:SetScript("OnClick", function()
     if ARL.ShowDeathRecap then

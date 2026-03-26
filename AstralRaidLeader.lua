@@ -29,6 +29,7 @@ local DEFAULTS = {
     useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
+    deathGroupTypeFilter   = "raid", -- "all", "raid", or "party" for death recap capture
     showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
     showRecapOnEncounterEnd = false, -- automatically open the recap window after any encounter end (kill or wipe)
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
@@ -179,6 +180,17 @@ local function IsInRelevantGroup()
     if filter == "raid"  then return inRaid end
     if filter == "party" then return inGroup and not inRaid end
     return true  -- "all"
+end
+
+-- Return true when death recap tracking should run for the current group type.
+local function IsInRelevantDeathGroup()
+    local inRaid  = IsInRaid()
+    local inGroup = IsInGroup()
+    if not (inRaid or inGroup) then return false end
+    local filter = ARL.db and ARL.db.deathGroupTypeFilter or "raid"
+    if filter == "all" then return true end
+    if filter == "party" then return inGroup and not inRaid end
+    return inRaid -- default: "raid"
 end
 
 -- ============================================================
@@ -1025,7 +1037,7 @@ HandleDeathTrackingEvent = function(event, ...)
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
 
-        if ARL.db and ARL.db.deathTrackingEnabled then
+        if ARL.db and ARL.db.deathTrackingEnabled and IsInRelevantDeathGroup() then
             local finalEncounterName = encounterName or currentEncounterName
             local finalEncounterID = currentEncounterID
             if success == 0 then
@@ -1538,6 +1550,21 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
         end
 
+    -- /arl deathgrouptype [all|raid|party]
+    elseif cmd == "deathgrouptype" then
+        local lower = arg:lower()
+        if lower == "all" or lower == "raid" or lower == "party" then
+            ARL.db.deathGroupTypeFilter = lower
+            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+            Print(string.format("Death recap group filter set to |cffffff00%s|r.", labels[lower]))
+        elseif arg == "" then
+            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
+            local active = ARL.db.deathGroupTypeFilter or "raid"
+            Print(string.format("Death recap group filter is |cffffff00%s|r.", labels[active] or active))
+        else
+            Print("Usage: /arl deathgrouptype [all|raid|party]")
+        end
+
     -- bare /arl opens settings
     elseif cmd == "" then
         if ARL.ShowOptions then
@@ -1563,6 +1590,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
         Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
         Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
+        Print("  |cffffff00/arl deathgrouptype [all|raid|party]|r – Restrict death recap capture to a group type")
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")
