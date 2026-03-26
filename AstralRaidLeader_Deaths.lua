@@ -161,6 +161,26 @@ listText:SetText("")
 local deathRows = {}
 local DEATH_ROW_HEIGHT = 18
 
+local function ShowSpellTooltip(owner, spellId)
+    if not GameTooltip or not spellId or spellId <= 0 then
+        return
+    end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_CURSOR_RIGHT")
+    local ok = false
+    if GameTooltip.SetSpellByID then
+        ok = pcall(GameTooltip.SetSpellByID, GameTooltip, spellId)
+    end
+
+    if not ok then
+        local spellName = GetSpellInfo(spellId)
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
+        GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
+        GameTooltip:Show()
+    end
+end
+
 local function HideAllDeathRows()
     for _, row in ipairs(deathRows) do
         row.entry = nil
@@ -174,41 +194,46 @@ local function AcquireDeathRow(index)
         return row
     end
 
-    row = CreateFrame("Button", nil, content)
+    row = CreateFrame("Frame", nil, content)
     row:SetHeight(DEATH_ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 4, -4 - ((index - 1) * DEATH_ROW_HEIGHT))
     row:SetPoint("TOPRIGHT", -4, -4 - ((index - 1) * DEATH_ROW_HEIGHT))
-    row:EnableMouse(true)
 
-    local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    text:SetAllPoints()
-    text:SetJustifyH("LEFT")
-    text:SetJustifyV("MIDDLE")
-    text:SetTextColor(0.90, 0.92, 0.96)
-    row.text = text
+    local prefix = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    prefix:SetPoint("LEFT", row, "LEFT", 0, 0)
+    prefix:SetJustifyH("LEFT")
+    prefix:SetJustifyV("MIDDLE")
+    prefix:SetWordWrap(false)
+    prefix:SetTextColor(0.90, 0.92, 0.96)
+    row.prefixText = prefix
 
-    row:SetScript("OnEnter", function(self)
-        local spellId = self.entry and self.entry.spellId or nil
-        if not spellId or spellId <= 0 then
-            return
-        end
+    local spellButton = CreateFrame("Button", nil, row)
+    spellButton:SetHeight(DEATH_ROW_HEIGHT)
+    spellButton:EnableMouse(true)
 
-        GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT")
-        local ok = false
-        if GameTooltip.SetSpellByID then
-            ok = pcall(GameTooltip.SetSpellByID, GameTooltip, spellId)
-        end
+    local spellText = spellButton:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    spellText:SetPoint("LEFT", spellButton, "LEFT", 0, 0)
+    spellText:SetPoint("RIGHT", spellButton, "RIGHT", 0, 0)
+    spellText:SetJustifyH("LEFT")
+    spellText:SetJustifyV("MIDDLE")
+    spellText:SetWordWrap(false)
+    spellText:SetTextColor(0.90, 0.92, 0.96)
+    spellButton.text = spellText
+    row.spellButton = spellButton
 
-        if not ok then
-            local spellName = GetSpellInfo(spellId)
-            GameTooltip:ClearLines()
-            GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
-            GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
-            GameTooltip:Show()
-        end
+    local suffix = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    suffix:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    suffix:SetJustifyH("RIGHT")
+    suffix:SetJustifyV("MIDDLE")
+    suffix:SetWordWrap(false)
+    suffix:SetTextColor(0.90, 0.92, 0.96)
+    row.suffixText = suffix
+
+    spellButton:SetScript("OnEnter", function(self)
+        ShowSpellTooltip(self, self.spellId)
     end)
 
-    row:SetScript("OnLeave", function()
+    spellButton:SetScript("OnLeave", function()
         if GameTooltip then
             GameTooltip:Hide()
         end
@@ -237,14 +262,59 @@ local COLOR_TIME     = "|cff888888"   -- grey
 local COLOR_RESET    = "|r"
 
 local function BuildDeathLine(i, entry)
-    return string.format(
-        "%2d. %s%s%s  died to %s%s%s  (from %s%s%s)  %sat %s%s",
+    local prefix = string.format(
+        "%2d. %s%s%s  died to",
         i,
-        COLOR_PLAYER,   entry.playerName, COLOR_RESET,
-        COLOR_MECHANIC, entry.mechanic,   COLOR_RESET,
-        COLOR_SOURCE,   entry.source,     COLOR_RESET,
-        COLOR_TIME,     entry.timeStr,    COLOR_RESET
+        COLOR_PLAYER, entry.playerName, COLOR_RESET
     )
+
+    local spellText = string.format(
+        "%s%s%s",
+        COLOR_MECHANIC, entry.mechanic, COLOR_RESET
+    )
+
+    local spellId = entry.spellId
+    if spellId and spellId > 0 then
+        local _, _, icon = GetSpellInfo(spellId)
+        if icon then
+            spellText = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, spellText)
+        end
+    end
+
+    local suffix = string.format(
+        "(from %s%s%s)  %sat %s%s",
+        COLOR_SOURCE, entry.source, COLOR_RESET,
+        COLOR_TIME,   entry.timeStr, COLOR_RESET
+    )
+
+    return prefix, spellText, suffix
+end
+
+local function PopulateDeathRow(row, i, entry)
+    local prefix, spellText, suffix = BuildDeathLine(i, entry)
+
+    row.prefixText:SetText(prefix)
+    row.suffixText:SetText(suffix)
+    row.spellButton.text:SetText(spellText)
+
+    local hasSpellTooltip = entry.spellId and entry.spellId > 0
+    row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
+    row.spellButton:EnableMouse(hasSpellTooltip)
+
+    local rowWidth = row:GetWidth() or 0
+    local prefixW = row.prefixText:GetStringWidth() or 0
+    local suffixW = row.suffixText:GetStringWidth() or 0
+    local desiredSpellW = (row.spellButton.text:GetStringWidth() or 0) + 2
+    local availableSpellW = math.max(24, rowWidth - prefixW - suffixW - 10)
+    local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
+
+    row.spellButton:ClearAllPoints()
+    row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
+    row.spellButton:SetWidth(spellW)
+
+    row.suffixText:ClearAllPoints()
+    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 4, 0)
+    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 end
 
 local function RefreshRecap()
@@ -282,7 +352,7 @@ local function RefreshRecap()
     end
 
     summaryText:SetText(string.format(
-        "%d death%s recorded during this attempt. Hover rows to inspect the killing spell.",
+        "%d death%s recorded during this attempt. Hover spell names to inspect the killing spell.",
         #deaths,
         #deaths == 1 and "" or "s"
     ))
@@ -293,7 +363,7 @@ local function RefreshRecap()
     for i, entry in ipairs(deaths) do
         local row = AcquireDeathRow(i)
         row.entry = entry
-        row.text:SetText(BuildDeathLine(i, entry))
+        PopulateDeathRow(row, i, entry)
         row:Show()
     end
     for i = #deaths + 1, #deathRows do
