@@ -10,6 +10,7 @@ local ADDON_NAME = "AstralRaidLeader"
 -- Addon namespace exposed as a global so other files / the console can reach it.
 local ARL = {}
 _G[ADDON_NAME] = ARL
+local UnitInPhase = _G.UnitInPhase
 
 -- ============================================================
 -- Defaults
@@ -39,7 +40,7 @@ local DEFAULTS = {
 
 -- Built-in consumable categories - always checked, never stored in SavedVariables.
 local SYSTEM_CONSUMABLES = {
-    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324, 1235110, 1235057 } },
+    { label = "Flasks", spellIds = { 1235108, 1235111, 1235110, 1235057, 1230875, 1235057 } },
     { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
 }
 
@@ -158,7 +159,7 @@ local function GetGroupMemberMap()
     if IsInRaid() then
         local n = GetNumGroupMembers()
         for i = 1, n do
-            AddName(GetRaidRosterInfo(i))
+            AddName(UnitName("raid" .. i))
         end
     elseif IsInGroup() then
         AddName(UnitName("player"))
@@ -341,8 +342,6 @@ RequestGuildRosterIfStale = function()
     if (now - lastGuildRosterRequestAt) < guildRosterRequestThrottleSeconds then return end
     if C_GuildInfo and C_GuildInfo.GuildRoster then
         C_GuildInfo.GuildRoster()
-    elseif GuildRoster then
-        GuildRoster()
     end
     lastGuildRosterRequestAt = now
 end
@@ -525,53 +524,67 @@ local function RunConsumableAudit(force)
     if #allConsumables == 0 then return end
 
     local missing = {}
+    local skipped = 0
     for _, unit in ipairs(units) do
         if UnitExists(unit) then
-            local name = UnitName(unit)
-            if name and name ~= "" then
-                local missingCats = {}
-                for _, consumable in ipairs(allConsumables) do
-                    local hasIt = false
-                    for _, spellId in ipairs(consumable.spellIds) do
-                        if HasBuff(unit, spellId) then
-                            hasIt = true
-                            break
-                        end
-                    end
-                    -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
-                    if not hasIt and consumable.namePatterns then
-                        for _, pattern in ipairs(consumable.namePatterns) do
-                            local j = 1
-                            while j <= 64 do
-                                local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
-                                if not aura then break end
-                                if aura.name and aura.name:find(pattern, 1, true) then
-                                    hasIt = true
-                                    break
-                                end
-                                j = j + 1
+            -- Skip players in a different instance/phase – their auras are not queryable
+            -- and they would always appear to be missing every buff.
+            if UnitInPhase and not UnitInPhase(unit) then
+                skipped = skipped + 1
+            else
+                local name = UnitName(unit)
+                if name and name ~= "" then
+                    local missingCats = {}
+                    for _, consumable in ipairs(allConsumables) do
+                        local hasIt = false
+                        for _, spellId in ipairs(consumable.spellIds) do
+                            if HasBuff(unit, spellId) then
+                                hasIt = true
+                                break
                             end
-                            if hasIt then break end
+                        end
+                        -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
+                        if not hasIt and consumable.namePatterns then
+                            for _, pattern in ipairs(consumable.namePatterns) do
+                                local j = 1
+                                while j <= 64 do
+                                    local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
+                                    if not aura then break end
+                                    if aura.name and aura.name:find(pattern, 1, true) then
+                                        hasIt = true
+                                        break
+                                    end
+                                    j = j + 1
+                                end
+                                if hasIt then break end
+                            end
+                        end
+                        if not hasIt then
+                            missingCats[#missingCats + 1] = consumable.label
                         end
                     end
-                    if not hasIt then
-                        missingCats[#missingCats + 1] = consumable.label
+                    if #missingCats > 0 then
+                        missing[#missing + 1] = { name = name, cats = missingCats }
                     end
-                end
-                if #missingCats > 0 then
-                    missing[#missing + 1] = { name = name, cats = missingCats }
                 end
             end
         end
     end
 
     if #missing == 0 then
-        Print("Ready check: All group members have their consumables!")
+        local msg = "Ready check: All group members have their consumables!"
+        if skipped > 0 then
+            msg = msg .. string.format(" |cff888888(%d member(s) in a different instance were skipped.)|r", skipped)
+        end
+        Print(msg)
     else
         Print(string.format("Ready check: %d group member(s) missing consumables:", #missing))
         for _, entry in ipairs(missing) do
             Print(string.format("  |cffffd100%s|r – missing: |cffff6666%s|r",
                 entry.name, table.concat(entry.cats, ", ")))
+        end
+        if skipped > 0 then
+            Print(string.format("  |cff888888(%d member(s) in a different instance were not checked.)|r", skipped))
         end
     end
 end
@@ -611,7 +624,6 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -651,7 +663,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "GUILD_ROSTER_UPDATE" then
         EvaluateLeaderState("roster")
 
-    elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
+    elseif event == "GROUP_ROSTER_UPDATE" then
         local currentCount = GetNumGroupMembers()
         local trigger = "roster"
         if currentCount > lastGroupMemberCount then
@@ -839,12 +851,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local function ResolveEncounterTimeOffset(entry, recapTimeOffset)
-            -- Special handling for deathTimeSeconds, which may be a tainted "secret number"
-            -- that fails arithmetic checks but is still usable.
+            -- Special handling for deathTimeSeconds, which may be a tainted "secret number".
+            -- SafeNumber untaints it via pcall(value + 0); without this the bare comparison
+            -- below throws "attempt to compare ... a secret number value tainted by ...".
             if entry and type(entry.deathTimeSeconds) == "number" then
-                local val = ClampNonNegative(entry.deathTimeSeconds)
-                if val > 0 and val <= 7200 then
-                    return val
+                local val = SafeNumber(entry.deathTimeSeconds)
+                if val ~= nil then
+                    val = ClampNonNegative(val)
+                    local okCmp, inRange = pcall(function() return val > 0 and val <= 7200 end)
+                    if okCmp and inRange then
+                        return val
+                    end
                 end
             end
 

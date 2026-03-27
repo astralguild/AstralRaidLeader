@@ -38,6 +38,18 @@ The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `AR
 - If retries still return no deaths, persist an empty recap and show an explicit "no reliable death-cause data" message.
 - Do **not** use `UNIT_HEALTH` fallback when recap quality requires death cause/source data.
 
+### API Compatibility (Retail / Midnight)
+- **`GetSpellInfo` may be nil** in modern clients. Prefer a resolver that tries `GetSpellInfo` when present, then falls back to `C_Spell.GetSpellInfo` / `C_Spell.GetSpellName` / `C_Spell.GetSpellTexture`.
+- **Secret-number taint is real** for some values from `C_DamageMeter` and text width APIs. Never compare or do arithmetic on raw values that may be tainted.
+- Use a safe untaint pattern before numeric operations:
+  ```lua
+  local ok, plain = pcall(function() return value + 0 end)
+  if ok then value = plain end
+  ```
+- For raid roster updates, use `GROUP_ROSTER_UPDATE` and unit tokens (`UnitName("raid" .. i)`), not `RAID_ROSTER_UPDATE` or `GetRaidRosterInfo`.
+- For guild roster refreshes, use `C_GuildInfo.GuildRoster()` only; do not reintroduce the old global `GuildRoster()` fallback.
+- Consumable checks should skip members not queryable in the current instance/phase (guard `UnitInPhase` via `_G`, and handle nil API gracefully).
+
 ### Texture / Backdrop conventions
 - Background: `"Interface\\Buttons\\WHITE8x8"` for both `bgFile` and `edgeFile`.
 - Edge size: `1` (thin 1 px border).
@@ -214,3 +226,6 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 7. **`frame:EnableMouse`** — the main frame starts with `EnableMouse(false)` and an alpha of 0, then enables on `OnShow`. This prevents click-through issues when hidden.
 8. **Auto-promote self-target spam** — preferred-leader matching must skip the current player, otherwise roster churn can print repeated "Promoted X" lines when X already holds leader.
 9. **Death recap source drift** — do not mix in low-fidelity fallbacks when the requirement is "why they died"; keep recap rows tied to `C_DamageMeter` only.
+10. **Tainted numeric comparisons** — values like `deathTimeSeconds` or `GetStringWidth()` results can be secret numbers; sanitize before `>`, `<`, `<=`, subtraction, or `math.*` usage.
+11. **Undefined-global lint traps** — reference optional globals via locals (e.g. `local UnitInPhase = _G.UnitInPhase`) before use.
+12. **Cross-instance consumable false positives** — do not audit buffs for units outside your phase/instance; they will appear missing by default.

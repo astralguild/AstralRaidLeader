@@ -6,6 +6,53 @@ if not ARL then return end
 
 local GameTooltip = _G.GameTooltip
 local GetSpellInfo = _G.GetSpellInfo
+local C_Spell = _G.C_Spell
+
+local function ResolveSpellNameAndIcon(spellId)
+    if not spellId or spellId <= 0 then
+        return nil, nil
+    end
+
+    if GetSpellInfo then
+        local name, _, icon = GetSpellInfo(spellId)
+        if name or icon then
+            return name, icon
+        end
+    end
+
+    if C_Spell then
+        if C_Spell.GetSpellInfo then
+            local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
+            if ok and type(info) == "table" then
+                local name = info.name or info.spellName
+                local icon = info.iconID or info.icon
+                if name or icon then
+                    return name, icon
+                end
+            end
+        end
+
+        local name
+        if C_Spell.GetSpellName then
+            local ok, value = pcall(C_Spell.GetSpellName, spellId)
+            if ok then
+                name = value
+            end
+        end
+
+        local icon
+        if C_Spell.GetSpellTexture then
+            local ok, value = pcall(C_Spell.GetSpellTexture, spellId)
+            if ok then
+                icon = value
+            end
+        end
+
+        return name, icon
+    end
+
+    return nil, nil
+end
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -173,7 +220,7 @@ local function ShowSpellTooltip(owner, spellId)
     end
 
     if not ok then
-        local spellName = GetSpellInfo(spellId)
+        local spellName = ResolveSpellNameAndIcon(spellId)
         GameTooltip:ClearLines()
         GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
         GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
@@ -261,6 +308,12 @@ local COLOR_SOURCE   = "|cffff8000"   -- orange
 local COLOR_TIME     = "|cff888888"   -- grey
 local COLOR_RESET    = "|r"
 
+local function SafeWidth(value)
+    if type(value) ~= "number" then return 0 end
+    local ok, plain = pcall(function() return value + 0 end)
+    return ok and plain or 0
+end
+
 local function BuildDeathLine(i, entry)
     local prefix = string.format(
         "%2d. %s%s%s  died to",
@@ -275,7 +328,7 @@ local function BuildDeathLine(i, entry)
 
     local spellId = entry.spellId
     if spellId and spellId > 0 then
-        local _, _, icon = GetSpellInfo(spellId)
+        local _, icon = ResolveSpellNameAndIcon(spellId)
         if icon then
             spellText = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, spellText)
         end
@@ -301,20 +354,15 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
     row.spellButton:EnableMouse(hasSpellTooltip)
 
-    local rowWidth = row:GetWidth() or 0
-    local prefixW = row.prefixText:GetStringWidth() or 0
-    local suffixW = row.suffixText:GetStringWidth() or 0
-    local desiredSpellW = (row.spellButton.text:GetStringWidth() or 0) + 2
-    local availableSpellW = math.max(24, rowWidth - prefixW - suffixW - 10)
-    local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
+    local desiredSpellW = SafeWidth(row.spellButton.text:GetStringWidth()) + 2
+    local spellW = math.max(24, math.min(desiredSpellW, 300))  -- cap at 300 to prevent overflow
 
     row.spellButton:ClearAllPoints()
     row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
     row.spellButton:SetWidth(spellW)
 
     row.suffixText:ClearAllPoints()
-    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 4, 0)
-    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 2, 0)
 end
 
 local function RefreshRecap()
