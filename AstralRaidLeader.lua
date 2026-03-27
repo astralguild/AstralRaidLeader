@@ -525,53 +525,67 @@ local function RunConsumableAudit(force)
     if #allConsumables == 0 then return end
 
     local missing = {}
+    local skipped = 0
     for _, unit in ipairs(units) do
         if UnitExists(unit) then
-            local name = UnitName(unit)
-            if name and name ~= "" then
-                local missingCats = {}
-                for _, consumable in ipairs(allConsumables) do
-                    local hasIt = false
-                    for _, spellId in ipairs(consumable.spellIds) do
-                        if HasBuff(unit, spellId) then
-                            hasIt = true
-                            break
-                        end
-                    end
-                    -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
-                    if not hasIt and consumable.namePatterns then
-                        for _, pattern in ipairs(consumable.namePatterns) do
-                            local j = 1
-                            while j <= 64 do
-                                local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
-                                if not aura then break end
-                                if aura.name and aura.name:find(pattern, 1, true) then
-                                    hasIt = true
-                                    break
-                                end
-                                j = j + 1
+            -- Skip players in a different instance/phase – their auras are not queryable
+            -- and they would always appear to be missing every buff.
+            if not UnitInPhase(unit) then
+                skipped = skipped + 1
+            else
+                local name = UnitName(unit)
+                if name and name ~= "" then
+                    local missingCats = {}
+                    for _, consumable in ipairs(allConsumables) do
+                        local hasIt = false
+                        for _, spellId in ipairs(consumable.spellIds) do
+                            if HasBuff(unit, spellId) then
+                                hasIt = true
+                                break
                             end
-                            if hasIt then break end
+                        end
+                        -- Fall back to buff-name substring matching (e.g. "Well Fed" food buffs).
+                        if not hasIt and consumable.namePatterns then
+                            for _, pattern in ipairs(consumable.namePatterns) do
+                                local j = 1
+                                while j <= 64 do
+                                    local aura = C_UnitAuras.GetBuffDataByIndex(unit, j)
+                                    if not aura then break end
+                                    if aura.name and aura.name:find(pattern, 1, true) then
+                                        hasIt = true
+                                        break
+                                    end
+                                    j = j + 1
+                                end
+                                if hasIt then break end
+                            end
+                        end
+                        if not hasIt then
+                            missingCats[#missingCats + 1] = consumable.label
                         end
                     end
-                    if not hasIt then
-                        missingCats[#missingCats + 1] = consumable.label
+                    if #missingCats > 0 then
+                        missing[#missing + 1] = { name = name, cats = missingCats }
                     end
-                end
-                if #missingCats > 0 then
-                    missing[#missing + 1] = { name = name, cats = missingCats }
                 end
             end
         end
     end
 
     if #missing == 0 then
-        Print("Ready check: All group members have their consumables!")
+        local msg = "Ready check: All group members have their consumables!"
+        if skipped > 0 then
+            msg = msg .. string.format(" |cff888888(%d member(s) in a different instance were skipped.)|r", skipped)
+        end
+        Print(msg)
     else
         Print(string.format("Ready check: %d group member(s) missing consumables:", #missing))
         for _, entry in ipairs(missing) do
             Print(string.format("  |cffffd100%s|r – missing: |cffff6666%s|r",
                 entry.name, table.concat(entry.cats, ", ")))
+        end
+        if skipped > 0 then
+            Print(string.format("  |cff888888(%d member(s) in a different instance were not checked.)|r", skipped))
         end
     end
 end
