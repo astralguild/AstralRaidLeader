@@ -852,8 +852,6 @@ local function RefreshGuildRankButtons()
     end
     if C_GuildInfo and C_GuildInfo.GuildRoster then
         C_GuildInfo.GuildRoster()
-    elseif GuildRoster then
-        GuildRoster()
     end
     local numRanks = GuildControlGetNumRanks()
     if numRanks == 0 then

@@ -10,6 +10,7 @@ local ADDON_NAME = "AstralRaidLeader"
 -- Addon namespace exposed as a global so other files / the console can reach it.
 local ARL = {}
 _G[ADDON_NAME] = ARL
+local UnitInPhase = _G.UnitInPhase
 
 -- ============================================================
 -- Defaults
@@ -158,7 +159,7 @@ local function GetGroupMemberMap()
     if IsInRaid() then
         local n = GetNumGroupMembers()
         for i = 1, n do
-            AddName(GetRaidRosterInfo(i))
+            AddName(UnitName("raid" .. i))
         end
     elseif IsInGroup() then
         AddName(UnitName("player"))
@@ -341,8 +342,6 @@ RequestGuildRosterIfStale = function()
     if (now - lastGuildRosterRequestAt) < guildRosterRequestThrottleSeconds then return end
     if C_GuildInfo and C_GuildInfo.GuildRoster then
         C_GuildInfo.GuildRoster()
-    elseif GuildRoster then
-        GuildRoster()
     end
     lastGuildRosterRequestAt = now
 end
@@ -530,7 +529,7 @@ local function RunConsumableAudit(force)
         if UnitExists(unit) then
             -- Skip players in a different instance/phase – their auras are not queryable
             -- and they would always appear to be missing every buff.
-            if not UnitInPhase(unit) then
+            if UnitInPhase and not UnitInPhase(unit) then
                 skipped = skipped + 1
             else
                 local name = UnitName(unit)
@@ -625,7 +624,6 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -665,7 +663,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "GUILD_ROSTER_UPDATE" then
         EvaluateLeaderState("roster")
 
-    elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
+    elseif event == "GROUP_ROSTER_UPDATE" then
         local currentCount = GetNumGroupMembers()
         local trigger = "roster"
         if currentCount > lastGroupMemberCount then
