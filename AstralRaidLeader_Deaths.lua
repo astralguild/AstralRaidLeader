@@ -308,6 +308,12 @@ local COLOR_SOURCE   = "|cffff8000"   -- orange
 local COLOR_TIME     = "|cff888888"   -- grey
 local COLOR_RESET    = "|r"
 
+local function SafeWidth(value)
+    if type(value) ~= "number" then return 0 end
+    local ok, plain = pcall(function() return value + 0 end)
+    return ok and plain or 0
+end
+
 local function BuildDeathLine(i, entry)
     local prefix = string.format(
         "%2d. %s%s%s  died to",
@@ -348,20 +354,15 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
     row.spellButton:EnableMouse(hasSpellTooltip)
 
-    local rowWidth = row:GetWidth() or 0
-    local prefixW = row.prefixText:GetStringWidth() or 0
-    local suffixW = row.suffixText:GetStringWidth() or 0
-    local desiredSpellW = (row.spellButton.text:GetStringWidth() or 0) + 2
-    local availableSpellW = math.max(24, rowWidth - prefixW - suffixW - 10)
-    local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
+    local desiredSpellW = SafeWidth(row.spellButton.text:GetStringWidth()) + 2
+    local spellW = math.max(24, math.min(desiredSpellW, 300))  -- cap at 300 to prevent overflow
 
     row.spellButton:ClearAllPoints()
     row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
     row.spellButton:SetWidth(spellW)
 
     row.suffixText:ClearAllPoints()
-    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 4, 0)
-    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 2, 0)
 end
 
 local function RefreshRecap()

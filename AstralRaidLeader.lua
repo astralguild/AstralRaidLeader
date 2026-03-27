@@ -39,7 +39,7 @@ local DEFAULTS = {
 
 -- Built-in consumable categories - always checked, never stored in SavedVariables.
 local SYSTEM_CONSUMABLES = {
-    { label = "Flasks", spellIds = { 1235108, 1235111, 241320, 241324, 1235110, 1235057 } },
+    { label = "Flasks", spellIds = { 1235108, 1235111, 1235110, 1235057, 1230875, 1235057 } },
     { label = "Food",   spellIds = {}, namePatterns = { "Well Fed" } },
 }
 
