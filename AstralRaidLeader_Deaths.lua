@@ -6,6 +6,53 @@ if not ARL then return end
 
 local GameTooltip = _G.GameTooltip
 local GetSpellInfo = _G.GetSpellInfo
+local C_Spell = _G.C_Spell
+
+local function ResolveSpellNameAndIcon(spellId)
+    if not spellId or spellId <= 0 then
+        return nil, nil
+    end
+
+    if GetSpellInfo then
+        local name, _, icon = GetSpellInfo(spellId)
+        if name or icon then
+            return name, icon
+        end
+    end
+
+    if C_Spell then
+        if C_Spell.GetSpellInfo then
+            local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
+            if ok and type(info) == "table" then
+                local name = info.name or info.spellName
+                local icon = info.iconID or info.icon
+                if name or icon then
+                    return name, icon
+                end
+            end
+        end
+
+        local name
+        if C_Spell.GetSpellName then
+            local ok, value = pcall(C_Spell.GetSpellName, spellId)
+            if ok then
+                name = value
+            end
+        end
+
+        local icon
+        if C_Spell.GetSpellTexture then
+            local ok, value = pcall(C_Spell.GetSpellTexture, spellId)
+            if ok then
+                icon = value
+            end
+        end
+
+        return name, icon
+    end
+
+    return nil, nil
+end
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -173,7 +220,7 @@ local function ShowSpellTooltip(owner, spellId)
     end
 
     if not ok then
-        local spellName = GetSpellInfo(spellId)
+        local spellName = ResolveSpellNameAndIcon(spellId)
         GameTooltip:ClearLines()
         GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
         GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
@@ -275,7 +322,7 @@ local function BuildDeathLine(i, entry)
 
     local spellId = entry.spellId
     if spellId and spellId > 0 then
-        local _, _, icon = GetSpellInfo(spellId)
+        local _, icon = ResolveSpellNameAndIcon(spellId)
         if icon then
             spellText = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, spellText)
         end

@@ -839,12 +839,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local function ResolveEncounterTimeOffset(entry, recapTimeOffset)
-            -- Special handling for deathTimeSeconds, which may be a tainted "secret number"
-            -- that fails arithmetic checks but is still usable.
+            -- Special handling for deathTimeSeconds, which may be a tainted "secret number".
+            -- SafeNumber untaints it via pcall(value + 0); without this the bare comparison
+            -- below throws "attempt to compare ... a secret number value tainted by ...".
             if entry and type(entry.deathTimeSeconds) == "number" then
-                local val = ClampNonNegative(entry.deathTimeSeconds)
-                if val > 0 and val <= 7200 then
-                    return val
+                local val = SafeNumber(entry.deathTimeSeconds)
+                if val ~= nil then
+                    val = ClampNonNegative(val)
+                    local okCmp, inRange = pcall(function() return val > 0 and val <= 7200 end)
+                    if okCmp and inRange then
+                        return val
+                    end
                 end
             end
 
