@@ -30,7 +30,12 @@ local DEFAULTS = {
     notifyEnabled          = true,  -- show a popup when manual promotion is available
     notifySound            = true,  -- play a UI sound when the popup is shown
     quietMode              = false, -- suppress all chat output when true
-    groupTypeFilter        = { raid = true, party = true, guild_raid = true, guild_party = true }, -- independent per-type toggles
+    groupTypeFilter        = {
+        raid = true,
+        party = true,
+        guild_raid = true,
+        guild_party = true,
+    }, -- independent per-type toggles
     consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
     trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
     guildRankPriority      = {},    -- ordered list of {name, rankIndex} tables (highest priority first)
@@ -42,7 +47,12 @@ local DEFAULTS = {
     raidGroupInviteMissingPlayers = false, -- invite listed players who are not already in the raid when applying
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
-    deathGroupTypeFilter   = { raid = true, party = false, guild_raid = false, guild_party = false }, -- independent per-type toggles
+    deathGroupTypeFilter   = {
+        raid = true,
+        party = false,
+        guild_raid = false,
+        guild_party = false,
+    }, -- independent per-type toggles
     showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
     showRecapOnEncounterEnd = false, -- automatically open the recap window after any encounter end (kill or wipe)
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
@@ -2386,10 +2396,16 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl notify [on|off]|r    – Toggle the manual-promote popup when auto is off")
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
-        Print("  |cffffff00/arl grouptype [raid|party|guild_raid|guild_party] [on|off]|r – Toggle auto-promote per group type")
+        Print(
+            "  |cffffff00/arl grouptype [raid|party|guild_raid|guild_party] [on|off]|r "
+            .. "– Toggle auto-promote per group type"
+        )
         Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
         Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
-        Print("  |cffffff00/arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]|r – Toggle death recap capture per group type")
+        Print(
+            "  |cffffff00/arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]|r "
+            .. "– Toggle death recap capture per group type"
+        )
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")

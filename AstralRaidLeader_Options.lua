@@ -1674,10 +1674,18 @@ local function SetDeathGroupTypeFilter(filter)
         FLBL[filter] or filter, en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
 end
 
-deathGroupRaidCB:SetScript("OnClick",      function() if not updating then SetDeathGroupTypeFilter("raid")        end end)
-deathGroupPartyCB:SetScript("OnClick",     function() if not updating then SetDeathGroupTypeFilter("party")       end end)
-deathGroupGuildRaidCB:SetScript("OnClick", function() if not updating then SetDeathGroupTypeFilter("guild_raid")  end end)
-deathGroupGuildPartyCB:SetScript("OnClick",function() if not updating then SetDeathGroupTypeFilter("guild_party") end end)
+deathGroupRaidCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("raid") end
+end)
+deathGroupPartyCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("party") end
+end)
+deathGroupGuildRaidCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("guild_raid") end
+end)
+deathGroupGuildPartyCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("guild_party") end
+end)
 
 openRecapButton:SetScript("OnClick", function()
     if ARL.ShowDeathRecap then
