@@ -16,7 +16,7 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Manual-promotion popup** – when auto-promote is off and a preferred leader is present, a configurable popup appears with a one-click **Promote** button. It can reappear after **Not Now** on later roster/instance changes, and defers while in combat.
 - **Reminder system** – if no preferred leader is present in the group, an event-driven in-chat reminder fires on member-join/instance-change style triggers.
 - **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
-- **Group-type filter** – restrict auto-promote to raids only, parties only, or all group types. Great for players who run both M+ keys and raids.
+- **Group-type filters (multi-select)** – independently toggle auto-promote and death-recap capture for raids, parties, guild raids, and guild parties. You can enable any combination.
 - **Consumable audit** – when a ready check is initiated, the addon scans every queryable group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Members outside your current instance/phase are skipped to avoid false positives. Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
 - **Raid group layouts** – import Viserio-style encounter notes, save each encounter's 20-player ordering, and apply the subgroup layout to your current raid. Listed players are assigned into groups 1-4 by note order, while any current raiders not in the note are packed into groups 8, 7, 6, and 5. Raid-group actions are blocked in combat, and optional settings let you auto-apply on joins and invite missing listed players on apply.
 - **Death recap** – records wipe deaths and displays them in a recap window (`/arl deaths`). In current Midnight-compatible builds, death data is sourced from the built-in `C_DamageMeter` combat session API.
@@ -51,7 +51,7 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl notify [on\|off]` | Enable or disable the manual-promote popup when auto-promote is off |
 | `/arl notifysound [on\|off]` | Enable or disable sound for the manual-promote popup |
 | `/arl quiet [on\|off]` | Suppress all addon chat output (auto-promote still works silently) |
-| `/arl grouptype [all\|raid\|party]` | Restrict auto-promote to all groups, raids only, or parties only |
+| `/arl grouptype [raid\|party\|guild_raid\|guild_party] [on\|off]` | Toggle auto-promote for an individual group type (omit on/off to toggle) |
 | `/arl consumable list` | List all tracked consumable categories and their spell IDs |
 | `/arl consumable add <label> <spellId>` | Add a spell ID to a consumable category (creates the category if needed) |
 | `/arl consumable remove <label> <spellId>` | Remove a spell ID from a consumable category |
@@ -73,6 +73,7 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl raidgroups clear` | Delete all saved raid-group layouts |
 | `/arl deaths` or `/arl wipe` | Open the last wipe death recap window |
 | `/arl deathtracking [on\|off]` | Enable or disable death tracking during encounters |
+| `/arl deathgrouptype [raid\|party\|guild_raid\|guild_party] [on\|off]` | Toggle death recap capture for an individual group type (omit on/off to toggle) |
 | `/arl settings` | Open the in-game settings window |
 | `/arl options` / `/arl config` | Alias for opening the in-game settings window |
 | `/arl help` | Show all available commands |

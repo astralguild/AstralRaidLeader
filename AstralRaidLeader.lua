@@ -15,6 +15,7 @@ local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 local C_Timer = _G.C_Timer
 local SetRaidSubgroup = _G.SetRaidSubgroup
 local InviteUnit = (_G.C_PartyInfo and _G.C_PartyInfo.InviteUnit) or _G.InviteUnit
+local IsGuildGroup = _G.IsGuildGroup
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
 
@@ -29,7 +30,7 @@ local DEFAULTS = {
     notifyEnabled          = true,  -- show a popup when manual promotion is available
     notifySound            = true,  -- play a UI sound when the popup is shown
     quietMode              = false, -- suppress all chat output when true
-    groupTypeFilter        = "all", -- "all", "raid", or "party"
+    groupTypeFilter        = { raid = true, party = true, guild_raid = true, guild_party = true }, -- independent per-type toggles
     consumableAuditEnabled = true,  -- run a consumable audit when a ready check fires
     trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
     guildRankPriority      = {},    -- ordered list of {name, rankIndex} tables (highest priority first)
@@ -41,7 +42,7 @@ local DEFAULTS = {
     raidGroupInviteMissingPlayers = false, -- invite listed players who are not already in the raid when applying
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
-    deathGroupTypeFilter   = "raid", -- "all", "raid", or "party" for death recap capture
+    deathGroupTypeFilter   = { raid = true, party = false, guild_raid = false, guild_party = false }, -- independent per-type toggles
     showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
     showRecapOnEncounterEnd = false, -- automatically open the recap window after any encounter end (kill or wipe)
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
@@ -167,6 +168,22 @@ local function InitDB()
         end
     end
     ARL.db = AstralRaidLeaderDB
+
+    -- Migrate old string filter values (pre-multi-select) to the new table format.
+    local function MigrateFilter(val)
+        if val == "all"             then return { raid=true,  party=true,  guild_raid=true,  guild_party=true  }
+        elseif val == "party"       then return { raid=false, party=true,  guild_raid=false, guild_party=false }
+        elseif val == "guild_raid"  then return { raid=false, party=false, guild_raid=true,  guild_party=false }
+        elseif val == "guild_party" then return { raid=false, party=false, guild_raid=false, guild_party=true  }
+        else                             return { raid=true,  party=false, guild_raid=false, guild_party=false }
+        end
+    end
+    if type(ARL.db.groupTypeFilter) ~= "table" then
+        ARL.db.groupTypeFilter = MigrateFilter(ARL.db.groupTypeFilter)
+    end
+    if type(ARL.db.deathGroupTypeFilter) ~= "table" then
+        ARL.db.deathGroupTypeFilter = MigrateFilter(ARL.db.deathGroupTypeFilter)
+    end
 end
 
 -- Return a lookup table { lowercaseName -> originalName } of every current
@@ -199,14 +216,23 @@ local function GetGroupMemberMap()
 end
 
 -- Return true when the current group type matches the configured groupTypeFilter.
+local function IsInGuildGroupByBlizzardRules()
+    if not IsGuildGroup then return false end
+    return IsGuildGroup() and true or false
+end
+
 local function IsInRelevantGroup()
     local inRaid  = IsInRaid()
     local inGroup = IsInGroup()
     if not (inRaid or inGroup) then return false end
-    local filter = ARL.db and ARL.db.groupTypeFilter or "all"
-    if filter == "raid"  then return inRaid end
-    if filter == "party" then return inGroup and not inRaid end
-    return true  -- "all"
+    local filter = ARL.db and ARL.db.groupTypeFilter
+    if type(filter) ~= "table" then return true end
+    local isGuild = IsInGuildGroupByBlizzardRules()
+    if inRaid then
+        return (filter.raid and true or false) or (filter.guild_raid and isGuild or false)
+    else
+        return (filter.party and true or false) or (filter.guild_party and isGuild or false)
+    end
 end
 
 -- Return true when death recap tracking should run for the current group type.
@@ -214,10 +240,14 @@ local function IsInRelevantDeathGroup()
     local inRaid  = IsInRaid()
     local inGroup = IsInGroup()
     if not (inRaid or inGroup) then return false end
-    local filter = ARL.db and ARL.db.deathGroupTypeFilter or "raid"
-    if filter == "all" then return true end
-    if filter == "party" then return inGroup and not inRaid end
-    return inRaid -- default: "raid"
+    local filter = ARL.db and ARL.db.deathGroupTypeFilter
+    if type(filter) ~= "table" then return inRaid end
+    local isGuild = IsInGuildGroupByBlizzardRules()
+    if inRaid then
+        return (filter.raid and true or false) or (filter.guild_raid and isGuild or false)
+    else
+        return (filter.party and true or false) or (filter.guild_party and isGuild or false)
+    end
 end
 
 -- ============================================================
@@ -2053,19 +2083,32 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.consumableAuditEnabled and "enabled" or "disabled"))
         end
 
-    -- /arl grouptype [all|raid|party]
+    -- /arl grouptype [all|raid|party|guild_raid|guild_party]
     elseif cmd == "grouptype" then
-        local lower = arg:lower()
-        if lower == "all" or lower == "raid" or lower == "party" then
-            ARL.db.groupTypeFilter = lower
-            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-            Print(string.format("Group type filter set to |cffffff00%s|r.", labels[lower]))
-        elseif arg == "" then
-            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-            Print(string.format("Group type filter is |cffffff00%s|r.",
-                labels[ARL.db.groupTypeFilter] or ARL.db.groupTypeFilter))
+        local key, onoff = arg:lower():match("^(%S+)%s*(.*)$")
+        local VALID = { raid=true, party=true, guild_raid=true, guild_party=true }
+        local FLBL  = { raid="raids", party="parties", guild_raid="guild raids", guild_party="guild parties" }
+        if key and VALID[key] then
+            if type(ARL.db.groupTypeFilter) ~= "table" then ARL.db.groupTypeFilter = {} end
+            if onoff == "on" then
+                ARL.db.groupTypeFilter[key] = true
+            elseif onoff == "off" then
+                ARL.db.groupTypeFilter[key] = false
+            else
+                ARL.db.groupTypeFilter[key] = not ARL.db.groupTypeFilter[key]
+            end
+            local en = ARL.db.groupTypeFilter[key]
+            Print(string.format("Group type filter: %s |cff%s%s|r.",
+                FLBL[key], en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
         else
-            Print("Usage: /arl grouptype [all|raid|party]")
+            local f = type(ARL.db.groupTypeFilter) == "table" and ARL.db.groupTypeFilter or {}
+            local parts = {}
+            for _, k in ipairs({"raid","party","guild_raid","guild_party"}) do
+                if f[k] then parts[#parts+1] = FLBL[k] end
+            end
+            Print(string.format("Group type filter: |cffffff00%s|r.",
+                #parts > 0 and table.concat(parts, ", ") or "none"))
+            if key then Print("Usage: /arl grouptype [raid|party|guild_raid|guild_party] [on|off]") end
         end
 
     -- /arl rankpriority [on|off]
@@ -2293,19 +2336,32 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
         end
 
-    -- /arl deathgrouptype [all|raid|party]
+    -- /arl deathgrouptype [all|raid|party|guild_raid|guild_party]
     elseif cmd == "deathgrouptype" then
-        local lower = arg:lower()
-        if lower == "all" or lower == "raid" or lower == "party" then
-            ARL.db.deathGroupTypeFilter = lower
-            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-            Print(string.format("Death recap group filter set to |cffffff00%s|r.", labels[lower]))
-        elseif arg == "" then
-            local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-            local active = ARL.db.deathGroupTypeFilter or "raid"
-            Print(string.format("Death recap group filter is |cffffff00%s|r.", labels[active] or active))
+        local key, onoff = arg:lower():match("^(%S+)%s*(.*)$")
+        local VALID = { raid=true, party=true, guild_raid=true, guild_party=true }
+        local FLBL  = { raid="raids", party="parties", guild_raid="guild raids", guild_party="guild parties" }
+        if key and VALID[key] then
+            if type(ARL.db.deathGroupTypeFilter) ~= "table" then ARL.db.deathGroupTypeFilter = {} end
+            if onoff == "on" then
+                ARL.db.deathGroupTypeFilter[key] = true
+            elseif onoff == "off" then
+                ARL.db.deathGroupTypeFilter[key] = false
+            else
+                ARL.db.deathGroupTypeFilter[key] = not ARL.db.deathGroupTypeFilter[key]
+            end
+            local en = ARL.db.deathGroupTypeFilter[key]
+            Print(string.format("Death recap group filter: %s |cff%s%s|r.",
+                FLBL[key], en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
         else
-            Print("Usage: /arl deathgrouptype [all|raid|party]")
+            local f = type(ARL.db.deathGroupTypeFilter) == "table" and ARL.db.deathGroupTypeFilter or {}
+            local parts = {}
+            for _, k in ipairs({"raid","party","guild_raid","guild_party"}) do
+                if f[k] then parts[#parts+1] = FLBL[k] end
+            end
+            Print(string.format("Death recap group filter: |cffffff00%s|r.",
+                #parts > 0 and table.concat(parts, ", ") or "none"))
+            if key then Print("Usage: /arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]") end
         end
 
     -- bare /arl opens settings
@@ -2330,10 +2386,10 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl notify [on|off]|r    – Toggle the manual-promote popup when auto is off")
         Print("  |cffffff00/arl notifysound [on|off]|r – Toggle sound for the manual-promote popup")
         Print("  |cffffff00/arl quiet [on|off]|r     – Suppress all chat output from this addon")
-        Print("  |cffffff00/arl grouptype [all|raid|party]|r – Restrict auto-promote to a group type")
+        Print("  |cffffff00/arl grouptype [raid|party|guild_raid|guild_party] [on|off]|r – Toggle auto-promote per group type")
         Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
         Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
-        Print("  |cffffff00/arl deathgrouptype [all|raid|party]|r – Restrict death recap capture to a group type")
+        Print("  |cffffff00/arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]|r – Toggle death recap capture per group type")
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")
         Print("  |cffffff00/arl rankpriority [on|off]|r – Toggle guild rank priority fallback")
