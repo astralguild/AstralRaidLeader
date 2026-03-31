@@ -10,7 +10,9 @@ local ADDON_NAME = "AstralRaidLeader"
 -- Addon namespace exposed as a global so other files / the console can reach it.
 local ARL = {}
 _G[ADDON_NAME] = ARL
+local InviteUnit = (_G.C_PartyInfo and _G.C_PartyInfo.InviteUnit) or _G.InviteUnit
 local UnitInPhase = _G.UnitInPhase
+local UnitPosition = _G.UnitPosition
 
 -- ============================================================
 -- Defaults
@@ -28,6 +30,11 @@ local DEFAULTS = {
     trackedConsumables     = {},    -- user-defined additions (system defaults are always included)
     guildRankPriority      = {},    -- ordered list of {name, rankIndex} tables (highest priority first)
     useGuildRankPriority   = false, -- fall back to guild rank priority when no preferred leader is present
+    raidLayouts            = {},    -- ordered list of saved raid-group layouts imported from external notes
+    activeRaidLayoutKey    = "",   -- currently selected raid-group layout key
+    raidGroupShowMissingNames = true, -- include missing player names in the apply completion message
+    raidGroupAutoApplyOnJoin  = false, -- automatically re-apply the selected layout when a raid member joins
+    raidGroupInviteMissingPlayers = false, -- invite listed players who are not already in the raid when applying
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
     deathGroupTypeFilter   = "raid", -- "all", "raid", or "party" for death recap capture
@@ -51,6 +58,20 @@ local SYSTEM_CONSUMABLES = {
 local function Print(msg)
     if ARL.db and ARL.db.quietMode then return end
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
+end
+
+local function Trim(value)
+    if value == nil then return "" end
+    return tostring(value):match("^%s*(.-)%s*$")
+end
+
+local function GetShortName(name)
+    local trimmed = Trim(name)
+    return trimmed:match("^([^%-]+)") or trimmed
+end
+
+local function CanManageRaidSubgroups()
+    return UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")
 end
 
 -- Shared UI helpers consumed by the options and death-recap windows.
@@ -192,6 +213,569 @@ local function IsInRelevantDeathGroup()
     if filter == "all" then return true end
     if filter == "party" then return inGroup and not inRaid end
     return inRaid -- default: "raid"
+end
+
+-- ============================================================
+-- Raid layout import / apply
+-- ============================================================
+
+local function GetRaidLayoutKey(profile)
+    return string.format(
+        "%s::%s::%s",
+        tostring(tonumber(profile.encounterID) or Trim(profile.encounterID)),
+        Trim(profile.difficulty):lower(),
+        Trim(profile.name):lower()
+    )
+end
+
+local function GetRaidLayoutLabel(profile)
+    local encounterName = Trim(profile and profile.name)
+    local difficulty = Trim(profile and profile.difficulty)
+    if encounterName == "" then encounterName = "Unknown Encounter" end
+    if difficulty == "" then difficulty = "Unknown" end
+    return string.format("%s %s", difficulty, encounterName)
+end
+
+local function FindRaidLayoutIndexByKey(key)
+    if not ARL.db or type(ARL.db.raidLayouts) ~= "table" then return nil end
+    for i, profile in ipairs(ARL.db.raidLayouts) do
+        if profile.key == key then
+            return i
+        end
+    end
+    return nil
+end
+
+local function GetActiveRaidLayoutProfile()
+    if not ARL.db or type(ARL.db.raidLayouts) ~= "table" then return nil end
+    local activeKey = Trim(ARL.db.activeRaidLayoutKey)
+    if activeKey == "" then return nil end
+    local index = FindRaidLayoutIndexByKey(activeKey)
+    if not index then return nil end
+    return ARL.db.raidLayouts[index]
+end
+
+local function GetRaidLayoutProfileByQuery(query)
+    if not ARL.db or type(ARL.db.raidLayouts) ~= "table" then return nil, nil end
+
+    local trimmed = Trim(query)
+    if trimmed == "" then
+        local active = GetActiveRaidLayoutProfile()
+        if not active then return nil, nil end
+        return FindRaidLayoutIndexByKey(active.key), active
+    end
+
+    local exactKeyIndex = FindRaidLayoutIndexByKey(trimmed)
+    if exactKeyIndex then
+        return exactKeyIndex, ARL.db.raidLayouts[exactKeyIndex]
+    end
+
+    local encounterID = tonumber(trimmed)
+    if encounterID then
+        for i, profile in ipairs(ARL.db.raidLayouts) do
+            if tonumber(profile.encounterID) == encounterID then
+                return i, profile
+            end
+        end
+    end
+
+    local lower = trimmed:lower()
+    for i, profile in ipairs(ARL.db.raidLayouts) do
+        if Trim(profile.name):lower() == lower then
+            return i, profile
+        end
+    end
+
+    for i, profile in ipairs(ARL.db.raidLayouts) do
+        if Trim(profile.name):lower():find(lower, 1, true) then
+            return i, profile
+        end
+    end
+
+    return nil, nil
+end
+
+local function GetRaidLayoutPreviewLines(profile)
+    local grouped = {}
+    for index, playerName in ipairs(profile and profile.invitelist or {}) do
+        local subgroup = math.max(1, math.min(8, math.floor((index - 1) / 5) + 1))
+        grouped[subgroup] = grouped[subgroup] or {}
+        grouped[subgroup][#grouped[subgroup] + 1] = playerName
+    end
+
+    local lines = {}
+    for subgroup = 1, 8 do
+        if grouped[subgroup] and #grouped[subgroup] > 0 then
+            lines[#lines + 1] = string.format("Group %d: %s", subgroup, table.concat(grouped[subgroup], ", "))
+        end
+    end
+    return lines
+end
+
+local function ParseRaidLayoutImport(text)
+    local normalized = Trim((text or ""):gsub("\r\n", "\n"):gsub("\r", "\n"))
+    if normalized == "" then
+        return nil, "Paste at least one encounter block to import."
+    end
+
+    local flattened = normalized:gsub("[%s%c]+", " ")
+    local byKey = {}
+    local orderedKeys = {}
+    for encounterIDText, difficultyText, encounterNameText, inviteListText in flattened:gmatch(
+        "EncounterID:%s*([^;]+)%s*;%s*Difficulty:%s*([^;]+)%s*;%s*Name:%s*([^;]+)%s*;?%s*invitelist:%s*(.-)%s*;"
+    ) do
+        local encounterID = tonumber(Trim(encounterIDText))
+        local difficulty = Trim(difficultyText)
+        local encounterName = Trim(encounterNameText)
+        local inviteList = {}
+        local seenNames = {}
+
+        for rawName in Trim(inviteListText):gmatch("%S+") do
+            local cleanName = Trim(rawName)
+            local key = cleanName:lower()
+            if cleanName ~= "" and not seenNames[key] then
+                seenNames[key] = true
+                inviteList[#inviteList + 1] = cleanName
+            end
+        end
+
+        if encounterID and encounterID > 0 and encounterName ~= "" and #inviteList > 0 then
+            local profile = {
+                encounterID = encounterID,
+                difficulty = difficulty ~= "" and difficulty or "Unknown",
+                name = encounterName,
+                invitelist = inviteList,
+            }
+            profile.key = GetRaidLayoutKey(profile)
+
+            if not byKey[profile.key] then
+                orderedKeys[#orderedKeys + 1] = profile.key
+            end
+            byKey[profile.key] = profile
+        end
+    end
+
+    if #orderedKeys == 0 then
+        return nil, "Could not parse any raid layouts. Expected EncounterID/Difficulty/Name followed by invitelist."
+    end
+
+    local profiles = {}
+    for _, key in ipairs(orderedKeys) do
+        profiles[#profiles + 1] = byKey[key]
+    end
+    return profiles, nil
+end
+
+local function UpsertRaidLayoutProfile(profile)
+    if type(ARL.db.raidLayouts) ~= "table" then
+        ARL.db.raidLayouts = {}
+    end
+
+    local existingIndex = FindRaidLayoutIndexByKey(profile.key)
+    if existingIndex then
+        ARL.db.raidLayouts[existingIndex] = profile
+        return false, existingIndex
+    end
+
+    ARL.db.raidLayouts[#ARL.db.raidLayouts + 1] = profile
+    return true, #ARL.db.raidLayouts
+end
+
+local function ImportRaidLayouts(text)
+    if not ARL.db then
+        return false, "Not fully loaded yet. Please wait a moment."
+    end
+
+    local profiles, err = ParseRaidLayoutImport(text)
+    if not profiles then
+        return false, err
+    end
+
+    local added = 0
+    local updated = 0
+    for _, profile in ipairs(profiles) do
+        local inserted = UpsertRaidLayoutProfile(profile)
+        if inserted then
+            added = added + 1
+        else
+            updated = updated + 1
+        end
+    end
+
+    ARL.db.activeRaidLayoutKey = profiles[1].key
+    return true, {
+        imported = #profiles,
+        added = added,
+        updated = updated,
+        activeKey = profiles[1].key,
+    }
+end
+
+local function DeleteRaidLayoutByQuery(query)
+    local index, profile = GetRaidLayoutProfileByQuery(query)
+    if not index or not profile then
+        return false, "Raid layout not found."
+    end
+
+    table.remove(ARL.db.raidLayouts, index)
+    if ARL.db.activeRaidLayoutKey == profile.key then
+        local fallback = ARL.db.raidLayouts[1]
+        ARL.db.activeRaidLayoutKey = fallback and fallback.key or ""
+    end
+    return true, profile
+end
+
+local function SetActiveRaidLayoutByQuery(query)
+    local _, profile = GetRaidLayoutProfileByQuery(query)
+    if not profile then
+        return false, "Raid layout not found."
+    end
+
+    ARL.db.activeRaidLayoutKey = profile.key
+    return true, profile
+end
+
+local function GetRaidRosterSnapshot()
+    local snapshot = {
+        entries = {},
+        fullMap = {},
+        shortMap = {},
+    }
+
+    for raidIndex = 1, MAX_RAID_MEMBERS do
+        local name, _, subgroup = GetRaidRosterInfo(raidIndex)
+        if name and name ~= "" then
+            local entry = {
+                index = raidIndex,
+                name = name,
+                subgroup = subgroup or 1,
+            }
+            snapshot.entries[#snapshot.entries + 1] = entry
+            snapshot.fullMap[name:lower()] = entry
+
+            local shortKey = GetShortName(name):lower()
+            if shortKey ~= "" then
+                if snapshot.shortMap[shortKey] and snapshot.shortMap[shortKey] ~= entry then
+                    snapshot.shortMap[shortKey] = false
+                else
+                    snapshot.shortMap[shortKey] = entry
+                end
+            end
+        end
+    end
+
+    return snapshot
+end
+
+local function ResolveRaidRosterEntry(snapshot, importedName, used)
+    local fullKey = Trim(importedName):lower()
+    if fullKey == "" then return nil end
+
+    local fullMatch = snapshot.fullMap[fullKey]
+    if fullMatch and not used[fullMatch.name:lower()] then
+        return fullMatch
+    end
+
+    local shortKey = GetShortName(importedName):lower()
+    local shortMatch = snapshot.shortMap[shortKey]
+    if shortMatch and shortMatch ~= false and not used[shortMatch.name:lower()] then
+        return shortMatch
+    end
+
+    return nil
+end
+
+local function BuildRaidLayoutTargets(profile, snapshot)
+    local targetByName = {}
+    local used = {}
+    local groupCounts = {}
+    local missing = {}
+    local matchedCount = 0
+    local importedCount = 0
+
+    for position, importedName in ipairs(profile.invitelist or {}) do
+        local cleanName = Trim(importedName)
+        if cleanName ~= "" then
+            importedCount = importedCount + 1
+            local desiredGroup = math.max(1, math.min(8, math.floor((position - 1) / 5) + 1))
+            local entry = ResolveRaidRosterEntry(snapshot, cleanName, used)
+            if entry then
+                local rosterKey = entry.name:lower()
+                used[rosterKey] = true
+                targetByName[rosterKey] = desiredGroup
+                groupCounts[desiredGroup] = (groupCounts[desiredGroup] or 0) + 1
+                matchedCount = matchedCount + 1
+            else
+                missing[#missing + 1] = cleanName
+            end
+        end
+    end
+
+    local overflowGroups = { 8, 7, 6, 5 }
+    local overflowCount = 0
+    for _, entry in ipairs(snapshot.entries) do
+        local rosterKey = entry.name:lower()
+        if not used[rosterKey] then
+            local assigned = false
+            for _, subgroup in ipairs(overflowGroups) do
+                if (groupCounts[subgroup] or 0) < 5 then
+                    targetByName[rosterKey] = subgroup
+                    groupCounts[subgroup] = (groupCounts[subgroup] or 0) + 1
+                    overflowCount = overflowCount + 1
+                    assigned = true
+                    break
+                end
+            end
+            if not assigned then
+                return nil, string.format(
+                    "Raid layout |cffffd100%s|r cannot be applied because groups 8, 7, 6, and 5 are already full.",
+                    GetRaidLayoutLabel(profile)
+                )
+            end
+        end
+    end
+
+    return {
+        targetByName = targetByName,
+        matchedCount = matchedCount,
+        importedCount = importedCount,
+        missing = missing,
+        overflowCount = overflowCount,
+    }
+end
+
+local function StopRaidLayoutApply(message)
+    ARL.raidLayoutApplyState = nil
+    if message and message ~= "" then
+        Print(message)
+    end
+end
+
+local function InviteMissingRaidLayoutPlayers(missingNames)
+    if not ARL.db or not ARL.db.raidGroupInviteMissingPlayers then
+        return 0
+    end
+    if not InviteUnit or type(missingNames) ~= "table" then
+        return 0
+    end
+
+    local invitedCount = 0
+    for _, missingName in ipairs(missingNames) do
+        local cleanName = Trim(missingName)
+        if cleanName ~= "" then
+            InviteUnit(cleanName)
+            invitedCount = invitedCount + 1
+        end
+    end
+
+    return invitedCount
+end
+
+local function ScheduleRaidLayoutApplyRetry(state, delaySeconds)
+    if not state then return end
+
+    state.waiting = true
+    state.retryAt = GetTime() + delaySeconds
+    state.retryToken = (state.retryToken or 0) + 1
+
+    if C_Timer and C_Timer.After then
+        local token = state.retryToken
+        C_Timer.After(delaySeconds, function()
+            local active = ARL.raidLayoutApplyState
+            if active == state and active.waiting and active.retryToken == token then
+                active.waiting = false
+                if ARL.ContinueRaidLayoutApply then
+                    ARL:ContinueRaidLayoutApply()
+                end
+            end
+        end)
+    end
+end
+
+local function ContinueRaidLayoutApply()
+    local state = ARL.raidLayoutApplyState
+    if not state or state.waiting then return end
+
+    local now = GetTime()
+    if state.retryAt and now < state.retryAt then
+        ScheduleRaidLayoutApplyRetry(state, state.retryAt - now)
+        return
+    end
+
+    if InCombatLockdown() then
+        if not state.combatPaused then
+            state.combatPaused = true
+            Print("Raid layout apply paused until combat ends.")
+        end
+        return
+    end
+
+    if not IsInRaid() then
+        StopRaidLayoutApply("Raid layout apply stopped because you are no longer in a raid.")
+        return
+    end
+
+    if not CanManageRaidSubgroups() then
+        StopRaidLayoutApply("Raid layout apply stopped because you are no longer the raid leader or an assistant.")
+        return
+    end
+
+    local snapshot = GetRaidRosterSnapshot()
+    local occupancy = {}
+    local pending = {}
+    for _, entry in ipairs(snapshot.entries) do
+        occupancy[entry.subgroup] = (occupancy[entry.subgroup] or 0) + 1
+    end
+
+    for _, entry in ipairs(snapshot.entries) do
+        local desiredGroup = state.targetByName[entry.name:lower()]
+        if desiredGroup and entry.subgroup ~= desiredGroup then
+            pending[#pending + 1] = {
+                index = entry.index,
+                name = entry.name,
+                subgroup = entry.subgroup,
+                desiredGroup = desiredGroup,
+            }
+        end
+    end
+
+    if #pending == 0 then
+        local missingSuffix = ""
+        if #state.missing > 0 then
+            if (state.invitedMissingCount or 0) > 0 then
+                if ARL.db and ARL.db.raidGroupShowMissingNames then
+                    missingSuffix = string.format(" %d listed member(s) were invited but are not yet in the raid: %s",
+                        #state.missing, table.concat(state.missing, ", "))
+                else
+                    missingSuffix = string.format(
+                        " %d listed member(s) were invited but are not yet in the raid.",
+                        #state.missing
+                    )
+                end
+            elseif ARL.db and ARL.db.raidGroupShowMissingNames then
+                missingSuffix = string.format(" %d listed member(s) not in raid: %s",
+                    #state.missing, table.concat(state.missing, ", "))
+            else
+                missingSuffix = string.format(" %d listed member(s) were not in the raid.", #state.missing)
+            end
+        end
+        StopRaidLayoutApply(string.format(
+            "Applied raid layout for |cffffd100%s|r. %d listed member(s) matched, %d unlisted member(s) moved into overflow groups.%s",
+            GetRaidLayoutLabel(state.profile),
+            state.matchedCount,
+            state.overflowCount,
+            missingSuffix
+        ))
+        return
+    end
+
+    local pendingSignatureParts = {}
+    for _, move in ipairs(pending) do
+        pendingSignatureParts[#pendingSignatureParts + 1] = string.format("%s>%d", move.name, move.desiredGroup)
+    end
+    local pendingSignature = table.concat(pendingSignatureParts, "|")
+    if state.lastPendingSignature == pendingSignature then
+        state.noProgressCount = (state.noProgressCount or 0) + 1
+    else
+        state.lastPendingSignature = pendingSignature
+        state.noProgressCount = 0
+    end
+
+    if (state.noProgressCount or 0) >= 4 then
+        StopRaidLayoutApply(
+            "Raid layout apply stopped because raid subgroup changes are being throttled. Wait a moment, then apply again."
+        )
+        return
+    end
+
+    table.sort(pending, function(left, right)
+        if left.desiredGroup ~= right.desiredGroup then
+            return left.desiredGroup > right.desiredGroup
+        end
+        if left.subgroup ~= right.subgroup then
+            return left.subgroup < right.subgroup
+        end
+        return left.name < right.name
+    end)
+
+    for _, move in ipairs(pending) do
+        if (occupancy[move.desiredGroup] or 0) < 5 then
+            state.combatPaused = false
+            state.lastIssuedMove = string.format("%s>%d", move.name, move.desiredGroup)
+            SetRaidSubgroup(move.index, move.desiredGroup)
+            ScheduleRaidLayoutApplyRetry(state, 1.0)
+            return
+        end
+    end
+
+    StopRaidLayoutApply(string.format(
+        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full.",
+        GetRaidLayoutLabel(state.profile)
+    ))
+end
+
+local function ApplyRaidLayoutProfile(profile, options)
+    if not profile then
+        return false, "Raid layout not found."
+    end
+    if InCombatLockdown() then
+        return false, "Cannot apply a raid layout while in combat."
+    end
+    if not IsInRaid() then
+        return false, "You must be in a raid to apply a raid layout."
+    end
+    if not CanManageRaidSubgroups() then
+        return false, "You must be the raid leader or an assistant to apply a raid layout."
+    end
+
+    local snapshot = GetRaidRosterSnapshot()
+    if #snapshot.entries == 0 then
+        return false, "No raid roster data is available yet. Try again in a moment."
+    end
+
+    local targetState, err = BuildRaidLayoutTargets(profile, snapshot)
+    if not targetState then
+        return false, err
+    end
+
+    options = type(options) == "table" and options or nil
+    local shouldInviteMissing = options and options.inviteMissing
+    if shouldInviteMissing == nil then
+        shouldInviteMissing = ARL.db and ARL.db.raidGroupInviteMissingPlayers or false
+    end
+    local invitedMissingCount = 0
+    if shouldInviteMissing and #targetState.missing > 0 then
+        invitedMissingCount = InviteMissingRaidLayoutPlayers(targetState.missing)
+    end
+
+    ARL.db.activeRaidLayoutKey = profile.key
+    ARL.raidLayoutApplyState = {
+        profile = profile,
+        targetByName = targetState.targetByName,
+        matchedCount = targetState.matchedCount,
+        importedCount = targetState.importedCount,
+        missing = targetState.missing,
+        invitedMissingCount = invitedMissingCount,
+        overflowCount = targetState.overflowCount,
+        waiting = false,
+        combatPaused = false,
+        retryAt = 0,
+        retryToken = 0,
+        noProgressCount = 0,
+        lastPendingSignature = nil,
+    }
+
+    Print(string.format("Applying raid layout for |cffffd100%s|r...", GetRaidLayoutLabel(profile)))
+    ContinueRaidLayoutApply()
+    return true, profile
+end
+
+local function ApplyRaidLayoutByQuery(query, options)
+    local _, profile = GetRaidLayoutProfileByQuery(query)
+    if not profile then
+        return false, "Raid layout not found."
+    end
+    return ApplyRaidLayoutProfile(profile, options)
 end
 
 -- ============================================================
@@ -505,6 +1089,8 @@ local function RunConsumableAudit(force)
     if not ARL.db or not ARL.db.consumableAuditEnabled then return end
     if not force and not IsInRelevantGroup() then return end
 
+    local _, _, _, playerInstanceID = UnitPosition and UnitPosition("player")
+
     local units = {}
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
@@ -527,9 +1113,20 @@ local function RunConsumableAudit(force)
     local skipped = 0
     for _, unit in ipairs(units) do
         if UnitExists(unit) then
-            -- Skip players in a different instance/phase – their auras are not queryable
-            -- and they would always appear to be missing every buff.
+            local canQueryUnit = true
             if UnitInPhase and not UnitInPhase(unit) then
+                canQueryUnit = false
+            end
+            if canQueryUnit and UnitPosition and playerInstanceID then
+                local _, _, _, unitInstanceID = UnitPosition(unit)
+                if unitInstanceID ~= playerInstanceID then
+                    canQueryUnit = false
+                end
+            end
+
+            -- Skip players outside the current instance/phase. Their auras are not
+            -- queryable and they would otherwise appear to be missing every buff.
+            if not canQueryUnit then
                 skipped = skipped + 1
             else
                 local name = UnitName(unit)
@@ -574,7 +1171,7 @@ local function RunConsumableAudit(force)
     if #missing == 0 then
         local msg = "Ready check: All group members have their consumables!"
         if skipped > 0 then
-            msg = msg .. string.format(" |cff888888(%d member(s) in a different instance were skipped.)|r", skipped)
+            msg = msg .. string.format(" |cff888888(%d member(s) outside your current instance or phase were skipped.)|r", skipped)
         end
         Print(msg)
     else
@@ -584,7 +1181,7 @@ local function RunConsumableAudit(force)
                 entry.name, table.concat(entry.cats, ", ")))
         end
         if skipped > 0 then
-            Print(string.format("  |cff888888(%d member(s) in a different instance were not checked.)|r", skipped))
+            Print(string.format("  |cff888888(%d member(s) outside your current instance or phase were not checked.)|r", skipped))
         end
     end
 end
@@ -595,6 +1192,16 @@ end
 ARL.RunConsumableAudit     = RunConsumableAudit
 ARL.FindConsumableCategory = FindConsumableCategory
 ARL.SYSTEM_CONSUMABLES     = SYSTEM_CONSUMABLES
+ARL.ParseRaidLayoutImport  = ParseRaidLayoutImport
+ARL.ImportRaidLayouts      = ImportRaidLayouts
+ARL.GetActiveRaidLayoutProfile = GetActiveRaidLayoutProfile
+ARL.GetRaidLayoutProfileByQuery = GetRaidLayoutProfileByQuery
+ARL.GetRaidLayoutLabel     = GetRaidLayoutLabel
+ARL.GetRaidLayoutPreviewLines = GetRaidLayoutPreviewLines
+ARL.SetActiveRaidLayoutByQuery = SetActiveRaidLayoutByQuery
+ARL.DeleteRaidLayoutByQuery = DeleteRaidLayoutByQuery
+ARL.ApplyRaidLayoutByQuery = ApplyRaidLayoutByQuery
+ARL.ContinueRaidLayoutApply = ContinueRaidLayoutApply
 
 
 function ARL.CancelReminder()
@@ -650,6 +1257,16 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         ARL:TryShowPendingManualPromotePopup()
+        if ARL.raidLayoutApplyState then
+            local state = ARL.raidLayoutApplyState
+            state.waiting = false
+            state.retryAt = 0
+            if state.combatPaused then
+                state.combatPaused = false
+                Print("Resuming raid layout apply.")
+            end
+            ARL:ContinueRaidLayoutApply()
+        end
 
     elseif event == "READY_CHECK" then
         RunConsumableAudit()
@@ -670,6 +1287,18 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             trigger = "new_member"
         end
         lastGroupMemberCount = currentCount
+        if ARL.raidLayoutApplyState and not ARL.raidLayoutApplyState.waiting then
+            ARL:ContinueRaidLayoutApply()
+        end
+        if trigger == "new_member"
+            and ARL.db
+            and ARL.db.raidGroupAutoApplyOnJoin
+            and not ARL.raidLayoutApplyState
+            and not InCombatLockdown()
+            and ARL.db.activeRaidLayoutKey ~= ""
+        then
+            ApplyRaidLayoutByQuery("", { inviteMissing = false })
+        end
         EvaluateLeaderState(trigger)
     end
 end)
@@ -1536,6 +2165,85 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         table.insert(ARL.db.guildRankPriority, pos, entry)
         Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, pos))
 
+    -- /arl raidgroups [list|select|apply|delete|clear|status]
+    elseif cmd == "raidgroups" or cmd == "raidgroup" then
+        local subcmd, rest = arg:match("^(%S+)%s*(.*)")
+        if not subcmd then subcmd = "status" end
+        subcmd = subcmd:lower()
+        rest = rest or ""
+
+        if subcmd == "list" then
+            if #ARL.db.raidLayouts == 0 then
+                Print("No raid layouts are saved yet. Open /arl settings and use the Raid Groups panel to import one.")
+                return
+            end
+            Print("Saved raid layouts:")
+            for i, profile in ipairs(ARL.db.raidLayouts) do
+                local marker = (profile.key == ARL.db.activeRaidLayoutKey) and "*" or " "
+                Print(string.format("  %s %d. |cffffd100%s|r", marker, i, GetRaidLayoutLabel(profile)))
+            end
+
+        elseif subcmd == "select" then
+            if Trim(rest) == "" then
+                Print("Usage: /arl raidgroups select <encounterID|name>")
+                return
+            end
+            local ok, result = SetActiveRaidLayoutByQuery(rest)
+            if not ok then
+                Print(result)
+                return
+            end
+            Print(string.format("Selected raid layout |cffffd100%s|r.", GetRaidLayoutLabel(result)))
+
+        elseif subcmd == "apply" then
+            local ok, result = ApplyRaidLayoutByQuery(rest)
+            if not ok then
+                Print(result)
+            end
+
+        elseif subcmd == "delete" then
+            if Trim(rest) == "" then
+                Print("Usage: /arl raidgroups delete <encounterID|name>")
+                return
+            end
+            local ok, result = DeleteRaidLayoutByQuery(rest)
+            if not ok then
+                Print(result)
+                return
+            end
+            Print(string.format("Deleted raid layout |cffffd100%s|r.", GetRaidLayoutLabel(result)))
+
+        elseif subcmd == "clear" then
+            ARL.db.raidLayouts = {}
+            ARL.db.activeRaidLayoutKey = ""
+            Print("Cleared all saved raid layouts.")
+
+        elseif subcmd == "status" then
+            local active = GetActiveRaidLayoutProfile()
+            if active then
+                Print(string.format(
+                    "Saved raid layouts: |cffffff00%d|r. Active layout: |cffffd100%s|r.",
+                    #ARL.db.raidLayouts,
+                    GetRaidLayoutLabel(active)
+                ))
+            else
+                Print(string.format(
+                    "Saved raid layouts: |cffffff00%d|r. No active layout selected.",
+                    #ARL.db.raidLayouts
+                ))
+            end
+            Print("Use /arl settings to import Viserio notes, or /arl raidgroups list to inspect saved layouts.")
+
+        else
+            Print("Raid group sub-commands:")
+            Print("  |cffffff00/arl raidgroups status|r                 – Show the active saved raid layout")
+            Print("  |cffffff00/arl raidgroups list|r                   – List all saved raid layouts")
+            Print("  |cffffff00/arl raidgroups select <id|name>|r       – Select a saved raid layout")
+            Print("  |cffffff00/arl raidgroups apply [id|name]|r        – Apply the active or named raid layout")
+            Print("  |cffffff00/arl raidgroups delete <id|name>|r       – Delete a saved raid layout")
+            Print("  |cffffff00/arl raidgroups clear|r                  – Delete all saved raid layouts")
+        end
+
     -- /arl settings | /arl options | /arl config
     elseif cmd == "settings" or cmd == "options" or cmd == "config" then
         if ARL.ShowOptions then
@@ -1616,6 +2324,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print("  |cffffff00/arl ranklist|r            – Show the guild rank priority list")
         Print("  |cffffff00/arl clearranks|r          – Clear the guild rank priority list")
         Print("  |cffffff00/arl moverank <rank> <pos>|r – Move a guild rank to a specific position")
+        Print("  |cffffff00/arl raidgroups ...|r      – Manage imported raid-group layouts")
         Print("  |cffffff00/arl settings|r           – Open the in-game settings window")
         Print("  |cffffff00/arl help|r               – Show this help message")
 
