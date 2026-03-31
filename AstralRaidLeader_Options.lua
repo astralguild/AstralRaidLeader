@@ -4,6 +4,8 @@
 local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
+local ChatFontNormal = _G.ChatFontNormal
+
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
@@ -223,6 +225,8 @@ local panels = {
     CreatePanel(),  -- 3: Guild Ranks
     CreatePanel(),  -- 4: Consumables
     CreatePanel(),  -- 5: Deaths
+    CreatePanel(),  -- 6: Raid Groups
+    CreatePanel(),  -- 7: Raid Groups Settings
 }
 
 -- ============================================================
@@ -248,6 +252,13 @@ local MAIN_TABS = {
         label = "Death Recaps",
         subTabs = {
             { label = "Death Recap", panel = 5 },
+        },
+    },
+    {
+        label = "Raid Groups",
+        subTabs = {
+            { label = "Raid Groups", panel = 6 },
+            { label = "Settings",    panel = 7 },
         },
     },
 }
@@ -777,12 +788,175 @@ openRecapButton:SetPoint("TOPLEFT", 8, -186)
 openRecapButton:SetSize(140, 24)
 openRecapButton:SetText("Open Last Recap")
 
+-- ============================================================
+-- Tab 6 - Raid Groups
+-- ============================================================
+
+local p6 = panels[6]
+
+local raidLayoutInfoText = p6:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+raidLayoutInfoText:SetPoint("TOPLEFT", 8, -8)
+raidLayoutInfoText:SetWidth(528)
+raidLayoutInfoText:SetJustifyH("LEFT")
+raidLayoutInfoText:SetText(
+    "Paste a Viserio raid note below, import the saved encounters, then apply the selected layout to your current raid."
+)
+
+local raidImportInset = CreateFrame("Frame", nil, p6, BackdropTemplateMixin and "BackdropTemplate" or nil)
+raidImportInset:SetPoint("TOPLEFT", 8, -32)
+raidImportInset:SetSize(528, 128)
+SkinPanel(raidImportInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
+
+local raidImportScroll = CreateFrame(
+    "ScrollFrame",
+    "AstralRaidLeaderRaidImportScrollFrame",
+    raidImportInset,
+    "UIPanelScrollFrameTemplate"
+)
+raidImportScroll:SetPoint("TOPLEFT", 10, -10)
+raidImportScroll:SetPoint("BOTTOMRIGHT", -30, 10)
+
+local raidImportScrollBar = _G["AstralRaidLeaderRaidImportScrollFrameScrollBar"]
+if raidImportScrollBar then
+    raidImportScrollBar:ClearAllPoints()
+    raidImportScrollBar:SetPoint("TOPRIGHT", raidImportInset, "TOPRIGHT", -4, -18)
+    raidImportScrollBar:SetPoint("BOTTOMRIGHT", raidImportInset, "BOTTOMRIGHT", -4, 18)
+end
+
+local raidImportEdit = CreateFrame("EditBox", nil, raidImportScroll)
+raidImportEdit:SetMultiLine(true)
+raidImportEdit:SetAutoFocus(false)
+raidImportEdit:SetFontObject(ChatFontNormal)
+raidImportEdit:SetWidth(484)
+raidImportEdit:SetHeight(1024)
+raidImportEdit:SetTextInsets(4, 4, 4, 4)
+raidImportEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+raidImportEdit:SetScript("OnTextChanged", function()
+    raidImportScroll:UpdateScrollChildRect()
+end)
+raidImportEdit:SetScript("OnCursorChanged", function(_, _, y)
+    raidImportScroll:SetVerticalScroll(math.max(0, y - 12))
+end)
+raidImportScroll:SetScrollChild(raidImportEdit)
+
+local importRaidLayoutsButton = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+importRaidLayoutsButton:SetPoint("TOPLEFT", 8, -170)
+importRaidLayoutsButton:SetSize(100, 24)
+importRaidLayoutsButton:SetText("Import Note")
+
+local clearRaidImportButton = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+clearRaidImportButton:SetPoint("LEFT", importRaidLayoutsButton, "RIGHT", 8, 0)
+clearRaidImportButton:SetSize(90, 24)
+clearRaidImportButton:SetText("Clear Text")
+
+local applyRaidLayoutButton = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+applyRaidLayoutButton:SetPoint("LEFT", clearRaidImportButton, "RIGHT", 8, 0)
+applyRaidLayoutButton:SetSize(100, 24)
+applyRaidLayoutButton:SetText("Apply")
+
+local deleteRaidLayoutButton = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+deleteRaidLayoutButton:SetPoint("LEFT", applyRaidLayoutButton, "RIGHT", 8, 0)
+deleteRaidLayoutButton:SetSize(100, 24)
+deleteRaidLayoutButton:SetText("Delete")
+
+local clearRaidLayoutsButton = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+clearRaidLayoutsButton:SetPoint("LEFT", deleteRaidLayoutButton, "RIGHT", 8, 0)
+clearRaidLayoutsButton:SetSize(100, 24)
+clearRaidLayoutsButton:SetText("Clear Saved")
+
+local raidLayoutListLabel = p6:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+raidLayoutListLabel:SetPoint("TOPLEFT", 8, -206)
+raidLayoutListLabel:SetText("Saved raid layouts (click to select)")
+
+local MAX_RAID_LAYOUT_BUTTONS = 10
+local raidLayoutButtons = {}
+for _i = 1, MAX_RAID_LAYOUT_BUTTONS do
+    local col = (_i - 1) % 2
+    local row = math.floor((_i - 1) / 2)
+    local btn = CreateFrame("Button", nil, p6, "UIPanelButtonTemplate")
+    btn:SetPoint("TOPLEFT", 8 + col * 266, -224 + row * -22)
+    btn:SetSize(258, 20)
+    btn:SetText("")
+    btn:Hide()
+    raidLayoutButtons[_i] = btn
+end
+
+local noRaidLayoutsText = p6:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+noRaidLayoutsText:SetPoint("TOPLEFT", 8, -228)
+noRaidLayoutsText:SetText("")
+noRaidLayoutsText:Hide()
+
+local raidLayoutPreviewInset = CreateFrame("Frame", nil, p6, BackdropTemplateMixin and "BackdropTemplate" or nil)
+raidLayoutPreviewInset:SetPoint("TOPLEFT", 8, -334)
+raidLayoutPreviewInset:SetSize(528, 64)
+SkinPanel(raidLayoutPreviewInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
+
+local raidLayoutPreviewScroll = CreateFrame(
+    "ScrollFrame",
+    "AstralRaidLeaderRaidPreviewScrollFrame",
+    raidLayoutPreviewInset,
+    "UIPanelScrollFrameTemplate"
+)
+raidLayoutPreviewScroll:SetPoint("TOPLEFT", 10, -10)
+raidLayoutPreviewScroll:SetPoint("BOTTOMRIGHT", -30, 10)
+
+local raidLayoutPreviewScrollBar = _G["AstralRaidLeaderRaidPreviewScrollFrameScrollBar"]
+if raidLayoutPreviewScrollBar then
+    raidLayoutPreviewScrollBar:ClearAllPoints()
+    raidLayoutPreviewScrollBar:SetPoint("TOPRIGHT", raidLayoutPreviewInset, "TOPRIGHT", -4, -18)
+    raidLayoutPreviewScrollBar:SetPoint("BOTTOMRIGHT", raidLayoutPreviewInset, "BOTTOMRIGHT", -4, 18)
+end
+
+local raidLayoutPreviewContent = CreateFrame("Frame", nil, raidLayoutPreviewScroll)
+raidLayoutPreviewContent:SetSize(486, 56)
+
+local raidLayoutPreviewText = raidLayoutPreviewContent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+raidLayoutPreviewText:SetPoint("TOPLEFT", 0, 0)
+raidLayoutPreviewText:SetPoint("TOPRIGHT", 0, 0)
+raidLayoutPreviewText:SetJustifyH("LEFT")
+raidLayoutPreviewText:SetJustifyV("TOP")
+raidLayoutPreviewText:SetText("Selected layout preview will appear here.")
+raidLayoutPreviewScroll:SetScrollChild(raidLayoutPreviewContent)
+
+-- ============================================================
+-- Tab 7 - Raid Groups: Settings
+-- ============================================================
+
+local p7 = panels[7]
+
+local raidGroupSettingsLabel = p7:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+raidGroupSettingsLabel:SetPoint("TOPLEFT", 8, -8)
+raidGroupSettingsLabel:SetText("Apply output")
+
+local raidGroupShowMissingNamesCB = CreateCheckbox(p7,
+    "Show names of missing players in apply output",
+    "When enabled, the apply completion message lists each invited player that was not in the raid.",
+    8, -32)
+
+local raidGroupApplyBehaviorLabel = p7:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+raidGroupApplyBehaviorLabel:SetPoint("TOPLEFT", 8, -68)
+raidGroupApplyBehaviorLabel:SetText("Apply behaviour")
+
+local raidGroupAutoApplyOnJoinCB = CreateCheckbox(p7,
+    "Auto-apply selected layout when a member joins",
+    "Automatically re-applies the currently selected raid layout whenever a new member joins the raid.",
+    8, -92)
+
+local raidGroupInviteMissingPlayersCB = CreateCheckbox(p7,
+    "Invite listed players not already in the raid on apply",
+    "When enabled, applying the selected raid layout also invites listed players"
+        .. " who are not already in the group.",
+    8, -120)
+
 for _, cb in ipairs({
     autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
     groupAllCB, groupRaidCB, groupPartyCB,
     useGuildRankCB, consumableAuditCB,
     deathTrackingCB, showRecapCB, showRecapOnAnyEndCB,
     deathGroupAllCB, deathGroupRaidCB, deathGroupPartyCB,
+    raidGroupShowMissingNamesCB,
+    raidGroupAutoApplyOnJoinCB,
+    raidGroupInviteMissingPlayersCB,
 }) do
     StyleCheckbox(cb)
 end
@@ -797,11 +971,17 @@ for _, btn in ipairs({
     addRankButton, removeRankButton, clearRanksButton, moveRankUpButton, moveRankDownButton, refreshGuildRanksButton,
     addConsumableButton, removeSpellIdButton, deleteCatButton, clearConsumablesButton, runAuditButton,
     openRecapButton,
+    importRaidLayoutsButton, clearRaidImportButton, applyRaidLayoutButton,
+    deleteRaidLayoutButton, clearRaidLayoutsButton,
 }) do
     SkinActionButton(btn)
 end
 
 for _, btn in ipairs(guildRankButtons) do
+    SkinActionButton(btn)
+end
+
+for _, btn in ipairs(raidLayoutButtons) do
     SkinActionButton(btn)
 end
 
@@ -911,6 +1091,90 @@ local function RefreshConsumableListText()
     consumableListText:SetText(table.concat(lines, "\n"))
 end
 
+local function RefreshRaidLayoutUI()
+    local lastVisibleButton = nil
+
+    for _, btn in ipairs(raidLayoutButtons) do
+        btn:Hide()
+        btn._raidLayoutKey = nil
+    end
+
+    noRaidLayoutsText:Hide()
+    applyRaidLayoutButton:Disable()
+    deleteRaidLayoutButton:Disable()
+    clearRaidLayoutsButton:Disable()
+
+    if not ARL.db then
+        raidLayoutPreviewText:SetText("Waiting for saved variables to load...")
+        return
+    end
+
+    if #ARL.db.raidLayouts == 0 then
+        noRaidLayoutsText:SetText("No saved raid layouts. Paste a Viserio note above and click Import Note.")
+        noRaidLayoutsText:Show()
+        raidLayoutPreviewInset:ClearAllPoints()
+        raidLayoutPreviewInset:SetPoint("TOPLEFT", noRaidLayoutsText, "BOTTOMLEFT", 0, -12)
+        raidLayoutPreviewText:SetText("Selected layout preview will appear here.")
+        raidLayoutPreviewContent:SetHeight(56)
+        raidLayoutPreviewScroll:SetVerticalScroll(0)
+        return
+    end
+
+    clearRaidLayoutsButton:Enable()
+
+    for i, profile in ipairs(ARL.db.raidLayouts) do
+        local btn = raidLayoutButtons[i]
+        if not btn then break end
+        btn._raidLayoutKey = profile.key
+        local marker = (profile.key == ARL.db.activeRaidLayoutKey) and "> " or ""
+        btn:SetText(string.format(
+            "%s%s",
+            marker,
+            ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(profile) or (profile.name or "Unknown")
+        ))
+        btn:Show()
+        lastVisibleButton = btn
+    end
+
+    raidLayoutPreviewInset:ClearAllPoints()
+    raidLayoutPreviewInset:SetPoint(
+        "TOPLEFT",
+        lastVisibleButton or raidLayoutListLabel,
+        "BOTTOMLEFT",
+        0,
+        lastVisibleButton and -12 or -32
+    )
+
+    local active = ARL.GetActiveRaidLayoutProfile and ARL.GetActiveRaidLayoutProfile() or nil
+    if not active then
+        raidLayoutPreviewText:SetText("Click a saved layout to select it.")
+        raidLayoutPreviewContent:SetHeight(56)
+        raidLayoutPreviewScroll:SetVerticalScroll(0)
+        return
+    end
+
+    applyRaidLayoutButton:Enable()
+    deleteRaidLayoutButton:Enable()
+
+    local previewLines = {}
+    if ARL.GetRaidLayoutPreviewLines then
+        previewLines = ARL.GetRaidLayoutPreviewLines(active)
+    end
+    local previewBody = #previewLines > 0 and table.concat(previewLines, "\n") or "No saved group assignments."
+    local previewText = string.format(
+        "Selected: %s\n%s",
+        ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(active) or (active.name or "Unknown"),
+        previewBody
+    )
+    raidLayoutPreviewText:SetText(previewText)
+
+    local width = 486
+    local height = raidLayoutPreviewText:GetStringHeight() + 8
+    raidLayoutPreviewContent:SetSize(width, math.max(56, height))
+    raidLayoutPreviewScroll:UpdateScrollChildRect()
+    raidLayoutPreviewScroll:SetVerticalScroll(0)
+end
+
 local function RefreshUI()
     if not ARL.db then return end
 
@@ -938,10 +1202,15 @@ local function RefreshUI()
     deathGroupRaidCB:SetChecked(deathFilter == "raid")
     deathGroupPartyCB:SetChecked(deathFilter == "party")
 
+    raidGroupShowMissingNamesCB:SetChecked(ARL.db.raidGroupShowMissingNames ~= false)
+    raidGroupAutoApplyOnJoinCB:SetChecked(ARL.db.raidGroupAutoApplyOnJoin == true)
+    raidGroupInviteMissingPlayersCB:SetChecked(ARL.db.raidGroupInviteMissingPlayers == true)
+
     RefreshListText()
     RefreshRankListText()
     RefreshConsumableListText()
     RefreshGuildRankButtons()
+    RefreshRaidLayoutUI()
 
     updating = false
 end
@@ -1400,6 +1669,141 @@ openRecapButton:SetScript("OnClick", function()
     else
         Print("Death recap UI is not available yet. Try again in a moment.")
     end
+end)
+
+-- ============================================================
+-- Tab 6 - Raid Groups: handlers
+-- ============================================================
+
+importRaidLayoutsButton:SetScript("OnClick", function()
+    if InCombatLockdown() then
+        Print("Cannot import raid layouts while in combat.")
+        return
+    end
+    if not ARL.ImportRaidLayouts then
+        Print("Raid layout import is not available yet. Try again in a moment.")
+        return
+    end
+
+    local ok, result = ARL.ImportRaidLayouts(raidImportEdit:GetText())
+    if not ok then
+        Print(result)
+        return
+    end
+
+    RefreshRaidLayoutUI()
+    Print(string.format(
+        "Imported %d raid layout(s): %d added, %d updated.",
+        result.imported or 0,
+        result.added or 0,
+        result.updated or 0
+    ))
+end)
+
+clearRaidImportButton:SetScript("OnClick", function()
+    raidImportEdit:SetText("")
+    raidImportEdit:ClearFocus()
+    raidImportScroll:SetVerticalScroll(0)
+end)
+
+applyRaidLayoutButton:SetScript("OnClick", function()
+    if InCombatLockdown() then
+        Print("Cannot apply a raid layout while in combat.")
+        return
+    end
+    if not ARL.ApplyRaidLayoutByQuery then
+        Print("Raid layout apply is not available yet. Try again in a moment.")
+        return
+    end
+    local ok, result = ARL.ApplyRaidLayoutByQuery("")
+    if not ok then
+        Print(result)
+        return
+    end
+    if result then
+        RefreshRaidLayoutUI()
+    end
+end)
+
+deleteRaidLayoutButton:SetScript("OnClick", function()
+    if InCombatLockdown() then
+        Print("Cannot delete a raid layout while in combat.")
+        return
+    end
+    if not ARL.DeleteRaidLayoutByQuery then
+        Print("Raid layout deletion is not available yet. Try again in a moment.")
+        return
+    end
+    local ok, result = ARL.DeleteRaidLayoutByQuery("")
+    if not ok then
+        Print(result)
+        return
+    end
+    RefreshRaidLayoutUI()
+    Print(string.format(
+        "Deleted raid layout |cffffd100%s|r.",
+        ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
+    ))
+end)
+
+clearRaidLayoutsButton:SetScript("OnClick", function()
+    if InCombatLockdown() then
+        Print("Cannot clear raid layouts while in combat.")
+        return
+    end
+    if not ARL.db then return end
+    ARL.db.raidLayouts = {}
+    ARL.db.activeRaidLayoutKey = ""
+    RefreshRaidLayoutUI()
+    Print("Cleared all saved raid layouts.")
+end)
+
+for _, btn in ipairs(raidLayoutButtons) do
+    btn:SetScript("OnClick", function(self)
+        if InCombatLockdown() then
+            Print("Cannot change the selected raid layout while in combat.")
+            return
+        end
+        if not self._raidLayoutKey or not ARL.SetActiveRaidLayoutByQuery then return end
+        local ok, result = ARL.SetActiveRaidLayoutByQuery(self._raidLayoutKey)
+        if not ok then
+            Print(result)
+            return
+        end
+        RefreshRaidLayoutUI()
+        Print(string.format(
+            "Selected raid layout |cffffd100%s|r.",
+            ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
+        ))
+    end)
+end
+
+-- ============================================================
+-- ShowOptions
+-- ============================================================
+
+raidGroupShowMissingNamesCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.raidGroupShowMissingNames = self:GetChecked() and true or false
+    Print(string.format("Show missing player names |cff%s%s|r.",
+        ARL.db.raidGroupShowMissingNames and "00ff00" or "ff0000",
+        ARL.db.raidGroupShowMissingNames and "enabled" or "disabled"))
+end)
+
+raidGroupAutoApplyOnJoinCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.raidGroupAutoApplyOnJoin = self:GetChecked() and true or false
+    Print(string.format("Auto-apply on join |cff%s%s|r.",
+        ARL.db.raidGroupAutoApplyOnJoin and "00ff00" or "ff0000",
+        ARL.db.raidGroupAutoApplyOnJoin and "enabled" or "disabled"))
+end)
+
+raidGroupInviteMissingPlayersCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.raidGroupInviteMissingPlayers = self:GetChecked() and true or false
+    Print(string.format("Invite missing listed players on apply |cff%s%s|r.",
+        ARL.db.raidGroupInviteMissingPlayers and "00ff00" or "ff0000",
+        ARL.db.raidGroupInviteMissingPlayers and "enabled" or "disabled"))
 end)
 
 -- ============================================================

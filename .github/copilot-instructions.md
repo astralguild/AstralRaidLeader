@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, guild rank priority, and death recaps. Target interface version: `120001` (Midnight).
+AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, raid group layouts, guild rank priority, and death recaps. Target interface version: `120001` (Midnight).
 
 ### File Layout
 
@@ -108,7 +108,7 @@ frame (760×500, DIALOG strata, level 100)
 │   ├── subTabSidebar (width 165, left-aligned)
 │   │   └── subTabButtons[1..6]
 │   └── contentHost (right of sidebar)
-│       └── panels[1..5] (one visible at a time)
+│       └── panels[1..7] (one visible at a time)
 └── closeButton (BOTTOMRIGHT -12,12)
 ```
 
@@ -118,6 +118,8 @@ frame (760×500, DIALOG strata, level 100)
 - `panels[3]` – Guild Ranks
 - `panels[4]` – Consumables
 - `panels[5]` – Deaths settings
+- `panels[6]` – Raid Groups (import, select, preview, apply)
+- `panels[7]` – Raid Groups Settings (output/apply behavior toggles)
 
 **Main tab → sub-tabs mapping** is defined in `MAIN_TABS` and drives `SelectMainTab` / `SelectSubTab`.
 
@@ -189,8 +191,15 @@ List body text: `(0.90, 0.92, 0.96)`.
     trackedConsumables     = {},     -- {label, spellIds[], namePatterns?}[]
     guildRankPriority      = {},     -- {name, rankIndex}[]  (may contain legacy strings)
     useGuildRankPriority   = false,
+    raidLayouts            = {},     -- imported raid-group layouts
+    activeRaidLayoutKey    = "",    -- currently selected raid-group layout key
+    raidGroupShowMissingNames    = true,  -- include missing names in apply completion output
+    raidGroupAutoApplyOnJoin     = false, -- re-apply selected layout on member joins
+    raidGroupInviteMissingPlayers = false, -- invite listed players not in raid on apply
     deathTrackingEnabled   = true,
+    deathGroupTypeFilter   = "raid", -- "all"|"raid"|"party"
     showRecapOnWipe        = true,
+    showRecapOnEncounterEnd = false,
     lastWipeDeaths         = {},     -- death record[]
     lastWipeEncounter      = "",
     lastWipeDate           = "",
@@ -229,3 +238,5 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 10. **Tainted numeric comparisons** — values like `deathTimeSeconds` or `GetStringWidth()` results can be secret numbers; sanitize before `>`, `<`, `<=`, subtraction, or `math.*` usage.
 11. **Undefined-global lint traps** — reference optional globals via locals (e.g. `local UnitInPhase = _G.UnitInPhase`) before use.
 12. **Cross-instance consumable false positives** — do not audit buffs for units outside your phase/instance; they will appear missing by default.
+13. **Raid-group actions in combat** — import/select/apply/delete/clear interactions for raid layouts must be blocked while in combat.
+14. **Auto-apply invite spam** — when auto-applying on member join, do not re-send invites for every roster update; subgroup apply can run without invite side effects.
