@@ -10,6 +10,10 @@ local ADDON_NAME = "AstralRaidLeader"
 -- Addon namespace exposed as a global so other files / the console can reach it.
 local ARL = {}
 _G[ADDON_NAME] = ARL
+local UnitIsGroupAssistant = _G.UnitIsGroupAssistant
+local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
+local C_Timer = _G.C_Timer
+local SetRaidSubgroup = _G.SetRaidSubgroup
 local InviteUnit = (_G.C_PartyInfo and _G.C_PartyInfo.InviteUnit) or _G.InviteUnit
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
@@ -71,7 +75,8 @@ local function GetShortName(name)
 end
 
 local function CanManageRaidSubgroups()
-    return UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")
+    return UnitIsGroupLeader("player")
+        or (UnitIsGroupAssistant and UnitIsGroupAssistant("player"))
 end
 
 -- Shared UI helpers consumed by the options and death-recap windows.
@@ -644,7 +649,8 @@ local function ContinueRaidLayoutApply()
         if #state.missing > 0 then
             if (state.invitedMissingCount or 0) > 0 then
                 if ARL.db and ARL.db.raidGroupShowMissingNames then
-                    missingSuffix = string.format(" %d listed member(s) were invited but are not yet in the raid: %s",
+                    missingSuffix = string.format(
+                        " %d listed member(s) were invited but are not yet in the raid: %s",
                         #state.missing, table.concat(state.missing, ", "))
                 else
                     missingSuffix = string.format(
@@ -725,7 +731,8 @@ local function ApplyRaidLayoutProfile(profile, options)
         return false, "You must be in a raid to apply a raid layout."
     end
     if not CanManageRaidSubgroups() then
-        return false, "You must be the raid leader or an assistant to apply a raid layout."
+        return false,
+            "You must be the raid leader or an assistant to apply a raid layout."
     end
 
     local snapshot = GetRaidRosterSnapshot()
@@ -1089,7 +1096,10 @@ local function RunConsumableAudit(force)
     if not ARL.db or not ARL.db.consumableAuditEnabled then return end
     if not force and not IsInRelevantGroup() then return end
 
-    local _, _, _, playerInstanceID = UnitPosition and UnitPosition("player")
+    local playerInstanceID = nil
+    if UnitPosition then
+        playerInstanceID = select(4, UnitPosition("player"))
+    end
 
     local units = {}
     if IsInRaid() then
@@ -1171,7 +1181,10 @@ local function RunConsumableAudit(force)
     if #missing == 0 then
         local msg = "Ready check: All group members have their consumables!"
         if skipped > 0 then
-            msg = msg .. string.format(" |cff888888(%d member(s) outside your current instance or phase were skipped.)|r", skipped)
+            msg = msg .. string.format(
+                " |cff888888(%d member(s) outside your current instance or phase were skipped.)|r",
+                skipped
+            )
         end
         Print(msg)
     else
@@ -1181,7 +1194,10 @@ local function RunConsumableAudit(force)
                 entry.name, table.concat(entry.cats, ", ")))
         end
         if skipped > 0 then
-            Print(string.format("  |cff888888(%d member(s) outside your current instance or phase were not checked.)|r", skipped))
+            Print(string.format(
+                "  |cff888888(%d member(s) outside your current instance or phase were not checked.)|r",
+                skipped
+            ))
         end
     end
 end

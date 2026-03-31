@@ -4,6 +4,8 @@
 local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
+local ChatFontNormal = _G.ChatFontNormal
+
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
 end
@@ -829,7 +831,7 @@ raidImportEdit:SetWidth(484)
 raidImportEdit:SetHeight(1024)
 raidImportEdit:SetTextInsets(4, 4, 4, 4)
 raidImportEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-raidImportEdit:SetScript("OnTextChanged", function(self)
+raidImportEdit:SetScript("OnTextChanged", function()
     raidImportScroll:UpdateScrollChildRect()
 end)
 raidImportEdit:SetScript("OnCursorChanged", function(_, _, y)
@@ -942,7 +944,8 @@ local raidGroupAutoApplyOnJoinCB = CreateCheckbox(p7,
 
 local raidGroupInviteMissingPlayersCB = CreateCheckbox(p7,
     "Invite listed players not already in the raid on apply",
-    "When enabled, applying the selected raid layout also invites listed players who are not already in the group.",
+    "When enabled, applying the selected raid layout also invites listed players"
+        .. " who are not already in the group.",
     8, -120)
 
 for _, cb in ipairs({
