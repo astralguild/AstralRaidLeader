@@ -971,7 +971,8 @@ for _, btn in ipairs({
     addRankButton, removeRankButton, clearRanksButton, moveRankUpButton, moveRankDownButton, refreshGuildRanksButton,
     addConsumableButton, removeSpellIdButton, deleteCatButton, clearConsumablesButton, runAuditButton,
     openRecapButton,
-    importRaidLayoutsButton, clearRaidImportButton, applyRaidLayoutButton, deleteRaidLayoutButton, clearRaidLayoutsButton,
+    importRaidLayoutsButton, clearRaidImportButton, applyRaidLayoutButton,
+    deleteRaidLayoutButton, clearRaidLayoutsButton,
 }) do
     SkinActionButton(btn)
 end

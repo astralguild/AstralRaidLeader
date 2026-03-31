@@ -17,8 +17,8 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Reminder system** – if no preferred leader is present in the group, an event-driven in-chat reminder fires on member-join/instance-change style triggers.
 - **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
 - **Group-type filter** – restrict auto-promote to raids only, parties only, or all group types. Great for players who run both M+ keys and raids.
-- **Consumable audit** – when a ready check is initiated, the addon scans every group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
-- **Raid group layouts** – import Viserio-style encounter notes, save each encounter's 20-player ordering, and apply the subgroup layout to your current raid. Listed players are assigned into groups 1-4 by note order, while any current raiders not in the note are packed into groups 8, 7, 6, and 5.
+- **Consumable audit** – when a ready check is initiated, the addon scans every queryable group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Members outside your current instance/phase are skipped to avoid false positives. Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
+- **Raid group layouts** – import Viserio-style encounter notes, save each encounter's 20-player ordering, and apply the subgroup layout to your current raid. Listed players are assigned into groups 1-4 by note order, while any current raiders not in the note are packed into groups 8, 7, 6, and 5. Raid-group actions are blocked in combat, and optional settings let you auto-apply on joins and invite missing listed players on apply.
 - **Death recap** – records wipe deaths and displays them in a recap window (`/arl deaths`). In current Midnight-compatible builds, death data is sourced from the built-in `C_DamageMeter` combat session API.
 - **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
 - **Persistent settings** – your list and preferences are saved between sessions via `SavedVariables`.
@@ -110,16 +110,21 @@ Open the settings window and use the `Raid Groups` tab to paste a Viserio note t
 
 When imported, each encounter is saved separately. Applying a saved layout assigns the listed players into raid groups in note order, five players per group, and places any current raiders who were not listed into groups 8, 7, 6, and 5 as those groups fill.
 
-In `Raid Groups -> Settings`, you can also enable inviting listed players who are not already in the raid when you apply the selected encounter layout. This is disabled by default.
+In `Raid Groups -> Settings`, you can configure:
+- showing missing-player names in apply output
+- auto-applying the selected layout when a new member joins
+- inviting listed players not already in raid when you apply
+
+The invite-on-apply option is disabled by default. Auto-apply-on-join re-runs subgroup placement only and does not repeatedly send invites.
 
 ## How it works
 
-1. On every `GROUP_ROSTER_UPDATE` / `RAID_ROSTER_UPDATE` event, if the local player is the group/raid leader, the addon walks the preferred-leaders list from top to bottom.
+1. On every `GROUP_ROSTER_UPDATE` event, if the local player is the group/raid leader, the addon walks the preferred-leaders list from top to bottom.
 2. The first name found in the current group is promoted via `PromoteToLeader()`.
 3. If no match is found **and** guild rank priority is enabled, the addon walks the guild rank priority list and promotes the first group member whose guild rank matches the highest-priority entry. Matching prefers rank index (when known) and falls back to rank name for legacy entries.
 4. If still no match is found **and** the reminder is enabled, an event-driven chat reminder can fire on relevant roster/instance triggers.
 5. Popup prompts are subject to their own cooldown after **Not Now** and can bypass cooldown on specific high-signal triggers like member joins.
-6. When a `READY_CHECK` event fires, the addon scans each group member's active buffs. For every tracked consumable category, it checks whether the member has at least one of the listed spell IDs as an active buff. Anyone missing one or more categories is included in a chat report.
+6. When a `READY_CHECK` event fires, the addon scans each queryable group member's active buffs. Members outside your current instance/phase are skipped. For every tracked consumable category, it checks whether the member has at least one of the listed spell IDs as an active buff. Anyone missing one or more categories is included in a chat report.
 
 ### Setting up consumable tracking
 

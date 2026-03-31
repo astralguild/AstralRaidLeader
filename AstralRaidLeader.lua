@@ -666,7 +666,8 @@ local function ContinueRaidLayoutApply()
             end
         end
         StopRaidLayoutApply(string.format(
-            "Applied raid layout for |cffffd100%s|r. %d listed member(s) matched, %d unlisted member(s) moved into overflow groups.%s",
+            "Applied raid layout for |cffffd100%s|r. %d listed member(s) matched, "
+                .. "%d unlisted member(s) moved into overflow groups.%s",
             GetRaidLayoutLabel(state.profile),
             state.matchedCount,
             state.overflowCount,
@@ -689,7 +690,8 @@ local function ContinueRaidLayoutApply()
 
     if (state.noProgressCount or 0) >= 4 then
         StopRaidLayoutApply(
-            "Raid layout apply stopped because raid subgroup changes are being throttled. Wait a moment, then apply again."
+            "Raid layout apply stopped because raid subgroup changes are being "
+                .. "throttled. Wait a moment, then apply again."
         )
         return
     end
