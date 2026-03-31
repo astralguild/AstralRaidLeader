@@ -15,6 +15,10 @@ AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It ma
 
 The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `ARL` in every file.
 
+## Code Style
+
+- **Maximum line length is 120 characters.** Wrap long statements, long string literals, and function calls to satisfy this limit.
+
 ---
 
 ## WoW API Constraints (Retail / Midnight)
@@ -186,7 +190,12 @@ List body text: `(0.90, 0.92, 0.96)`.
     notifyEnabled          = true,
     notifySound            = true,
     quietMode              = false,
-    groupTypeFilter        = "all",  -- "all"|"raid"|"party"
+    groupTypeFilter        = {         -- independent per-type toggles
+      raid = true,
+      party = true,
+      guild_raid = true,
+      guild_party = true,
+    },
     consumableAuditEnabled = true,
     trackedConsumables     = {},     -- {label, spellIds[], namePatterns?}[]
     guildRankPriority      = {},     -- {name, rankIndex}[]  (may contain legacy strings)
@@ -197,7 +206,12 @@ List body text: `(0.90, 0.92, 0.96)`.
     raidGroupAutoApplyOnJoin     = false, -- re-apply selected layout on member joins
     raidGroupInviteMissingPlayers = false, -- invite listed players not in raid on apply
     deathTrackingEnabled   = true,
-    deathGroupTypeFilter   = "raid", -- "all"|"raid"|"party"
+    deathGroupTypeFilter   = {
+      raid = true,
+      party = false,
+      guild_raid = false,
+      guild_party = false,
+    },
     showRecapOnWipe        = true,
     showRecapOnEncounterEnd = false,
     lastWipeDeaths         = {},     -- death record[]

@@ -500,20 +500,25 @@ local groupTypeLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 groupTypeLabel:SetPoint("TOPLEFT", 8, -196)
 groupTypeLabel:SetText("Auto-promote in:")
 
-local groupAllCB = CreateCheckbox(p1,
-    "All groups",
-    "Auto-promote in both raids and parties.",
-    8, -218)
-
 local groupRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 140, -218)
-groupRaidCB.Text:SetText("Raids only")
-groupRaidCB.tooltipText = "Only auto-promote when in a raid group."
+groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 8, -218)
+groupRaidCB.Text:SetText("Raids")
+groupRaidCB.tooltipText = "Auto-promote when in any raid group."
 
 local groupPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 270, -218)
-groupPartyCB.Text:SetText("Parties only")
-groupPartyCB.tooltipText = "Only auto-promote when in a party (not a raid)."
+groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 175, -218)
+groupPartyCB.Text:SetText("Parties")
+groupPartyCB.tooltipText = "Auto-promote when in a party (not a raid)."
+
+local groupGuildRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
+groupGuildRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 8, -246)
+groupGuildRaidCB.Text:SetText("Guild Raids")
+groupGuildRaidCB.tooltipText = "Auto-promote in raids that Blizzard marks as guild groups."
+
+local groupGuildPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
+groupGuildPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 175, -246)
+groupGuildPartyCB.Text:SetText("Guild Parties")
+groupGuildPartyCB.tooltipText = "Auto-promote in parties that Blizzard marks as guild groups."
 
 -- ============================================================
 -- Tab 2 – Leaders
@@ -762,29 +767,34 @@ local deathGroupFilterLabel = p5:CreateFontString(nil, "ARTWORK", "GameFontNorma
 deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -96)
 deathGroupFilterLabel:SetText("Track recap data in:")
 
-local deathGroupAllCB = CreateCheckbox(p5,
-    "All groups",
-    "Track death recap data in both raids and parties.",
-    8, -118)
-
 local deathGroupRaidCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 140, -118)
-deathGroupRaidCB.Text:SetText("Raids only")
-deathGroupRaidCB.tooltipText = "Track death recap data only in raid groups."
+deathGroupRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 8, -118)
+deathGroupRaidCB.Text:SetText("Raids")
+deathGroupRaidCB.tooltipText = "Track death recap data in any raid group."
 
 local deathGroupPartyCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 270, -118)
-deathGroupPartyCB.Text:SetText("Parties only")
-deathGroupPartyCB.tooltipText = "Track death recap data only in parties (not raids)."
+deathGroupPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 175, -118)
+deathGroupPartyCB.Text:SetText("Parties")
+deathGroupPartyCB.tooltipText = "Track death recap data in parties (not raids)."
+
+local deathGroupGuildRaidCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
+deathGroupGuildRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 8, -146)
+deathGroupGuildRaidCB.Text:SetText("Guild Raids")
+deathGroupGuildRaidCB.tooltipText = "Track death recap data in raids that Blizzard marks as guild groups."
+
+local deathGroupGuildPartyCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
+deathGroupGuildPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 175, -146)
+deathGroupGuildPartyCB.Text:SetText("Guild Parties")
+deathGroupGuildPartyCB.tooltipText = "Track death recap data in parties that Blizzard marks as guild groups."
 
 local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-recapInfoText:SetPoint("TOPLEFT", 8, -156)
+recapInfoText:SetPoint("TOPLEFT", 8, -184)
 recapInfoText:SetWidth(520)
 recapInfoText:SetJustifyH("LEFT")
 recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
 
 local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
-openRecapButton:SetPoint("TOPLEFT", 8, -186)
+openRecapButton:SetPoint("TOPLEFT", 8, -214)
 openRecapButton:SetSize(140, 24)
 openRecapButton:SetText("Open Last Recap")
 
@@ -950,10 +960,10 @@ local raidGroupInviteMissingPlayersCB = CreateCheckbox(p7,
 
 for _, cb in ipairs({
     autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
-    groupAllCB, groupRaidCB, groupPartyCB,
+    groupRaidCB, groupPartyCB, groupGuildRaidCB, groupGuildPartyCB,
     useGuildRankCB, consumableAuditCB,
     deathTrackingCB, showRecapCB, showRecapOnAnyEndCB,
-    deathGroupAllCB, deathGroupRaidCB, deathGroupPartyCB,
+    deathGroupRaidCB, deathGroupPartyCB, deathGroupGuildRaidCB, deathGroupGuildPartyCB,
     raidGroupShowMissingNamesCB,
     raidGroupAutoApplyOnJoinCB,
     raidGroupInviteMissingPlayersCB,
@@ -1187,9 +1197,11 @@ local function RefreshUI()
     quietCB:SetChecked(ARL.db.quietMode)
 
     local filter = ARL.db.groupTypeFilter or "all"
-    groupAllCB:SetChecked(filter == "all")
-    groupRaidCB:SetChecked(filter == "raid")
-    groupPartyCB:SetChecked(filter == "party")
+    local ft = type(filter) == "table" and filter or {}
+    groupRaidCB:SetChecked(ft.raid and true or false)
+    groupPartyCB:SetChecked(ft.party and true or false)
+    groupGuildRaidCB:SetChecked(ft.guild_raid and true or false)
+    groupGuildPartyCB:SetChecked(ft.guild_party and true or false)
 
     useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
     consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
@@ -1198,9 +1210,11 @@ local function RefreshUI()
     showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
 
     local deathFilter = ARL.db.deathGroupTypeFilter or "raid"
-    deathGroupAllCB:SetChecked(deathFilter == "all")
-    deathGroupRaidCB:SetChecked(deathFilter == "raid")
-    deathGroupPartyCB:SetChecked(deathFilter == "party")
+    local dft = type(deathFilter) == "table" and deathFilter or {}
+    deathGroupRaidCB:SetChecked(dft.raid and true or false)
+    deathGroupPartyCB:SetChecked(dft.party and true or false)
+    deathGroupGuildRaidCB:SetChecked(dft.guild_raid and true or false)
+    deathGroupGuildPartyCB:SetChecked(dft.guild_party and true or false)
 
     raidGroupShowMissingNamesCB:SetChecked(ARL.db.raidGroupShowMissingNames ~= false)
     raidGroupAutoApplyOnJoinCB:SetChecked(ARL.db.raidGroupAutoApplyOnJoin == true)
@@ -1265,17 +1279,18 @@ end)
 
 local function SetGroupTypeFilter(filter)
     if not ARL.db then return end
-    ARL.db.groupTypeFilter = filter
-    groupAllCB:SetChecked(filter == "all")
-    groupRaidCB:SetChecked(filter == "raid")
-    groupPartyCB:SetChecked(filter == "party")
-    local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-    Print(string.format("Group type filter set to |cffffff00%s|r.", labels[filter]))
+    if type(ARL.db.groupTypeFilter) ~= "table" then ARL.db.groupTypeFilter = {} end
+    ARL.db.groupTypeFilter[filter] = not ARL.db.groupTypeFilter[filter]
+    local FLBL = { raid="raids", party="parties", guild_raid="guild raids", guild_party="guild parties" }
+    local en = ARL.db.groupTypeFilter[filter]
+    Print(string.format("Group type filter: %s |cff%s%s|r.",
+        FLBL[filter] or filter, en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
 end
 
-groupAllCB:SetScript("OnClick",  function() if not updating then SetGroupTypeFilter("all")   end end)
-groupRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("raid")  end end)
-groupPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("party") end end)
+groupRaidCB:SetScript("OnClick",      function() if not updating then SetGroupTypeFilter("raid")        end end)
+groupPartyCB:SetScript("OnClick",     function() if not updating then SetGroupTypeFilter("party")       end end)
+groupGuildRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("guild_raid")  end end)
+groupGuildPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("guild_party") end end)
 
 -- ============================================================
 -- Tab 2 – Leaders: handlers
@@ -1651,17 +1666,26 @@ end)
 
 local function SetDeathGroupTypeFilter(filter)
     if not ARL.db then return end
-    ARL.db.deathGroupTypeFilter = filter
-    deathGroupAllCB:SetChecked(filter == "all")
-    deathGroupRaidCB:SetChecked(filter == "raid")
-    deathGroupPartyCB:SetChecked(filter == "party")
-    local labels = { all = "all groups", raid = "raids only", party = "parties only" }
-    Print(string.format("Death recap group filter set to |cffffff00%s|r.", labels[filter]))
+    if type(ARL.db.deathGroupTypeFilter) ~= "table" then ARL.db.deathGroupTypeFilter = {} end
+    ARL.db.deathGroupTypeFilter[filter] = not ARL.db.deathGroupTypeFilter[filter]
+    local FLBL = { raid="raids", party="parties", guild_raid="guild raids", guild_party="guild parties" }
+    local en = ARL.db.deathGroupTypeFilter[filter]
+    Print(string.format("Death recap group filter: %s |cff%s%s|r.",
+        FLBL[filter] or filter, en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
 end
 
-deathGroupAllCB:SetScript("OnClick",  function() if not updating then SetDeathGroupTypeFilter("all")   end end)
-deathGroupRaidCB:SetScript("OnClick", function() if not updating then SetDeathGroupTypeFilter("raid")  end end)
-deathGroupPartyCB:SetScript("OnClick",function() if not updating then SetDeathGroupTypeFilter("party") end end)
+deathGroupRaidCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("raid") end
+end)
+deathGroupPartyCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("party") end
+end)
+deathGroupGuildRaidCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("guild_raid") end
+end)
+deathGroupGuildPartyCB:SetScript("OnClick", function()
+    if not updating then SetDeathGroupTypeFilter("guild_party") end
+end)
 
 openRecapButton:SetScript("OnClick", function()
     if ARL.ShowDeathRecap then
