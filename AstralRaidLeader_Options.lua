@@ -5,6 +5,12 @@ local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
 local ChatFontNormal = _G.ChatFontNormal
+local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
+local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
+local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
+local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
+local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
+local ToggleDropDownMenu = _G.ToggleDropDownMenu
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -892,10 +898,28 @@ local raidLayoutDropDown = CreateFrame(
 raidLayoutDropDown:SetPoint("TOPLEFT", p6, "TOPLEFT", -8, -208)
 UIDropDownMenu_SetWidth(raidLayoutDropDown, 492)
 UIDropDownMenu_SetText(raidLayoutDropDown, "No saved raid layouts")
-raidLayoutDropDown:EnableMouse(true)
+raidLayoutDropDown:EnableMouse(false)
+
+local raidLayoutDropDownButton = _G["AstralRaidLeaderRaidLayoutDropDownButton"]
+if raidLayoutDropDownButton then
+    raidLayoutDropDownButton:EnableMouse(true)
+    raidLayoutDropDownButton:SetHitRectInsets(0, 0, 0, 0)
+    raidLayoutDropDownButton:SetScript("OnClick", function()
+        if InCombatLockdown() then
+            Print("Cannot change the selected raid layout while in combat.")
+            return
+        end
+        if ToggleDropDownMenu then
+            ToggleDropDownMenu(1, nil, raidLayoutDropDown)
+        end
+    end)
+end
+
 raidLayoutDropDown:SetScript("OnMouseDown", function(_, mouseButton)
-    if mouseButton == "LeftButton" and ToggleDropDownMenu then
+    if mouseButton == "LeftButton" and ToggleDropDownMenu and not InCombatLockdown() then
         ToggleDropDownMenu(1, nil, raidLayoutDropDown)
+    elseif mouseButton == "LeftButton" and InCombatLockdown() then
+        Print("Cannot change the selected raid layout while in combat.")
     end
 end)
 
@@ -1120,58 +1144,6 @@ local function RefreshRaidLayoutUI()
         return
     end
 
-    UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
-        if level ~= 1 or not ARL.db then
-            return
-        end
-
-        local activeKey = ARL.db.activeRaidLayoutKey or ""
-
-        local noneInfo = UIDropDownMenu_CreateInfo()
-        noneInfo.text = "None (disabled)"
-        noneInfo.checked = activeKey == ""
-        noneInfo.func = function()
-            if InCombatLockdown() then
-                Print("Cannot change the selected raid layout while in combat.")
-                return
-            end
-            ARL.db.activeRaidLayoutKey = ""
-            RefreshRaidLayoutUI()
-            Print("Cleared selected raid layout.")
-        end
-        UIDropDownMenu_AddButton(noneInfo, level)
-
-        for _, profile in ipairs(ARL.db.raidLayouts or {}) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(profile) or (profile.name or "Unknown")
-            info.checked = profile.key == activeKey
-            info.func = function()
-                if InCombatLockdown() then
-                    Print("Cannot change the selected raid layout while in combat.")
-                    return
-                end
-                if ARL.db.activeRaidLayoutKey == profile.key then
-                    ARL.db.activeRaidLayoutKey = ""
-                    RefreshRaidLayoutUI()
-                    Print("Cleared selected raid layout.")
-                    return
-                end
-                if not ARL.SetActiveRaidLayoutByQuery then return end
-                local ok, result = ARL.SetActiveRaidLayoutByQuery(profile.key)
-                if not ok then
-                    Print(result)
-                    return
-                end
-                RefreshRaidLayoutUI()
-                Print(string.format(
-                    "Selected raid layout |cffffd100%s|r.",
-                    ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
-                ))
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-
     if #ARL.db.raidLayouts == 0 then
         noRaidLayoutsText:SetText("No saved raid layouts. Paste a Viserio note above and click Import Note.")
         noRaidLayoutsText:Show()
@@ -1219,6 +1191,58 @@ local function RefreshRaidLayoutUI()
     raidLayoutPreviewScroll:UpdateScrollChildRect()
     raidLayoutPreviewScroll:SetVerticalScroll(0)
 end
+
+UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
+    if level ~= 1 or not ARL.db then
+        return
+    end
+
+    local activeKey = ARL.db.activeRaidLayoutKey or ""
+
+    local noneInfo = UIDropDownMenu_CreateInfo()
+    noneInfo.text = "None (disabled)"
+    noneInfo.checked = activeKey == ""
+    noneInfo.func = function()
+        if InCombatLockdown() then
+            Print("Cannot change the selected raid layout while in combat.")
+            return
+        end
+        ARL.db.activeRaidLayoutKey = ""
+        RefreshRaidLayoutUI()
+        Print("Cleared selected raid layout.")
+    end
+    UIDropDownMenu_AddButton(noneInfo, level)
+
+    for _, profile in ipairs(ARL.db.raidLayouts or {}) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(profile) or (profile.name or "Unknown")
+        info.checked = profile.key == activeKey
+        info.func = function()
+            if InCombatLockdown() then
+                Print("Cannot change the selected raid layout while in combat.")
+                return
+            end
+            if ARL.db.activeRaidLayoutKey == profile.key then
+                ARL.db.activeRaidLayoutKey = ""
+                RefreshRaidLayoutUI()
+                Print("Cleared selected raid layout.")
+                return
+            end
+            if not ARL.SetActiveRaidLayoutByQuery then return end
+            local ok, result = ARL.SetActiveRaidLayoutByQuery(profile.key)
+            if not ok then
+                Print(result)
+                return
+            end
+            RefreshRaidLayoutUI()
+            Print(string.format(
+                "Selected raid layout |cffffd100%s|r.",
+                ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
+            ))
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end)
 
 local function RefreshUI()
     if not ARL.db then return end
