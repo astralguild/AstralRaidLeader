@@ -62,7 +62,7 @@ end
 -- Frame construction
 -- ============================================================
 
-local FRAME_W, FRAME_H = 520, 430
+local FRAME_W, FRAME_H = 640, 430
 
 local frame = CreateFrame(
     "Frame",
