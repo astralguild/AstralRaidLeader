@@ -10,7 +10,7 @@ AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It ma
 |---|---|
 | `AstralRaidLeader.lua` | Core logic: event handling, auto-promote, guild rank resolution, consumable audit, death tracking, slash commands |
 | `AstralRaidLeader_Options.lua` | In-game settings window (760×500 custom frame) |
-| `AstralRaidLeader_Deaths.lua` | Death recap window (520×430 custom frame) |
+| `AstralRaidLeader_Deaths.lua` | Death recap window (640×430 custom frame) |
 | `AstralRaidLeader.toc` | Addon manifest; load order is `.lua` → `_Options.lua` → `_Deaths.lua` |
 
 The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `ARL` in every file.
@@ -122,7 +122,7 @@ frame (760×500, DIALOG strata, level 100)
 - `panels[3]` – Guild Ranks
 - `panels[4]` – Consumables
 - `panels[5]` – Deaths settings
-- `panels[6]` – Raid Groups (import, select, preview, apply)
+- `panels[6]` – Raid Groups (import, dropdown select, auto-apply toggle, preview, apply)
 - `panels[7]` – Raid Groups Settings (output/apply behavior toggles)
 
 **Main tab → sub-tabs mapping** is defined in `MAIN_TABS` and drives `SelectMainTab` / `SelectSubTab`.
@@ -130,7 +130,7 @@ frame (760×500, DIALOG strata, level 100)
 ### Death Recap Window (`AstralRaidLeader_Deaths.lua`)
 
 ```
-frame (520×430, DIALOG strata, level 110)
+frame (640×430, DIALOG strata, level 110)
 ├── header (same pattern as Options)
 ├── topCloseButton
 ├── dragRegion
@@ -254,3 +254,5 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 12. **Cross-instance consumable false positives** — do not audit buffs for units outside your phase/instance; they will appear missing by default.
 13. **Raid-group actions in combat** — import/select/apply/delete/clear interactions for raid layouts must be blocked while in combat.
 14. **Auto-apply invite spam** — when auto-applying on member join, do not re-send invites for every roster update; subgroup apply can run without invite side effects.
+15. **Raid layout selector implementation** — panel 6 uses Blizzard `UIDropDownMenuTemplate`, not a custom button list. Preserve click-anywhere-to-open behavior and left-aligned selected-text styling.
+16. **Difficulty mismatch behavior** — applying a raid layout must fail with a clear message when current raid difficulty does not match the layout's imported difficulty.

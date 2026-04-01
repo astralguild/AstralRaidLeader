@@ -18,7 +18,8 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **List reordering** – move preferred leaders up or down in priority using slash commands or the **Move Up** / **Move Down** buttons in the settings window; no need to remove and re-add entries.
 - **Group-type filters (multi-select)** – independently toggle auto-promote and death-recap capture for raids, parties, guild raids, and guild parties. You can enable any combination.
 - **Consumable audit** – when a ready check is initiated, the addon scans every queryable group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Members outside your current instance/phase are skipped to avoid false positives. Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
-- **Raid group layouts** – import Viserio-style encounter notes, save each encounter's 20-player ordering, and apply the subgroup layout to your current raid. Listed players are assigned into groups 1-4 by note order, while any current raiders not in the note are packed into groups 8, 7, 6, and 5. Raid-group actions are blocked in combat, and optional settings let you auto-apply on joins and invite missing listed players on apply.
+- **Raid group layouts** – import Viserio-style encounter notes, save each encounter's 20-player ordering, and apply the subgroup layout to your current raid. Use the Raid Groups dropdown to select a layout (or choose **None (disabled)**). Listed players are assigned into groups 1-4 by note order, while any current raiders not in the note are packed into groups 8, 7, 6, and 5. Raid-group actions are blocked in combat, and optional settings let you auto-apply on joins and invite missing listed players on apply.
+- **Raid layout difficulty guard** – imported layouts are keyed by encounter + difficulty and only apply when the current raid difficulty matches the layout's saved difficulty.
 - **Death recap** – records wipe deaths and displays them in a recap window (`/arl deaths`). In current Midnight-compatible builds, death data is sourced from the built-in `C_DamageMeter` combat session API.
 - **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
 - **Persistent settings** – your list and preferences are saved between sessions via `SavedVariables`.
@@ -103,18 +104,22 @@ If no character from the preferred leaders list is in the group, the addon will 
 
 Use `/arl deaths` to open the last wipe recap window.
 
-The recap records who died and when during a failed encounter attempt. Death source/mechanic data is pulled from the built-in `C_DamageMeter` combat session API when available.
+The recap records who died and when during a failed encounter attempt. Death source/mechanic data is pulled from the built-in `C_DamageMeter` combat session API when available. When recap payloads include a spell ID but a placeholder mechanic label (for example `...`), the UI resolves and displays the spell name.
 
 ### Raid group layouts
 
 Open the settings window and use the `Raid Groups` tab to paste a Viserio note that contains one or more encounter blocks such as `EncounterID:3176;Difficulty:Mythic;Name:Averzian` followed by an `invitelist:` line.
 
-When imported, each encounter is saved separately. Applying a saved layout assigns the listed players into raid groups in note order, five players per group, and places any current raiders who were not listed into groups 8, 7, 6, and 5 as those groups fill.
+When imported, each encounter is saved separately. Select one via the dropdown (or set it to **None (disabled)**). Applying a saved layout assigns the listed players into raid groups in note order, five players per group, and places any current raiders who were not listed into groups 8, 7, 6, and 5 as those groups fill.
+
+Saved layouts only apply when the current raid difficulty matches the layout's imported difficulty.
 
 In `Raid Groups -> Settings`, you can configure:
 - showing missing-player names in apply output
-- auto-applying the selected layout when a new member joins
 - inviting listed players not already in raid when you apply
+
+In `Raid Groups` (main panel), you can configure:
+- auto-applying the selected layout when a new member joins
 
 The invite-on-apply option is disabled by default. Auto-apply-on-join re-runs subgroup placement only and does not repeatedly send invites.
 

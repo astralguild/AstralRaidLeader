@@ -321,12 +321,22 @@ local function BuildDeathLine(i, entry)
         COLOR_PLAYER, entry.playerName, COLOR_RESET
     )
 
+    local spellId = entry.spellId
+    local mechanicName = entry.mechanic
+    if (not mechanicName or mechanicName == "" or mechanicName == "...")
+        and spellId and spellId > 0
+    then
+        local resolvedName = ResolveSpellNameAndIcon(spellId)
+        if resolvedName and resolvedName ~= "" then
+            mechanicName = resolvedName
+        end
+    end
+
     local spellText = string.format(
         "%s%s%s",
-        COLOR_MECHANIC, entry.mechanic, COLOR_RESET
+        COLOR_MECHANIC, mechanicName or "Unknown", COLOR_RESET
     )
 
-    local spellId = entry.spellId
     if spellId and spellId > 0 then
         local _, icon = ResolveSpellNameAndIcon(spellId)
         if icon then
@@ -355,14 +365,21 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton:EnableMouse(hasSpellTooltip)
 
     local desiredSpellW = SafeWidth(row.spellButton.text:GetStringWidth()) + 2
-    local spellW = math.max(24, math.min(desiredSpellW, 300))  -- cap at 300 to prevent overflow
+    local prefixW = SafeWidth(row.prefixText:GetStringWidth())
+    local suffixW = SafeWidth(row.suffixText:GetStringWidth())
+    local rowW = SafeWidth(row:GetWidth())
+    if rowW <= 0 then
+        rowW = 470
+    end
+    local availableSpellW = math.max(24, rowW - prefixW - suffixW - 14)
+    local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
 
     row.spellButton:ClearAllPoints()
     row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
     row.spellButton:SetWidth(spellW)
 
     row.suffixText:ClearAllPoints()
-    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 2, 0)
+    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 end
 
 local function RefreshRecap()

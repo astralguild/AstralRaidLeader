@@ -589,6 +589,89 @@ local function BuildRaidLayoutTargets(profile, snapshot)
     }
 end
 
+local RAID_DIFFICULTY_IDS = {
+    lfr = { [17] = true },
+    normal = { [14] = true },
+    heroic = { [15] = true },
+    mythic = { [16] = true },
+}
+
+local function NormalizeDifficultyToken(value)
+    local token = Trim(value):lower()
+    token = token:gsub("%s+", "")
+
+    if token == "" or token == "unknown" then
+        return ""
+    elseif token == "mythic" or token == "m" or token == "16" then
+        return "mythic"
+    elseif token == "heroic" or token == "h" or token == "15" then
+        return "heroic"
+    elseif token == "normal" or token == "n" or token == "14" then
+        return "normal"
+    elseif token == "lfr" or token == "17" then
+        return "lfr"
+    end
+
+    return token
+end
+
+local function GetCurrentRaidDifficultyInfo()
+    local raidDifficultyID = 0
+    if _G.GetRaidDifficultyID then
+        raidDifficultyID = tonumber(_G.GetRaidDifficultyID()) or 0
+    end
+
+    local difficultyName = ""
+    if raidDifficultyID > 0 and _G.GetDifficultyInfo then
+        local name = _G.GetDifficultyInfo(raidDifficultyID)
+        difficultyName = Trim(name)
+    end
+
+    if (raidDifficultyID <= 0 or difficultyName == "") and _G.GetInstanceInfo then
+        local _, _, difficultyID, difficultyText = _G.GetInstanceInfo()
+        if raidDifficultyID <= 0 then
+            raidDifficultyID = tonumber(difficultyID) or 0
+        end
+        if difficultyName == "" then
+            difficultyName = Trim(difficultyText)
+        end
+    end
+
+    return raidDifficultyID, difficultyName
+end
+
+local function IsRaidLayoutDifficultyMatch(profile)
+    local expectedToken = NormalizeDifficultyToken(profile and profile.difficulty)
+    if expectedToken == "" then
+        return true
+    end
+
+    local currentID, currentName = GetCurrentRaidDifficultyInfo()
+    local expectedIDs = RAID_DIFFICULTY_IDS[expectedToken]
+    if expectedIDs and currentID > 0 then
+        if expectedIDs[currentID] then
+            return true
+        end
+    end
+
+    local currentToken = NormalizeDifficultyToken(currentName)
+    if currentToken ~= "" and currentToken == expectedToken then
+        return true
+    end
+
+    local shownCurrent = Trim(currentName)
+    if shownCurrent == "" then
+        shownCurrent = currentID > 0 and ("ID " .. tostring(currentID)) or "Unknown"
+    end
+
+    return false, string.format(
+        "Raid layout |cffffd100%s|r is for |cffffd100%s|r, but current raid difficulty is |cffffd100%s|r.",
+        GetRaidLayoutLabel(profile),
+        Trim(profile.difficulty),
+        shownCurrent
+    )
+end
+
 local function StopRaidLayoutApply(message)
     ARL.raidLayoutApplyState = nil
     if message and message ~= "" then
@@ -775,6 +858,11 @@ local function ApplyRaidLayoutProfile(profile, options)
     if not CanManageRaidSubgroups() then
         return false,
             "You must be the raid leader or an assistant to apply a raid layout."
+    end
+
+    local difficultyOK, difficultyErr = IsRaidLayoutDifficultyMatch(profile)
+    if not difficultyOK then
+        return false, difficultyErr
     end
 
     local snapshot = GetRaidRosterSnapshot()
