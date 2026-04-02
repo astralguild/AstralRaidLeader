@@ -1457,7 +1457,7 @@ end)
 local currentEncounterName   = ""
 local currentEncounterID     = 0
 local WIPE_FINALIZE_MAX_RETRIES = 8
-local WIPE_FINALIZE_RETRY_DELAY = 0.15
+local WIPE_FINALIZE_RETRY_DELAY = 0.5
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
