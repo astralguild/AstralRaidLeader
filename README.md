@@ -108,18 +108,18 @@ The recap records who died and when during a failed encounter attempt. Death sou
 
 ### Raid group layouts
 
-Open the settings window and use the `Raid Groups` tab to paste a Viserio note that contains one or more encounter blocks such as `EncounterID:3176;Difficulty:Mythic;Name:Averzian` followed by an `invitelist:` line.
+Open the settings window and use the `Raid Groups` tab to work in either `Import` or `Editor` mode:
+- `Import` mode: paste a Viserio note that contains one or more encounter blocks such as `EncounterID:3176;Difficulty:Mythic;Name:Averzian` followed by an `invitelist:` line, then click `Import Note`.
+- `Editor` mode: start from `New Empty` or `New From Raid`, edit inline, then `Save New` or `Overwrite`.
 
 When imported, each encounter is saved separately. Select one via the dropdown (or set it to **None (disabled)**). Applying a saved layout assigns the listed players into raid groups in note order, five players per group, and places any current raiders who were not listed into groups 8, 7, 6, and 5 as those groups fill.
 
 Saved layouts only apply when the current raid difficulty matches the layout's imported difficulty.
 
-In `Raid Groups -> Settings`, you can configure:
+In the same `Raid Groups` panel, you can configure:
+- auto-applying the selected layout when a new member joins
 - showing missing-player names in apply output
 - inviting listed players not already in raid when you apply
-
-In `Raid Groups` (main panel), you can configure:
-- auto-applying the selected layout when a new member joins
 
 The invite-on-apply option is disabled by default. Auto-apply-on-join re-runs subgroup placement only and does not repeatedly send invites.
 

@@ -90,6 +90,10 @@ local function CanManageRaidSubgroups()
         or (UnitIsGroupAssistant and UnitIsGroupAssistant("player"))
 end
 
+-- Forward declarations used by raid-layout helpers before death-tracking setup.
+local currentEncounterName = ""
+local currentEncounterID = 0
+
 -- Shared UI helpers consumed by the options and death-recap windows.
 ARL.UI = ARL.UI or {}
 
@@ -264,6 +268,9 @@ end
 -- Raid layout import / apply
 -- ============================================================
 
+local NormalizeDifficultyToken
+local GetCurrentRaidDifficultyInfo
+
 local function GetRaidLayoutKey(profile)
     return string.format(
         "%s::%s::%s",
@@ -357,6 +364,127 @@ local function GetRaidLayoutPreviewLines(profile)
     return lines
 end
 
+local function BuildRaidLayoutProfile(input)
+    if type(input) ~= "table" then
+        return nil, "Raid layout data is invalid."
+    end
+
+    local encounterID = tonumber(input.encounterID)
+    if not encounterID or encounterID <= 0 then
+        return nil, "Encounter ID must be a positive number."
+    end
+
+    local encounterName = Trim(input.name)
+    if encounterName == "" then
+        return nil, "Encounter name cannot be empty."
+    end
+
+    local difficultyToken = NormalizeDifficultyToken(input.difficulty)
+    local difficulty = difficultyToken ~= "" and difficultyToken or Trim(input.difficulty)
+    if difficulty == "" then
+        difficulty = "Unknown"
+    end
+
+    local invitelist = {}
+    local seenNames = {}
+    for _, rawName in ipairs(input.invitelist or {}) do
+        local cleanName = Trim(rawName)
+        local key = cleanName:lower()
+        if cleanName ~= "" and not seenNames[key] then
+            seenNames[key] = true
+            invitelist[#invitelist + 1] = cleanName
+        end
+    end
+
+    local profile = {
+        encounterID = encounterID,
+        difficulty = difficulty,
+        name = encounterName,
+        invitelist = invitelist,
+    }
+    profile.key = GetRaidLayoutKey(profile)
+
+    return profile, nil
+end
+
+local function BuildRaidLayoutImportText(profile)
+    local invitelist = profile and profile.invitelist or {}
+    local inviteText = #invitelist > 0 and table.concat(invitelist, " ") or ""
+    return string.format(
+        "EncounterID: %d; Difficulty: %s; Name: %s;\ninvitelist: %s;",
+        tonumber(profile.encounterID) or 0,
+        Trim(profile.difficulty),
+        Trim(profile.name),
+        inviteText
+    )
+end
+
+local function BuildCurrentRaidInvitelist()
+    local invitelist = {}
+    local seen = {}
+    for raidIndex = 1, MAX_RAID_MEMBERS do
+        local name = GetRaidRosterInfo(raidIndex)
+        if name and name ~= "" then
+            local key = name:lower()
+            if not seen[key] then
+                seen[key] = true
+                invitelist[#invitelist + 1] = name
+            end
+        end
+    end
+    return invitelist
+end
+
+local function BuildNewRaidLayoutTemplate(seedFromCurrentRaid)
+    local encounterID = tonumber(currentEncounterID) or 0
+    if encounterID <= 0 then
+        encounterID = 1
+    end
+
+    local encounterName = Trim(currentEncounterName)
+    if encounterName == "" then
+        encounterName = "New Layout"
+    end
+
+    local _, currentDifficultyName = GetCurrentRaidDifficultyInfo()
+    local difficulty = NormalizeDifficultyToken(currentDifficultyName)
+    if difficulty == "" then
+        difficulty = Trim(currentDifficultyName)
+    end
+    if difficulty == "" then
+        difficulty = "normal"
+    end
+
+    local profile = {
+        encounterID = encounterID,
+        difficulty = difficulty,
+        name = encounterName,
+        invitelist = seedFromCurrentRaid and BuildCurrentRaidInvitelist() or {},
+    }
+
+    local normalized, err = BuildRaidLayoutProfile(profile)
+    if not normalized then
+        return nil, err
+    end
+    return normalized, nil
+end
+
+local function ExportRaidLayoutToImportText(query)
+    local _, profile = GetRaidLayoutProfileByQuery(query)
+    if not profile then
+        return false, "Raid layout not found."
+    end
+    return true, BuildRaidLayoutImportText(profile)
+end
+
+local function BuildNewRaidLayoutImportText(seedFromCurrentRaid)
+    local profile, err = BuildNewRaidLayoutTemplate(seedFromCurrentRaid)
+    if not profile then
+        return false, err
+    end
+    return true, BuildRaidLayoutImportText(profile)
+end
+
 local function ParseRaidLayoutImport(text)
     local normalized = Trim((text or ""):gsub("\r\n", "\n"):gsub("\r", "\n"))
     if normalized == "" then
@@ -384,7 +512,7 @@ local function ParseRaidLayoutImport(text)
             end
         end
 
-        if encounterID and encounterID > 0 and encounterName ~= "" and #inviteList > 0 then
+        if encounterID and encounterID > 0 and encounterName ~= "" then
             local profile = {
                 encounterID = encounterID,
                 difficulty = difficulty ~= "" and difficulty or "Unknown",
@@ -424,6 +552,69 @@ local function UpsertRaidLayoutProfile(profile)
 
     ARL.db.raidLayouts[#ARL.db.raidLayouts + 1] = profile
     return true, #ARL.db.raidLayouts
+end
+
+local function SaveRaidLayoutProfile(profile, options)
+    if not ARL.db then
+        return false, "Not fully loaded yet. Please wait a moment."
+    end
+
+    local normalized, err = BuildRaidLayoutProfile(profile)
+    if not normalized then
+        return false, err
+    end
+
+    options = type(options) == "table" and options or {}
+    local overwrite = options.overwrite and true or false
+    local targetKey = Trim(options.targetKey)
+
+    if overwrite then
+        if targetKey == "" then
+            return false, "Select a saved raid layout to overwrite."
+        end
+
+        local targetIndex = FindRaidLayoutIndexByKey(targetKey)
+        if not targetIndex then
+            return false, "Selected raid layout to overwrite was not found."
+        end
+
+        local conflictIndex = FindRaidLayoutIndexByKey(normalized.key)
+        if conflictIndex and conflictIndex ~= targetIndex then
+            return false,
+                "Another saved layout already uses that encounter/difficulty/name. Use Save New with a different name."
+        end
+
+        ARL.db.raidLayouts[targetIndex] = normalized
+        ARL.db.activeRaidLayoutKey = normalized.key
+        return true, {
+            profile = normalized,
+            overwritten = true,
+            previousKey = targetKey,
+        }
+    end
+
+    if FindRaidLayoutIndexByKey(normalized.key) then
+        return false,
+            "A raid layout with that encounter/difficulty/name already exists. Use Overwrite Selected instead."
+    end
+
+    ARL.db.raidLayouts[#ARL.db.raidLayouts + 1] = normalized
+    ARL.db.activeRaidLayoutKey = normalized.key
+    return true, {
+        profile = normalized,
+        overwritten = false,
+    }
+end
+
+local function SaveRaidLayoutFromImportText(text, options)
+    local profiles, err = ParseRaidLayoutImport(text)
+    if not profiles then
+        return false, err
+    end
+    if #profiles ~= 1 then
+        return false, "Editor save expects exactly one encounter block."
+    end
+    return SaveRaidLayoutProfile(profiles[1], options)
 end
 
 local function ImportRaidLayouts(text)
@@ -596,7 +787,7 @@ local RAID_DIFFICULTY_IDS = {
     mythic = { [16] = true },
 }
 
-local function NormalizeDifficultyToken(value)
+NormalizeDifficultyToken = function(value)
     local token = Trim(value):lower()
     token = token:gsub("%s+", "")
 
@@ -615,7 +806,7 @@ local function NormalizeDifficultyToken(value)
     return token
 end
 
-local function GetCurrentRaidDifficultyInfo()
+GetCurrentRaidDifficultyInfo = function()
     local raidDifficultyID = 0
     if _G.GetRaidDifficultyID then
         raidDifficultyID = tonumber(_G.GetRaidDifficultyID()) or 0
@@ -873,6 +1064,9 @@ local function ApplyRaidLayoutProfile(profile, options)
     local targetState, err = BuildRaidLayoutTargets(profile, snapshot)
     if not targetState then
         return false, err
+    end
+    if (targetState.importedCount or 0) == 0 then
+        return false, "Raid layout has no listed players. Add at least one name before applying."
     end
 
     options = type(options) == "table" and options or nil
@@ -1347,6 +1541,9 @@ ARL.GetRaidLayoutPreviewLines = GetRaidLayoutPreviewLines
 ARL.SetActiveRaidLayoutByQuery = SetActiveRaidLayoutByQuery
 ARL.DeleteRaidLayoutByQuery = DeleteRaidLayoutByQuery
 ARL.ApplyRaidLayoutByQuery = ApplyRaidLayoutByQuery
+ARL.ExportRaidLayoutToImportText = ExportRaidLayoutToImportText
+ARL.BuildNewRaidLayoutImportText = BuildNewRaidLayoutImportText
+ARL.SaveRaidLayoutFromImportText = SaveRaidLayoutFromImportText
 ARL.ContinueRaidLayoutApply = ContinueRaidLayoutApply
 
 
@@ -1454,8 +1651,6 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local currentEncounterName   = ""
-local currentEncounterID     = 0
 local WIPE_FINALIZE_MAX_RETRIES = 8
 local WIPE_FINALIZE_RETRY_DELAY = 0.5
 
