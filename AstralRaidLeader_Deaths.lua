@@ -62,7 +62,7 @@ end
 -- Frame construction
 -- ============================================================
 
-local FRAME_W, FRAME_H = 640, 430
+local FRAME_W, FRAME_H = 520, 430
 
 local frame = CreateFrame(
     "Frame",
@@ -329,7 +329,13 @@ local function BuildDeathLine(i, entry)
         local resolvedName = ResolveSpellNameAndIcon(spellId)
         if resolvedName and resolvedName ~= "" then
             mechanicName = resolvedName
+        else
+            mechanicName = string.format("Spell %d", spellId)
         end
+    end
+
+    if not mechanicName or mechanicName == "" or mechanicName == "..." then
+        mechanicName = "Unknown Spell"
     end
 
     local spellText = string.format(
@@ -368,7 +374,7 @@ local function PopulateDeathRow(row, i, entry)
     local prefixW = SafeWidth(row.prefixText:GetStringWidth())
     local rowW = SafeWidth(row:GetWidth())
     if rowW <= 0 then
-        rowW = 470
+        rowW = FRAME_W - 170
     end
     local minSuffixW = 120
     local availableSpellW = math.max(24, rowW - prefixW - minSuffixW - 14)
