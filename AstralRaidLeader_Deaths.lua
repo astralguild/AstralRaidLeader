@@ -270,7 +270,7 @@ local function AcquireDeathRow(index)
 
     local suffix = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     suffix:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    suffix:SetJustifyH("RIGHT")
+    suffix:SetJustifyH("LEFT")
     suffix:SetJustifyV("MIDDLE")
     suffix:SetWordWrap(false)
     suffix:SetTextColor(0.90, 0.92, 0.96)
@@ -366,12 +366,12 @@ local function PopulateDeathRow(row, i, entry)
 
     local desiredSpellW = SafeWidth(row.spellButton.text:GetStringWidth()) + 2
     local prefixW = SafeWidth(row.prefixText:GetStringWidth())
-    local suffixW = SafeWidth(row.suffixText:GetStringWidth())
     local rowW = SafeWidth(row:GetWidth())
     if rowW <= 0 then
         rowW = 470
     end
-    local availableSpellW = math.max(24, rowW - prefixW - suffixW - 14)
+    local minSuffixW = 120
+    local availableSpellW = math.max(24, rowW - prefixW - minSuffixW - 14)
     local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
 
     row.spellButton:ClearAllPoints()
@@ -379,6 +379,7 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton:SetWidth(spellW)
 
     row.suffixText:ClearAllPoints()
+    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 6, 0)
     row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 end
 
