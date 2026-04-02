@@ -90,6 +90,10 @@ local function CanManageRaidSubgroups()
         or (UnitIsGroupAssistant and UnitIsGroupAssistant("player"))
 end
 
+-- Forward declarations used by raid-layout helpers before death-tracking setup.
+local currentEncounterName = ""
+local currentEncounterID = 0
+
 -- Shared UI helpers consumed by the options and death-recap windows.
 ARL.UI = ARL.UI or {}
 
@@ -1647,8 +1651,6 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local currentEncounterName   = ""
-local currentEncounterID     = 0
 local WIPE_FINALIZE_MAX_RETRIES = 8
 local WIPE_FINALIZE_RETRY_DELAY = 0.5
 

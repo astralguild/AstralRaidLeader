@@ -902,7 +902,6 @@ clearRaidLayoutsButton:SetSize(100, 24)
 clearRaidLayoutsButton:SetText("Clear Saved")
 
 -- ---- Mode toggle tabs (Import / Editor) ---------------------
-local RAID_MODE_NONE   = 0
 local RAID_MODE_IMPORT = 1
 local RAID_MODE_EDITOR = 2
 local raidLayoutMode   = RAID_MODE_IMPORT
@@ -1065,8 +1064,6 @@ local raidGroupAutoApplyOnJoinListCB = CreateCheckbox(p6,
 -- ============================================================
 -- (Panel 7 intentionally left empty — merged into panel 6)
 -- ============================================================
-
-local p7 = panels[7]
 
 local raidGroupShowMissingNamesCB = CreateCheckbox(p6,
     "Show names of missing players in apply output",

@@ -9,8 +9,8 @@ AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It ma
 | File | Purpose |
 |---|---|
 | `AstralRaidLeader.lua` | Core logic: event handling, auto-promote, guild rank resolution, consumable audit, death tracking, slash commands |
-| `AstralRaidLeader_Options.lua` | In-game settings window (760×500 custom frame) |
-| `AstralRaidLeader_Deaths.lua` | Death recap window (640×430 custom frame) |
+| `AstralRaidLeader_Options.lua` | In-game settings window (760×560 custom frame) |
+| `AstralRaidLeader_Deaths.lua` | Death recap window (520×430 custom frame) |
 | `AstralRaidLeader.toc` | Addon manifest; load order is `.lua` → `_Options.lua` → `_Deaths.lua` |
 
 The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `ARL` in every file.
@@ -102,7 +102,7 @@ The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `AR
 ### Options Window (`AstralRaidLeader_Options.lua`)
 
 ```
-frame (760×500, DIALOG strata, level 100)
+frame (760×560, DIALOG strata, level 100)
 ├── header (TOPLEFT 7,-7 → TOPRIGHT -30,-7, height 28, level+8)
 │   ├── headerDivider (bottom edge texture)
 │   └── titleText (OVERLAY FontString, centered)
@@ -122,15 +122,15 @@ frame (760×500, DIALOG strata, level 100)
 - `panels[3]` – Guild Ranks
 - `panels[4]` – Consumables
 - `panels[5]` – Deaths settings
-- `panels[6]` – Raid Groups (import, dropdown select, auto-apply toggle, preview, apply)
-- `panels[7]` – Raid Groups Settings (output/apply behavior toggles)
+- `panels[6]` – Raid Groups (dropdown + apply/delete/clear, Import/Editor mode tabs, shared text area, save/import buttons, all raid-group toggles)
+- `panels[7]` – Reserved/unused (settings merged into panel 6)
 
 **Main tab → sub-tabs mapping** is defined in `MAIN_TABS` and drives `SelectMainTab` / `SelectSubTab`.
 
 ### Death Recap Window (`AstralRaidLeader_Deaths.lua`)
 
 ```
-frame (640×430, DIALOG strata, level 110)
+frame (520×430, DIALOG strata, level 110)
 ├── header (same pattern as Options)
 ├── topCloseButton
 ├── dragRegion
@@ -256,3 +256,4 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 14. **Auto-apply invite spam** — when auto-applying on member join, do not re-send invites for every roster update; subgroup apply can run without invite side effects.
 15. **Raid layout selector implementation** — panel 6 uses Blizzard `UIDropDownMenuTemplate`, not a custom button list. Preserve click-anywhere-to-open behavior and left-aligned selected-text styling.
 16. **Difficulty mismatch behavior** — applying a raid layout must fail with a clear message when current raid difficulty does not match the layout's imported difficulty.
+17. **Raid Groups panel merge** — do not reintroduce a separate Settings sub-tab/panel for raid groups; keep mode tabs and all raid-group toggles inside panel 6.
