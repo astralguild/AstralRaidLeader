@@ -280,11 +280,29 @@ local function GetRaidLayoutKey(profile)
     )
 end
 
+local function FormatRaidDifficultyDisplay(value)
+    local token = NormalizeDifficultyToken and NormalizeDifficultyToken(value) or Trim(value):lower()
+    if token == "mythic" then
+        return "Mythic"
+    elseif token == "heroic" then
+        return "Heroic"
+    elseif token == "normal" then
+        return "Normal"
+    elseif token == "lfr" then
+        return "LFR"
+    end
+
+    local text = Trim(value)
+    if text == "" then
+        return "Unknown"
+    end
+    return text
+end
+
 local function GetRaidLayoutLabel(profile)
     local encounterName = Trim(profile and profile.name)
-    local difficulty = Trim(profile and profile.difficulty)
+    local difficulty = FormatRaidDifficultyDisplay(profile and profile.difficulty)
     if encounterName == "" then encounterName = "Unknown Encounter" end
-    if difficulty == "" then difficulty = "Unknown" end
     return string.format("%s %s", difficulty, encounterName)
 end
 
@@ -349,10 +367,21 @@ end
 
 local function GetRaidLayoutPreviewLines(profile)
     local grouped = {}
-    for index, playerName in ipairs(profile and profile.invitelist or {}) do
-        local subgroup = math.max(1, math.min(8, math.floor((index - 1) / 5) + 1))
-        grouped[subgroup] = grouped[subgroup] or {}
-        grouped[subgroup][#grouped[subgroup] + 1] = playerName
+    for subgroup = 1, 8 do
+        grouped[subgroup] = {}
+    end
+
+    if type(profile and profile.groups) == "table" then
+        for subgroup = 1, 8 do
+            for _, playerName in ipairs(profile.groups[subgroup] or {}) do
+                grouped[subgroup][#grouped[subgroup] + 1] = playerName
+            end
+        end
+    else
+        for index, playerName in ipairs(profile and profile.invitelist or {}) do
+            local subgroup = math.max(1, math.min(8, math.floor((index - 1) / 5) + 1))
+            grouped[subgroup][#grouped[subgroup] + 1] = playerName
+        end
     end
 
     local lines = {}
@@ -362,6 +391,70 @@ local function GetRaidLayoutPreviewLines(profile)
         end
     end
     return lines
+end
+
+local function NewRaidLayoutGroups()
+    local groups = {}
+    for subgroup = 1, 8 do
+        groups[subgroup] = {}
+    end
+    return groups
+end
+
+local function NormalizeRaidLayoutGroups(rawGroups)
+    local groups = NewRaidLayoutGroups()
+    local invitelist = {}
+    local seenNames = {}
+
+    if type(rawGroups) ~= "table" then
+        return groups, invitelist
+    end
+
+    for subgroup = 1, 8 do
+        if type(rawGroups[subgroup]) == "table" then
+            for _, rawName in ipairs(rawGroups[subgroup]) do
+                local cleanName = Trim(rawName)
+                local key = cleanName:lower()
+                if cleanName ~= "" and not seenNames[key] then
+                    seenNames[key] = true
+                    groups[subgroup][#groups[subgroup] + 1] = cleanName
+                    invitelist[#invitelist + 1] = cleanName
+                end
+            end
+        end
+    end
+
+    return groups, invitelist
+end
+
+local function BuildRaidLayoutGroupsFromInvitelist(rawInvitelist)
+    local groups = NewRaidLayoutGroups()
+    local invitelist = {}
+    local seenNames = {}
+
+    for _, rawName in ipairs(rawInvitelist or {}) do
+        local cleanName = Trim(rawName)
+        local key = cleanName:lower()
+        if cleanName ~= "" and not seenNames[key] then
+            local subgroup = math.max(1, math.min(8, math.floor(#invitelist / 5) + 1))
+            seenNames[key] = true
+            groups[subgroup][#groups[subgroup] + 1] = cleanName
+            invitelist[#invitelist + 1] = cleanName
+        end
+    end
+
+    return groups, invitelist
+end
+
+local function GetRaidLayoutGroups(profile)
+    if type(profile and profile.groups) == "table" then
+        local groups, invitelist = NormalizeRaidLayoutGroups(profile.groups)
+        if #invitelist > 0 or #(profile.invitelist or {}) == 0 then
+            return groups, invitelist
+        end
+    end
+
+    return BuildRaidLayoutGroupsFromInvitelist(profile and profile.invitelist or {})
 end
 
 local function BuildRaidLayoutProfile(input)
@@ -385,21 +478,18 @@ local function BuildRaidLayoutProfile(input)
         difficulty = "Unknown"
     end
 
-    local invitelist = {}
-    local seenNames = {}
-    for _, rawName in ipairs(input.invitelist or {}) do
-        local cleanName = Trim(rawName)
-        local key = cleanName:lower()
-        if cleanName ~= "" and not seenNames[key] then
-            seenNames[key] = true
-            invitelist[#invitelist + 1] = cleanName
-        end
+    local groups, invitelist
+    if type(input.groups) == "table" then
+        groups, invitelist = NormalizeRaidLayoutGroups(input.groups)
+    else
+        groups, invitelist = BuildRaidLayoutGroupsFromInvitelist(input.invitelist)
     end
 
     local profile = {
         encounterID = encounterID,
         difficulty = difficulty,
         name = encounterName,
+        groups = groups,
         invitelist = invitelist,
     }
     profile.key = GetRaidLayoutKey(profile)
@@ -728,21 +818,23 @@ local function BuildRaidLayoutTargets(profile, snapshot)
     local missing = {}
     local matchedCount = 0
     local importedCount = 0
+    local groupedTargets = GetRaidLayoutGroups(profile)
 
-    for position, importedName in ipairs(profile.invitelist or {}) do
-        local cleanName = Trim(importedName)
-        if cleanName ~= "" then
-            importedCount = importedCount + 1
-            local desiredGroup = math.max(1, math.min(8, math.floor((position - 1) / 5) + 1))
-            local entry = ResolveRaidRosterEntry(snapshot, cleanName, used)
-            if entry then
-                local rosterKey = entry.name:lower()
-                used[rosterKey] = true
-                targetByName[rosterKey] = desiredGroup
-                groupCounts[desiredGroup] = (groupCounts[desiredGroup] or 0) + 1
-                matchedCount = matchedCount + 1
-            else
-                missing[#missing + 1] = cleanName
+    for desiredGroup = 1, 8 do
+        for _, importedName in ipairs(groupedTargets[desiredGroup] or {}) do
+            local cleanName = Trim(importedName)
+            if cleanName ~= "" then
+                importedCount = importedCount + 1
+                local entry = ResolveRaidRosterEntry(snapshot, cleanName, used)
+                if entry then
+                    local rosterKey = entry.name:lower()
+                    used[rosterKey] = true
+                    targetByName[rosterKey] = desiredGroup
+                    groupCounts[desiredGroup] = (groupCounts[desiredGroup] or 0) + 1
+                    matchedCount = matchedCount + 1
+                else
+                    missing[#missing + 1] = cleanName
+                end
             end
         end
     end
@@ -1537,6 +1629,7 @@ ARL.ImportRaidLayouts      = ImportRaidLayouts
 ARL.GetActiveRaidLayoutProfile = GetActiveRaidLayoutProfile
 ARL.GetRaidLayoutProfileByQuery = GetRaidLayoutProfileByQuery
 ARL.GetRaidLayoutLabel     = GetRaidLayoutLabel
+ARL.FormatRaidDifficultyDisplay = FormatRaidDifficultyDisplay
 ARL.GetRaidLayoutPreviewLines = GetRaidLayoutPreviewLines
 ARL.SetActiveRaidLayoutByQuery = SetActiveRaidLayoutByQuery
 ARL.DeleteRaidLayoutByQuery = DeleteRaidLayoutByQuery
@@ -1544,6 +1637,7 @@ ARL.ApplyRaidLayoutByQuery = ApplyRaidLayoutByQuery
 ARL.ExportRaidLayoutToImportText = ExportRaidLayoutToImportText
 ARL.BuildNewRaidLayoutImportText = BuildNewRaidLayoutImportText
 ARL.SaveRaidLayoutFromImportText = SaveRaidLayoutFromImportText
+ARL.SaveRaidLayoutProfileData = SaveRaidLayoutProfile
 ARL.ContinueRaidLayoutApply = ContinueRaidLayoutApply
 
 

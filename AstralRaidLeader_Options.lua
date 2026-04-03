@@ -11,6 +11,7 @@ local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
 local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
+local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -38,7 +39,7 @@ local frame = CreateFrame(
     UIParent,
     BackdropTemplateMixin and "BackdropTemplate" or nil
 )
-frame:SetSize(760, 560)
+frame:SetSize(860, 700)
 frame:SetPoint("CENTER")
 frame:SetClampedToScreen(true)
 frame:SetFrameStrata("DIALOG")
@@ -196,7 +197,7 @@ navBG:SetColorTexture(0.03, 0.04, 0.06, 0.18)
 local subTabSidebar = CreateFrame("Frame", nil, navContainer, BackdropTemplateMixin and "BackdropTemplate" or nil)
 subTabSidebar:SetPoint("TOPLEFT", 8, -8)
 subTabSidebar:SetPoint("BOTTOMLEFT", 8, 8)
-subTabSidebar:SetWidth(165)
+subTabSidebar:SetWidth(172)
 SkinPanel(subTabSidebar, 0.08, 0.11, 0.16, 0.72, 0.24, 0.31, 0.42, 0.40)
 
 local sidebarBG = subTabSidebar:CreateTexture(nil, "BACKGROUND")
@@ -231,8 +232,9 @@ local panels = {
     CreatePanel(),  -- 3: Guild Ranks
     CreatePanel(),  -- 4: Consumables
     CreatePanel(),  -- 5: Deaths
-    CreatePanel(),  -- 6: Raid Groups
-    CreatePanel(),  -- 7: Raid Groups Settings
+    CreatePanel(),  -- 6: Raid Groups Layouts
+    CreatePanel(),  -- 7: Raid Groups Import
+    CreatePanel(),  -- 8: Raid Groups Settings
 }
 
 -- ============================================================
@@ -263,7 +265,9 @@ local MAIN_TABS = {
     {
         label = "Raid Groups",
         subTabs = {
-            { label = "Raid Groups", panel = 6 },
+            { label = "Layouts", panel = 6 },
+            { label = "Import", panel = 7 },
+            { label = "Settings", panel = 8 },
         },
     },
 }
@@ -452,6 +456,28 @@ local function CreateCheckbox(parent, label, tooltip, x, y)
     cb.Text:SetText(label)
     if tooltip then cb.tooltipText = tooltip end
     return cb
+end
+
+local function AttachButtonTooltip(btn, title, body)
+    local GameTooltip = _G.GameTooltip
+    if not btn or not GameTooltip then
+        return
+    end
+
+    btn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if title and title ~= "" then
+            GameTooltip:AddLine(title, 1.0, 0.96, 0.78)
+        end
+        if body and body ~= "" then
+            GameTooltip:AddLine(body, 0.90, 0.92, 0.96, true)
+        end
+        GameTooltip:Show()
+    end)
+
+    btn:HookScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
 end
 
 -- ============================================================
@@ -823,7 +849,7 @@ local raidLayoutDropDown = CreateFrame(
     "UIDropDownMenuTemplate"
 )
 raidLayoutDropDown:SetPoint("TOPLEFT", p6, "TOPLEFT", -8, -24)
-UIDropDownMenu_SetWidth(raidLayoutDropDown, 492)
+UIDropDownMenu_SetWidth(raidLayoutDropDown, 590)
 UIDropDownMenu_SetText(raidLayoutDropDown, "No saved raid layouts")
 raidLayoutDropDown:EnableMouse(false)
 
@@ -870,95 +896,99 @@ if raidLayoutDropDownText then
     raidLayoutDropDownText:SetJustifyH("LEFT")
 end
 
-local noRaidLayoutsText = p6:CreateFontString(
-    nil, "ARTWORK", "GameFontDisableSmall"
-)
-noRaidLayoutsText:SetPoint("TOPLEFT", 8, -58)
-noRaidLayoutsText:SetText("")
-noRaidLayoutsText:Hide()
-
 -- ---- Top action buttons (Apply / Delete / Clear Saved) ------
 local applyRaidLayoutButton = CreateFrame(
     "Button", nil, p6, "UIPanelButtonTemplate"
 )
 applyRaidLayoutButton:SetPoint("TOPLEFT", 8, -64)
-applyRaidLayoutButton:SetSize(100, 24)
+applyRaidLayoutButton:SetSize(112, 24)
 applyRaidLayoutButton:SetText("Apply")
 
 local deleteRaidLayoutButton = CreateFrame(
     "Button", nil, p6, "UIPanelButtonTemplate"
 )
 deleteRaidLayoutButton:SetPoint(
-    "LEFT", applyRaidLayoutButton, "RIGHT", 8, 0)
-deleteRaidLayoutButton:SetSize(100, 24)
+    "LEFT", applyRaidLayoutButton, "RIGHT", 10, 0)
+deleteRaidLayoutButton:SetSize(112, 24)
 deleteRaidLayoutButton:SetText("Delete")
 
 local clearRaidLayoutsButton = CreateFrame(
     "Button", nil, p6, "UIPanelButtonTemplate"
 )
 clearRaidLayoutsButton:SetPoint(
-    "LEFT", deleteRaidLayoutButton, "RIGHT", 8, 0)
-clearRaidLayoutsButton:SetSize(100, 24)
+    "LEFT", deleteRaidLayoutButton, "RIGHT", 10, 0)
+clearRaidLayoutsButton:SetSize(124, 24)
 clearRaidLayoutsButton:SetText("Clear Saved")
 
--- ---- Mode toggle tabs (Import / Editor) ---------------------
-local RAID_MODE_IMPORT = 1
-local RAID_MODE_EDITOR = 2
-local raidLayoutMode   = RAID_MODE_IMPORT
+local raidGroupsUI = {}
 
-local function CreateModeTab(label, xOff, yOff, anchor)
-    local tab = CreateFrame("Button", nil, p6)
-    tab:SetSize(80, 22)
-    if anchor then
-        tab:SetPoint("LEFT", anchor, "RIGHT", 4, 0)
-    else
-        tab:SetPoint("TOPLEFT", xOff, yOff)
-    end
-    local bg = tab:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(
-        THEME.tabIdleBG[1], THEME.tabIdleBG[2],
-        THEME.tabIdleBG[3], THEME.tabIdleBG[4])
-    tab._bg = bg
-    local ind = tab:CreateTexture(nil, "ARTWORK")
-    ind:SetPoint("BOTTOMLEFT", 1, 0)
-    ind:SetPoint("BOTTOMRIGHT", -1, 0)
-    ind:SetHeight(2)
-    ind:SetColorTexture(
-        THEME.accent[1], THEME.accent[2],
-        THEME.accent[3], THEME.accent[4])
-    ind:Hide()
-    tab._indicator = ind
-    local lbl = tab:CreateFontString(
-        nil, "ARTWORK", "GameFontNormalSmall")
-    lbl:SetPoint("CENTER", 0, 1)
-    lbl:SetText(label)
-    tab.Label = lbl
-    tab:SetScript("OnEnter", function()
-        bg:SetColorTexture(
-            THEME.tabActiveBG[1], THEME.tabActiveBG[2],
-            THEME.tabActiveBG[3], THEME.tabActiveBG[4])
-    end)
-    tab:SetScript("OnLeave", function()
-        if not tab._active then
-            bg:SetColorTexture(
-                THEME.tabIdleBG[1], THEME.tabIdleBG[2],
-                THEME.tabIdleBG[3], THEME.tabIdleBG[4])
-        end
-    end)
-    return tab
-end
+raidGroupsUI.layoutPlanningHelp = p6:CreateFontString(
+    nil, "ARTWORK", "GameFontHighlightSmall")
+raidGroupsUI.layoutPlanningHelp:SetPoint("TOPLEFT", 8, -94)
+raidGroupsUI.layoutPlanningHelp:SetWidth(640)
+raidGroupsUI.layoutPlanningHelp:SetJustifyH("LEFT")
+raidGroupsUI.layoutPlanningHelp:SetText(
+    "Start from the selected saved layout, adjust the draft below, then save a new version or overwrite the baseline.")
 
-local importModeTab = CreateModeTab("Import", 8, -96)
-local editorModeTab = CreateModeTab("Editor", 0, 0, importModeTab)
+local raidImportPanel = panels[7]
+local raidSettingsPanel = panels[8]
 
--- ---- Shared text area (140px) -------------------------------
-local raidImportInset = CreateFrame(
-    "Frame", nil, p6,
+local raidEditorSection = CreateFrame("Frame", nil, p6)
+raidEditorSection:SetPoint("TOPLEFT", 8, -108)
+raidEditorSection:SetPoint("BOTTOMRIGHT", p6, "BOTTOMRIGHT", -8, -8)
+
+raidGroupsUI.editorInset = CreateFrame(
+    "Frame", nil, raidEditorSection,
     BackdropTemplateMixin and "BackdropTemplate" or nil
 )
-raidImportInset:SetPoint("TOPLEFT", 8, -122)
-raidImportInset:SetSize(528, 140)
+raidGroupsUI.editorInset:SetPoint("TOPLEFT", 0, 0)
+raidGroupsUI.editorInset:SetPoint("BOTTOMRIGHT", raidEditorSection, "BOTTOMRIGHT", 0, 0)
+SkinPanel(
+    raidGroupsUI.editorInset,
+    0.05, 0.09, 0.15, 0.22,
+    0.22, 0.28, 0.36, 0.18)
+
+raidGroupsUI.editorHeader = raidEditorSection:CreateFontString(
+    nil, "OVERLAY", "GameFontNormal")
+raidGroupsUI.editorHeader:SetPoint("TOPLEFT", 10, -10)
+raidGroupsUI.editorHeader:SetText("Draft planner")
+
+raidGroupsUI.editorHelp = raidEditorSection:CreateFontString(
+    nil, "OVERLAY", "GameFontHighlightSmall")
+raidGroupsUI.editorHelp:SetPoint("TOPLEFT", 10, -28)
+raidGroupsUI.editorHelp:SetWidth(620)
+raidGroupsUI.editorHelp:SetJustifyH("LEFT")
+raidGroupsUI.editorHelp:SetText(
+    "Plan subgroup assignments here. Left-click a player to pick up,"
+        .. " click a group header to drop, right-click to remove.")
+
+raidGroupsUI.editorStatusText = raidEditorSection:CreateFontString(
+    nil, "OVERLAY", "GameFontHighlightSmall")
+raidGroupsUI.editorStatusText:SetPoint("TOPLEFT", 10, -168)
+raidGroupsUI.editorStatusText:SetWidth(620)
+raidGroupsUI.editorStatusText:SetJustifyH("LEFT")
+raidGroupsUI.editorStatusText:SetText("")
+
+-- ---- Import section -----------------------------------------
+local raidImportHeader = raidImportPanel:CreateFontString(
+    nil, "ARTWORK", "GameFontNormal")
+raidImportHeader:SetPoint("TOPLEFT", 8, -8)
+raidImportHeader:SetText("Import raid layouts")
+
+local raidImportHelp = raidImportPanel:CreateFontString(
+    nil, "ARTWORK", "GameFontHighlightSmall")
+raidImportHelp:SetPoint("TOPLEFT", 8, -28)
+raidImportHelp:SetWidth(520)
+raidImportHelp:SetJustifyH("LEFT")
+raidImportHelp:SetText(
+    "Paste a raid layout note here, then import it directly or load the first parsed layout into the visual editor.")
+
+local raidImportInset = CreateFrame(
+    "Frame", nil, raidImportPanel,
+    BackdropTemplateMixin and "BackdropTemplate" or nil
+)
+raidImportInset:SetPoint("TOPLEFT", 8, -50)
+raidImportInset:SetPoint("BOTTOMRIGHT", raidImportPanel, "BOTTOMRIGHT", -8, 34)
 SkinPanel(
     raidImportInset,
     0.07, 0.10, 0.14, 0.34,
@@ -1005,78 +1035,279 @@ raidImportEdit:SetScript("OnCursorChanged",
     end)
 raidImportScroll:SetScrollChild(raidImportEdit)
 
--- ---- Context buttons (below text area) ----------------------
--- Import mode buttons
+-- ---- Import section buttons ---------------------------------
 local importRaidLayoutsButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
 )
-importRaidLayoutsButton:SetPoint("TOPLEFT", 8, -270)
+importRaidLayoutsButton:ClearAllPoints()
+importRaidLayoutsButton:SetPoint("BOTTOMLEFT", raidImportPanel, "BOTTOMLEFT", 8, 2)
 importRaidLayoutsButton:SetSize(100, 24)
 importRaidLayoutsButton:SetText("Import Note")
 
 local clearRaidImportButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
 )
 clearRaidImportButton:SetPoint(
     "LEFT", importRaidLayoutsButton, "RIGHT", 8, 0)
 clearRaidImportButton:SetSize(90, 24)
 clearRaidImportButton:SetText("Clear Text")
 
--- Editor mode buttons
-local newEmptyRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+local loadToEditorButton = CreateFrame(
+    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
 )
-newEmptyRaidLayoutButton:SetPoint("TOPLEFT", 8, -270)
-newEmptyRaidLayoutButton:SetSize(90, 24)
-newEmptyRaidLayoutButton:SetText("New Empty")
+loadToEditorButton:SetPoint(
+    "LEFT", clearRaidImportButton, "RIGHT", 8, 0)
+loadToEditorButton:SetSize(110, 24)
+loadToEditorButton:SetText("Load To Editor")
+
+-- ---- Editor section model + controls ------------------------
+local raidEditorState = {
+    encounterID = 0,
+    difficulty = "mythic",
+    name = "",
+    groups = {},
+}
+
+local raidEditorLoadedKey = nil
+local raidEditorHasDraft = false
+
+for i = 1, 8 do
+    raidEditorState.groups[i] = {}
+end
+
+local raidEditorDrag = nil
+local raidEditorTargetGroup = 1
+local raidEditorGroupButtons = {}
+local raidEditorPlayerButtons = {}
+local raidEditorMoreText = {}
+
+local editorEncounterLabel = raidEditorSection:CreateFontString(
+    nil, "ARTWORK", "GameFontNormalSmall")
+editorEncounterLabel:SetPoint("TOPLEFT", 10, -58)
+editorEncounterLabel:SetText("Encounter")
+
+local editorEncounterEdit = CreateFrame(
+    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
+editorEncounterEdit:SetPoint("LEFT", editorEncounterLabel, "RIGHT", 6, 0)
+editorEncounterEdit:SetSize(58, 22)
+editorEncounterEdit:SetAutoFocus(false)
+
+local editorDifficultyLabel = raidEditorSection:CreateFontString(
+    nil, "ARTWORK", "GameFontNormalSmall")
+editorDifficultyLabel:SetPoint("LEFT", editorEncounterEdit, "RIGHT", 10, 0)
+editorDifficultyLabel:SetText("Difficulty")
+
+local editorDifficultyEdit = CreateFrame(
+    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
+editorDifficultyEdit:SetPoint("LEFT", editorDifficultyLabel, "RIGHT", 6, 0)
+editorDifficultyEdit:SetSize(68, 22)
+editorDifficultyEdit:SetAutoFocus(false)
+
+local editorNameLabel = raidEditorSection:CreateFontString(
+    nil, "ARTWORK", "GameFontNormalSmall")
+editorNameLabel:SetPoint("LEFT", editorDifficultyEdit, "RIGHT", 10, 0)
+editorNameLabel:SetText("Name")
+
+local editorNameEdit = CreateFrame(
+    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
+editorNameEdit:SetAutoFocus(false)
+
+local loadSelectedToEditorButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
+loadSelectedToEditorButton:SetSize(104, 24)
+loadSelectedToEditorButton:SetText("Load Saved")
+
+editorNameEdit:SetPoint("LEFT", editorNameLabel, "RIGHT", 6, 0)
+editorNameEdit:SetPoint("RIGHT", raidEditorSection, "RIGHT", -116, 0)
+editorNameEdit:SetHeight(22)
+
+loadSelectedToEditorButton:SetPoint("LEFT", editorNameEdit, "RIGHT", 8, 0)
+
+local editorPlayerLabel = raidEditorSection:CreateFontString(
+    nil, "ARTWORK", "GameFontNormalSmall")
+editorPlayerLabel:SetPoint("TOPLEFT", 10, -98)
+editorPlayerLabel:SetText("Player")
+
+local editorPlayerEdit = CreateFrame(
+    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
+editorPlayerEdit:SetPoint("LEFT", editorPlayerLabel, "RIGHT", 6, 0)
+editorPlayerEdit:SetSize(144, 22)
+editorPlayerEdit:SetAutoFocus(false)
+
+local editorGroupLabel = raidEditorSection:CreateFontString(
+    nil, "ARTWORK", "GameFontNormalSmall")
+editorGroupLabel:SetPoint("LEFT", editorPlayerEdit, "RIGHT", 10, 0)
+editorGroupLabel:SetText("Group")
+
+raidGroupsUI.editorGroupPrevButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
+raidGroupsUI.editorGroupPrevButton:SetPoint("LEFT", editorGroupLabel, "RIGHT", 6, 0)
+raidGroupsUI.editorGroupPrevButton:SetSize(24, 24)
+raidGroupsUI.editorGroupPrevButton:SetText("<")
+
+raidGroupsUI.editorGroupValueFrame = CreateFrame(
+    "Frame", nil, raidEditorSection,
+    BackdropTemplateMixin and "BackdropTemplate" or nil)
+raidGroupsUI.editorGroupValueFrame:SetPoint(
+    "LEFT", raidGroupsUI.editorGroupPrevButton, "RIGHT", 4, 0)
+raidGroupsUI.editorGroupValueFrame:SetSize(34, 22)
+SkinPanel(
+    raidGroupsUI.editorGroupValueFrame,
+    0.05, 0.08, 0.12, 0.96,
+    0.32, 0.41, 0.53, 0.92)
+
+raidGroupsUI.editorGroupValueText = raidGroupsUI.editorGroupValueFrame:CreateFontString(
+    nil, "OVERLAY", "GameFontNormalSmall")
+raidGroupsUI.editorGroupValueText:SetPoint("CENTER")
+raidGroupsUI.editorGroupValueText:SetText("1")
+
+raidGroupsUI.editorGroupNextButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
+raidGroupsUI.editorGroupNextButton:SetPoint(
+    "LEFT", raidGroupsUI.editorGroupValueFrame, "RIGHT", 4, 0)
+raidGroupsUI.editorGroupNextButton:SetSize(24, 24)
+raidGroupsUI.editorGroupNextButton:SetText(">")
+
+local editorAddPlayerButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
+editorAddPlayerButton:SetPoint("LEFT", raidGroupsUI.editorGroupNextButton, "RIGHT", 8, 0)
+editorAddPlayerButton:SetSize(54, 24)
+editorAddPlayerButton:SetText("Add")
+
+local newEmptyRaidLayoutButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
+)
+newEmptyRaidLayoutButton:SetSize(66, 24)
+newEmptyRaidLayoutButton:SetText("Empty")
 
 local newFromRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
 )
-newFromRaidLayoutButton:SetPoint(
-    "LEFT", newEmptyRaidLayoutButton, "RIGHT", 8, 0)
-newFromRaidLayoutButton:SetSize(110, 24)
-newFromRaidLayoutButton:SetText("New From Raid")
+newFromRaidLayoutButton:SetSize(88, 24)
+newFromRaidLayoutButton:SetText("From Raid")
+
+local reorganizeRaidLayoutButton = CreateFrame(
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
+)
+reorganizeRaidLayoutButton:SetSize(96, 24)
+reorganizeRaidLayoutButton:SetText("Reorganize")
 
 local saveNewRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
 )
-saveNewRaidLayoutButton:SetPoint(
-    "LEFT", newFromRaidLayoutButton, "RIGHT", 8, 0)
-saveNewRaidLayoutButton:SetSize(80, 24)
+saveNewRaidLayoutButton:SetPoint("TOPRIGHT", raidEditorSection, "TOPRIGHT", -110, -74)
+saveNewRaidLayoutButton:SetSize(98, 24)
 saveNewRaidLayoutButton:SetText("Save New")
 
 local overwriteRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
+    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
 )
-overwriteRaidLayoutButton:SetPoint(
-    "LEFT", saveNewRaidLayoutButton, "RIGHT", 8, 0)
+overwriteRaidLayoutButton:SetPoint("TOPRIGHT", raidEditorSection, "TOPRIGHT", -2, -74)
 overwriteRaidLayoutButton:SetSize(100, 24)
 overwriteRaidLayoutButton:SetText("Overwrite")
 
+saveNewRaidLayoutButton:ClearAllPoints()
+saveNewRaidLayoutButton:SetPoint("LEFT", newFromRaidLayoutButton, "RIGHT", 10, 0)
+
+overwriteRaidLayoutButton:ClearAllPoints()
+overwriteRaidLayoutButton:SetPoint("LEFT", saveNewRaidLayoutButton, "RIGHT", 10, 0)
+
+newEmptyRaidLayoutButton:ClearAllPoints()
+newEmptyRaidLayoutButton:SetPoint("TOPLEFT", raidEditorSection, "TOPLEFT", 10, -132)
+
+newFromRaidLayoutButton:ClearAllPoints()
+newFromRaidLayoutButton:SetPoint("LEFT", newEmptyRaidLayoutButton, "RIGHT", 10, 0)
+
+reorganizeRaidLayoutButton:ClearAllPoints()
+reorganizeRaidLayoutButton:SetPoint("LEFT", newFromRaidLayoutButton, "RIGHT", 10, 0)
+
+saveNewRaidLayoutButton:ClearAllPoints()
+saveNewRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
+
+local function CreateEditorGroupBox(groupIndex, x, y)
+    local groupFrame = CreateFrame(
+        "Frame", nil, raidEditorSection,
+        BackdropTemplateMixin and "BackdropTemplate" or nil
+    )
+    groupFrame:SetPoint("TOPLEFT", x, y)
+    groupFrame:SetSize(148, 118)
+    SkinPanel(
+        groupFrame,
+        0.07, 0.10, 0.14, 0.34,
+        0.22, 0.28, 0.36, 0.24)
+
+    local groupHeader = CreateFrame("Button", nil, groupFrame, "UIPanelButtonTemplate")
+    groupHeader:SetPoint("TOPLEFT", 4, -4)
+    groupHeader:SetSize(140, 20)
+    groupHeader:SetText("Group " .. tostring(groupIndex))
+    groupHeader._groupIndex = groupIndex
+    raidEditorGroupButtons[groupIndex] = groupHeader
+
+    raidEditorPlayerButtons[groupIndex] = {}
+    for slot = 1, 5 do
+        local btn = CreateFrame("Button", nil, groupFrame)
+        btn:SetPoint("TOPLEFT", 6, -10 - (slot * 15))
+        btn:SetSize(134, 14)
+        local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        txt:SetPoint("LEFT", 2, 0)
+        txt:SetJustifyH("LEFT")
+        txt:SetJustifyV("MIDDLE")
+        txt:SetWordWrap(false)
+        txt:SetWidth(130)
+        btn.Text = txt
+        btn._groupIndex = groupIndex
+        btn._slot = slot
+        raidEditorPlayerButtons[groupIndex][slot] = btn
+    end
+
+    local more = groupFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    more:SetPoint("BOTTOMLEFT", 6, 5)
+    more:SetJustifyH("LEFT")
+    more:SetText("")
+    raidEditorMoreText[groupIndex] = more
+end
+
+for groupIndex = 1, 8 do
+    local col = (groupIndex - 1) % 4
+    local row = math.floor((groupIndex - 1) / 4)
+    CreateEditorGroupBox(groupIndex, 10 + (col * 153), -190 - (row * 126))
+end
+
 -- ---- Checkboxes (bottom) ------------------------------------
-local raidGroupAutoApplyOnJoinListCB = CreateCheckbox(p6,
+-- ---- Panel 7 - Raid Groups Settings ------------------------
+local p8 = raidSettingsPanel
+
+local raidGroupSettingsHeader = p8:CreateFontString(
+    nil, "ARTWORK", "GameFontNormal")
+raidGroupSettingsHeader:SetPoint("TOPLEFT", 8, -8)
+raidGroupSettingsHeader:SetText("Raid Group Settings")
+
+local raidGroupSettingsHelp = p8:CreateFontString(
+    nil, "ARTWORK", "GameFontHighlightSmall")
+raidGroupSettingsHelp:SetPoint("TOPLEFT", 8, -28)
+raidGroupSettingsHelp:SetWidth(520)
+raidGroupSettingsHelp:SetJustifyH("LEFT")
+raidGroupSettingsHelp:SetText(
+    "These options control apply behavior for saved raid layouts.")
+
+local raidGroupAutoApplyOnJoinListCB = CreateCheckbox(p8,
     "Auto-apply selected layout when a member joins",
     "When enabled, the selected layout is re-applied"
         .. " whenever a new raid member joins.",
-    8, -302)
+    8, -60)
 
--- ============================================================
--- (Panel 7 intentionally left empty — merged into panel 6)
--- ============================================================
-
-local raidGroupShowMissingNamesCB = CreateCheckbox(p6,
+local raidGroupShowMissingNamesCB = CreateCheckbox(p8,
     "Show names of missing players in apply output",
     "When enabled, the apply completion message lists each"
         .. " invited player that was not in the raid.",
-    8, -330)
+    8, -88)
 
-local raidGroupInviteMissingPlayersCB = CreateCheckbox(p6,
+local raidGroupInviteMissingPlayersCB = CreateCheckbox(p8,
     "Invite listed players not already in the raid on apply",
     "When enabled, applying the selected raid layout also"
         .. " invites listed players who are not already in"
         .. " the group.",
-    8, -358)
+    8, -116)
 
 for _, cb in ipairs({
     autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
@@ -1091,7 +1322,11 @@ for _, cb in ipairs({
     StyleCheckbox(cb)
 end
 
-for _, edit in ipairs({ nameEdit, rankNameEdit, catEdit, spellIdEdit }) do
+for _, edit in ipairs({
+    nameEdit, rankNameEdit, catEdit, spellIdEdit,
+    editorEncounterEdit, editorDifficultyEdit,
+    editorNameEdit, editorPlayerEdit,
+}) do
     SkinInputBox(edit)
 end
 
@@ -1101,9 +1336,12 @@ for _, btn in ipairs({
     addRankButton, removeRankButton, clearRanksButton, moveRankUpButton, moveRankDownButton, refreshGuildRanksButton,
     addConsumableButton, removeSpellIdButton, deleteCatButton, clearConsumablesButton, runAuditButton,
     openRecapButton,
-    importRaidLayoutsButton, clearRaidImportButton, applyRaidLayoutButton,
+    importRaidLayoutsButton, clearRaidImportButton, loadToEditorButton, applyRaidLayoutButton,
     deleteRaidLayoutButton, clearRaidLayoutsButton,
-    newEmptyRaidLayoutButton, newFromRaidLayoutButton,
+    loadSelectedToEditorButton,
+    raidGroupsUI.editorGroupPrevButton, raidGroupsUI.editorGroupNextButton,
+    editorAddPlayerButton,
+    newEmptyRaidLayoutButton, newFromRaidLayoutButton, reorganizeRaidLayoutButton,
     saveNewRaidLayoutButton, overwriteRaidLayoutButton,
 }) do
     SkinActionButton(btn)
@@ -1112,6 +1350,88 @@ end
 for _, btn in ipairs(guildRankButtons) do
     SkinActionButton(btn)
 end
+
+for _, btn in ipairs(raidEditorGroupButtons) do
+    SkinActionButton(btn)
+end
+
+AttachButtonTooltip(
+    applyRaidLayoutButton,
+    "Apply Layout",
+    "Moves current raid members into the saved subgroup layout for the selected encounter."
+)
+AttachButtonTooltip(
+    deleteRaidLayoutButton,
+    "Delete Layout",
+    "Removes the currently selected saved raid layout."
+)
+AttachButtonTooltip(
+    clearRaidLayoutsButton,
+    "Clear Saved Layouts",
+    "Deletes every saved raid layout and clears the current selection."
+)
+AttachButtonTooltip(
+    importRaidLayoutsButton,
+    "Import Note",
+    "Parses the text in the import box and adds or updates saved raid layouts from that note format."
+)
+AttachButtonTooltip(
+    clearRaidImportButton,
+    "Clear Text",
+    "Clears the import text box without changing any saved layouts."
+)
+AttachButtonTooltip(
+    loadToEditorButton,
+    "Load To Editor",
+    "Parses the first layout found in the import text and opens it in the visual editor."
+)
+AttachButtonTooltip(
+    loadSelectedToEditorButton,
+    "Reset To Saved",
+    "Reloads the selected saved layout into the draft planner."
+        .. " If the draft has unsaved changes, you will be asked before they are discarded."
+)
+AttachButtonTooltip(
+    raidGroupsUI.editorGroupPrevButton,
+    "Previous Group",
+    "Moves the add-player target group down by one."
+)
+AttachButtonTooltip(
+    raidGroupsUI.editorGroupNextButton,
+    "Next Group",
+    "Moves the add-player target group up by one."
+)
+AttachButtonTooltip(
+    editorAddPlayerButton,
+    "Add Player",
+    "Adds the typed player name to the chosen group in the visual editor."
+        .. " Existing entries are moved instead of duplicated."
+)
+AttachButtonTooltip(
+    newEmptyRaidLayoutButton,
+    "Empty Layout",
+    "Starts a blank layout template in the editor using the current encounter fields."
+)
+AttachButtonTooltip(
+    newFromRaidLayoutButton,
+    "From Raid",
+    "Builds an editor layout from the current raid roster order so you can adjust it visually."
+)
+AttachButtonTooltip(
+    reorganizeRaidLayoutButton,
+    "Reorganize",
+    "Compacts the draft into sequential five-player groups while keeping the current top-to-bottom order."
+)
+AttachButtonTooltip(
+    saveNewRaidLayoutButton,
+    "Save New",
+    "Saves the current editor layout as a new saved raid layout."
+)
+AttachButtonTooltip(
+    overwriteRaidLayoutButton,
+    "Overwrite",
+    "Replaces the currently selected saved layout with the contents of the visual editor."
+)
 
 -- ============================================================
 -- Refresh helpers
@@ -1219,116 +1539,497 @@ local function RefreshConsumableListText()
     consumableListText:SetText(table.concat(lines, "\n"))
 end
 
-local function SetRaidLayoutMode(mode)
-    raidLayoutMode = mode
-    -- Update tab visuals
-    for _, t in ipairs({ importModeTab, editorModeTab }) do
-        t._active = false
-        t._bg:SetColorTexture(
-            THEME.tabIdleBG[1], THEME.tabIdleBG[2],
-            THEME.tabIdleBG[3], THEME.tabIdleBG[4])
-        t._indicator:Hide()
-        if t.Label then
-            t.Label:SetTextColor(
-                THEME.mutedText[1], THEME.mutedText[2],
-                THEME.mutedText[3])
-        end
+local function ResetRaidEditorState()
+    raidEditorState.encounterID = 0
+    raidEditorState.difficulty = "mythic"
+    raidEditorState.name = ""
+    for i = 1, 8 do
+        raidEditorState.groups[i] = {}
     end
-    local activeTab = (mode == RAID_MODE_IMPORT and importModeTab)
-        or (mode == RAID_MODE_EDITOR and editorModeTab)
-        or nil
-    if activeTab then
-        activeTab._active = true
-        activeTab._bg:SetColorTexture(
-            THEME.tabActiveBG[1], THEME.tabActiveBG[2],
-            THEME.tabActiveBG[3], THEME.tabActiveBG[4])
-        activeTab._indicator:Show()
-        if activeTab.Label then
-            activeTab.Label:SetTextColor(
-                THEME.goldActiveText[1],
-                THEME.goldActiveText[2],
-                THEME.goldActiveText[3])
-        end
+    raidEditorDrag = nil
+    raidEditorTargetGroup = 1
+    raidGroupsUI.editorGroupValueText:SetText("1")
+    raidEditorLoadedKey = nil
+    raidEditorHasDraft = false
+end
+
+local function GetActiveRaidLayoutKey()
+    if not ARL or not ARL.db then
+        return nil
     end
-    -- Show/hide context buttons per mode
-    importRaidLayoutsButton:SetShown(mode == RAID_MODE_IMPORT)
-    clearRaidImportButton:SetShown(mode == RAID_MODE_IMPORT)
-    newEmptyRaidLayoutButton:SetShown(mode == RAID_MODE_EDITOR)
-    newFromRaidLayoutButton:SetShown(mode == RAID_MODE_EDITOR)
-    saveNewRaidLayoutButton:SetShown(mode == RAID_MODE_EDITOR)
-    overwriteRaidLayoutButton:SetShown(mode == RAID_MODE_EDITOR)
-    -- Configure text area
-    if mode == RAID_MODE_IMPORT then
-        raidImportEdit:EnableMouse(true)
-        raidImportEdit:SetText("")
-        raidImportEdit:ClearFocus()
-    elseif mode == RAID_MODE_EDITOR then
-        raidImportEdit:EnableMouse(true)
-        -- Auto-load selected layout into editor
-        if ARL.ExportRaidLayoutToImportText then
-            local ok, result =
-                ARL.ExportRaidLayoutToImportText("")
-            if ok then
-                raidImportEdit:SetText(result)
-            else
-                raidImportEdit:SetText("")
+    local activeKey = Normalize(ARL.db.activeRaidLayoutKey or "")
+    if activeKey == "" then
+        return nil
+    end
+    return activeKey
+end
+
+local function SetEditorTargetGroup(groupIndex)
+    raidEditorTargetGroup = math.max(1, math.min(8, tonumber(groupIndex) or 1))
+    raidGroupsUI.editorGroupValueText:SetText(tostring(raidEditorTargetGroup))
+end
+
+local function BuildEditorGroupsFromProfile(profile)
+    local groups = {}
+    for groupIndex = 1, 8 do
+        groups[groupIndex] = {}
+    end
+
+    if not profile then
+        return groups
+    end
+
+    local hasGroupedAssignments = false
+    local seenNames = {}
+    if type(profile.groups) == "table" then
+        for groupIndex = 1, 8 do
+            if type(profile.groups[groupIndex]) == "table" then
+                for _, playerName in ipairs(profile.groups[groupIndex]) do
+                    local cleanName = Normalize(playerName)
+                    local key = cleanName:lower()
+                    if cleanName ~= "" and not seenNames[key] then
+                        seenNames[key] = true
+                        groups[groupIndex][#groups[groupIndex] + 1] = cleanName
+                        hasGroupedAssignments = true
+                    end
+                end
             end
-        else
-            raidImportEdit:SetText("")
         end
-        raidImportEdit:ClearFocus()
+    end
+
+    if hasGroupedAssignments or #(profile.invitelist or {}) == 0 then
+        return groups
+    end
+
+    local flattenedCount = 0
+    seenNames = {}
+    for _, playerName in ipairs(profile.invitelist or {}) do
+        local cleanName = Normalize(playerName)
+        local key = cleanName:lower()
+        if cleanName ~= "" and not seenNames[key] then
+            seenNames[key] = true
+            flattenedCount = flattenedCount + 1
+            local groupIndex = math.max(1, math.min(8, math.floor((flattenedCount - 1) / 5) + 1))
+            groups[groupIndex][#groups[groupIndex] + 1] = cleanName
+        end
+    end
+
+    return groups
+end
+
+local function BuildRaidEditorSnapshot()
+    local difficulty = Normalize(editorDifficultyEdit:GetText()):lower()
+    local snapshot = {
+        encounterID = tonumber(editorEncounterEdit:GetText()) or 0,
+        difficulty = difficulty,
+        name = Normalize(editorNameEdit:GetText()),
+        groups = {},
+    }
+
+    if snapshot.difficulty == "" then
+        snapshot.difficulty = "mythic"
+    end
+
+    for groupIndex = 1, 8 do
+        snapshot.groups[groupIndex] = {}
+        for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+            snapshot.groups[groupIndex][#snapshot.groups[groupIndex] + 1] = playerName
+        end
+    end
+
+    return snapshot
+end
+
+local function BuildProfileSnapshot(profile)
+    if not profile then
+        return nil
+    end
+
+    local difficulty = Normalize(profile.difficulty or ""):lower()
+
+    local snapshot = {
+        encounterID = tonumber(profile.encounterID) or 0,
+        difficulty = difficulty,
+        name = Normalize(profile.name or ""),
+        groups = {},
+    }
+
+    if snapshot.difficulty == "" then
+        snapshot.difficulty = "mythic"
+    end
+
+    local groups = BuildEditorGroupsFromProfile(profile)
+    for groupIndex = 1, 8 do
+        snapshot.groups[groupIndex] = {}
+        for _, playerName in ipairs(groups[groupIndex] or {}) do
+            snapshot.groups[groupIndex][#snapshot.groups[groupIndex] + 1] = playerName
+        end
+    end
+
+    return snapshot
+end
+
+local function RaidEditorSnapshotsMatch(left, right)
+    if not left or not right then
+        return false
+    end
+    if left.encounterID ~= right.encounterID
+        or left.difficulty ~= right.difficulty
+        or left.name ~= right.name
+    then
+        return false
+    end
+
+    for groupIndex = 1, 8 do
+        local leftGroup = left.groups[groupIndex] or {}
+        local rightGroup = right.groups[groupIndex] or {}
+        if #leftGroup ~= #rightGroup then
+            return false
+        end
+        for slot = 1, #leftGroup do
+            if not NamesMatch(leftGroup[slot], rightGroup[slot]) then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+local function UpdateRaidEditorDraftState()
+    local active = ARL.GetActiveRaidLayoutProfile
+        and ARL.GetActiveRaidLayoutProfile() or nil
+    local activeKey = GetActiveRaidLayoutKey()
+    if not active or not activeKey then
+        raidEditorHasDraft = true
+        return
+    end
+
+    local current = BuildRaidEditorSnapshot()
+    local baseline = BuildProfileSnapshot(active)
+    raidEditorHasDraft = raidEditorLoadedKey ~= activeKey
+        or not RaidEditorSnapshotsMatch(current, baseline)
+end
+
+local function GetEditorTargetGroup()
+    return raidEditorTargetGroup
+end
+
+local function FindEditorPlayer(name)
+    for groupIndex = 1, 8 do
+        for slot, existing in ipairs(raidEditorState.groups[groupIndex]) do
+            if NamesMatch(existing, name) then
+                return groupIndex, slot
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function RemoveEditorPlayer(name)
+    local groupIndex, slot = FindEditorPlayer(name)
+    if not groupIndex then
+        return false
+    end
+    table.remove(raidEditorState.groups[groupIndex], slot)
+    return true
+end
+
+local function BuildProfileFromEditorState()
+    local encounterID = tonumber(editorEncounterEdit:GetText()) or 0
+    local difficulty = Normalize(editorDifficultyEdit:GetText())
+    local layoutName = Normalize(editorNameEdit:GetText())
+    if difficulty == "" then
+        difficulty = "mythic"
+    end
+    if layoutName == "" then
+        layoutName = "Custom Layout"
+    end
+
+    raidEditorState.encounterID = encounterID
+    raidEditorState.difficulty = difficulty
+    raidEditorState.name = layoutName
+
+    local groups = {}
+    for groupIndex = 1, 8 do
+        groups[groupIndex] = {}
+        for _, name in ipairs(raidEditorState.groups[groupIndex]) do
+            groups[groupIndex][#groups[groupIndex] + 1] = name
+        end
+    end
+
+    return {
+        encounterID = encounterID,
+        difficulty = difficulty,
+        name = layoutName,
+        groups = groups,
+    }
+end
+
+local function LoadEditorFromProfile(profile)
+    ResetRaidEditorState()
+    raidEditorState.encounterID = profile.encounterID or 0
+    raidEditorState.difficulty = profile.difficulty or "mythic"
+    raidEditorState.name = profile.name or ""
+    local groups = BuildEditorGroupsFromProfile(profile)
+    for groupIndex = 1, 8 do
+        for _, playerName in ipairs(groups[groupIndex] or {}) do
+            raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+        end
+    end
+    raidEditorLoadedKey = GetActiveRaidLayoutKey()
+    raidEditorHasDraft = false
+end
+
+local function ReorganizeRaidEditorGroups()
+    local orderedNames = {}
+    for groupIndex = 1, 8 do
+        for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+            orderedNames[#orderedNames + 1] = playerName
+        end
+    end
+
+    for groupIndex = 1, 8 do
+        raidEditorState.groups[groupIndex] = {}
+    end
+
+    for index, playerName in ipairs(orderedNames) do
+        local groupIndex = math.max(1, math.min(8, math.floor((index - 1) / 5) + 1))
+        raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+    end
+
+    raidEditorDrag = nil
+    SetEditorTargetGroup(1)
+end
+
+local function LoadEditorFromImportText(text)
+    if not ARL.ParseRaidLayoutImport then
+        return false, "Raid layout parser is not available yet."
+    end
+    local profiles, err = ARL.ParseRaidLayoutImport(text or "")
+    if not profiles then
+        return false, err
+    end
+    if #profiles == 0 then
+        return false, "No raid layout entries were found."
+    end
+    LoadEditorFromProfile(profiles[1])
+    raidEditorLoadedKey = nil
+    raidEditorHasDraft = true
+    return true
+end
+
+local function LoadEditorFromCurrentRaid()
+    if not IsInRaid() then
+        return false, "You must be in a raid group to seed from roster."
+    end
+    if not ARL.BuildNewRaidLayoutImportText then
+        return false, "Raid layout template tools are not available yet."
+    end
+
+    local ok, result = ARL.BuildNewRaidLayoutImportText(false)
+    if not ok then
+        return false, result
+    end
+
+    local loaded, err = LoadEditorFromImportText(result)
+    if not loaded then
+        return false, err
+    end
+
+    for groupIndex = 1, 8 do
+        raidEditorState.groups[groupIndex] = {}
+    end
+
+    local seen = {}
+    for raidIndex = 1, MAX_RAID_MEMBERS do
+        local name, _, subgroup = GetRaidRosterInfo(raidIndex)
+        local cleanName = Normalize(name)
+        if cleanName ~= "" then
+            local key = cleanName:lower()
+            if not seen[key] then
+                seen[key] = true
+                local targetGroup = math.max(1, math.min(8, tonumber(subgroup) or 1))
+                raidEditorState.groups[targetGroup][#raidEditorState.groups[targetGroup] + 1] = cleanName
+            end
+        end
+    end
+
+    raidEditorDrag = nil
+    SetEditorTargetGroup(1)
+    raidEditorLoadedKey = nil
+    raidEditorHasDraft = true
+    return true
+end
+
+local function RefreshRaidEditorBoard()
+    editorEncounterEdit:SetText(tostring(raidEditorState.encounterID or 0))
+    local displayDifficulty = ARL.FormatRaidDifficultyDisplay
+        and ARL.FormatRaidDifficultyDisplay(raidEditorState.difficulty or "mythic")
+        or tostring(raidEditorState.difficulty or "mythic")
+    editorDifficultyEdit:SetText(tostring(displayDifficulty))
+    editorNameEdit:SetText(tostring(raidEditorState.name or ""))
+    raidGroupsUI.editorGroupValueText:SetText(tostring(raidEditorTargetGroup))
+
+    for groupIndex = 1, 8 do
+        local groupList = raidEditorState.groups[groupIndex] or {}
+        local groupHeader = raidEditorGroupButtons[groupIndex]
+        if groupHeader then
+            if raidEditorDrag then
+                groupHeader:SetText(string.format("Drop G%d (%d)", groupIndex, #groupList))
+            else
+                groupHeader:SetText(string.format("Group %d (%d)", groupIndex, #groupList))
+            end
+            local headerText = groupHeader:GetFontString()
+            if headerText and headerText.SetTextColor then
+                if raidEditorDrag then
+                    headerText:SetTextColor(0.95, 0.81, 0.24)
+                else
+                    headerText:SetTextColor(0.90, 0.92, 0.96)
+                end
+            end
+        end
+        for slot = 1, 5 do
+            local btn = raidEditorPlayerButtons[groupIndex][slot]
+            local name = groupList[slot]
+            btn._playerName = name
+            if name then
+                btn.Text:SetText(ShortName(name))
+                if raidEditorDrag
+                    and raidEditorDrag.name == name
+                    and raidEditorDrag.fromGroup == groupIndex
+                then
+                    btn.Text:SetTextColor(0.95, 0.81, 0.24)
+                else
+                    btn.Text:SetTextColor(0.90, 0.92, 0.96)
+                end
+                btn:Show()
+            else
+                btn:Hide()
+            end
+        end
+        local overflow = #groupList - 5
+        if raidEditorMoreText[groupIndex] then
+            if overflow > 0 then
+                raidEditorMoreText[groupIndex]:SetText("+" .. tostring(overflow) .. " more")
+            else
+                raidEditorMoreText[groupIndex]:SetText("")
+            end
+        end
+    end
+
+    UpdateRaidEditorDraftState()
+
+    if raidEditorDrag then
+        raidGroupsUI.editorStatusText:SetText(
+            "Placing " .. ShortName(raidEditorDrag.name)
+                .. ". Click a group header to drop them.")
+        raidGroupsUI.editorStatusText:SetTextColor(0.95, 0.81, 0.24)
     else
-        -- Preview mode: show selected layout read-only
-        raidImportEdit:EnableMouse(false)
+        raidGroupsUI.editorStatusText:SetText("")
+        raidGroupsUI.editorStatusText:SetTextColor(0.80, 0.82, 0.86)
+    end
+
+    if raidEditorHasDraft then
+        loadSelectedToEditorButton:SetText("Reset To Saved")
+    else
+        loadSelectedToEditorButton:SetText("Load Saved")
+    end
+end
+
+local function RefreshRaidEditorPanel()
+    if not raidEditorLoadedKey and not raidEditorHasDraft then
         local active = ARL.GetActiveRaidLayoutProfile
             and ARL.GetActiveRaidLayoutProfile() or nil
         if active then
-            local previewLines = {}
-            if ARL.GetRaidLayoutPreviewLines then
-                previewLines =
-                    ARL.GetRaidLayoutPreviewLines(active)
-            end
-            local label = ARL.GetRaidLayoutLabel
-                and ARL.GetRaidLayoutLabel(active)
-                or (active.name or "Unknown")
-            local body = #previewLines > 0
-                and table.concat(previewLines, "\n")
-                or "No saved group assignments."
-            raidImportEdit:SetText(
-                "Selected: " .. label .. "\n" .. body)
-        else
-            raidImportEdit:SetText(
-                "Select a saved layout from the dropdown.")
+            LoadEditorFromProfile(active)
         end
-        raidImportEdit:ClearFocus()
     end
-    raidImportScroll:UpdateScrollChildRect()
-    raidImportScroll:SetVerticalScroll(0)
+    RefreshRaidEditorBoard()
 end
 
+for groupIndex = 1, 8 do
+    local groupHeader = raidEditorGroupButtons[groupIndex]
+    if groupHeader then
+        groupHeader:SetScript("OnClick", function(self)
+            if not raidEditorDrag then
+                SetEditorTargetGroup(self._groupIndex)
+                return
+            end
+            local toGroup = self._groupIndex
+            local fromGroup = raidEditorDrag.fromGroup
+            if toGroup == fromGroup then
+                raidEditorDrag = nil
+                RefreshRaidEditorBoard()
+                return
+            end
+            if #raidEditorState.groups[toGroup] >= 5 then
+                Print("Target group is full (5 players max).")
+                return
+            end
+            RemoveEditorPlayer(raidEditorDrag.name)
+            raidEditorState.groups[toGroup][#raidEditorState.groups[toGroup] + 1] = raidEditorDrag.name
+            raidEditorDrag = nil
+            RefreshRaidEditorBoard()
+        end)
+    end
+
+    for slot = 1, 5 do
+        local playerBtn = raidEditorPlayerButtons[groupIndex][slot]
+        playerBtn:SetScript("OnClick", function(self, button)
+            local playerName = self._playerName
+            if not playerName then
+                return
+            end
+            if button == "RightButton" then
+                RemoveEditorPlayer(playerName)
+                if raidEditorDrag and raidEditorDrag.name == playerName then
+                    raidEditorDrag = nil
+                end
+                RefreshRaidEditorBoard()
+                return
+            end
+            if raidEditorDrag and raidEditorDrag.name == playerName then
+                raidEditorDrag = nil
+                RefreshRaidEditorBoard()
+                return
+            end
+            raidEditorDrag = {
+                name = playerName,
+                fromGroup = self._groupIndex,
+            }
+            RefreshRaidEditorBoard()
+            Print("Picked up " .. playerName .. ". Click a group header to drop.")
+        end)
+    end
+end
+
+raidGroupsUI.editorGroupPrevButton:SetScript("OnClick", function()
+    SetEditorTargetGroup(raidEditorTargetGroup - 1)
+end)
+
+raidGroupsUI.editorGroupNextButton:SetScript("OnClick", function()
+    SetEditorTargetGroup(raidEditorTargetGroup + 1)
+end)
+
 local function RefreshRaidLayoutUI()
-    noRaidLayoutsText:Hide()
     applyRaidLayoutButton:Disable()
     deleteRaidLayoutButton:Disable()
     clearRaidLayoutsButton:Disable()
     overwriteRaidLayoutButton:Disable()
+    loadSelectedToEditorButton:Disable()
 
     if not ARL.db then
         UIDropDownMenu_SetText(
             raidLayoutDropDown,
             "Waiting for saved variables to load...")
-        SetRaidLayoutMode(RAID_MODE_IMPORT)
+        RefreshRaidEditorBoard()
         return
     end
 
     if #ARL.db.raidLayouts == 0 then
-        noRaidLayoutsText:SetText(
-            "No saved raid layouts. Use Import or Editor"
-            .. " to add one.")
-        noRaidLayoutsText:Show()
-        UIDropDownMenu_SetText(
-            raidLayoutDropDown, "No saved raid layouts")
-        SetRaidLayoutMode(raidLayoutMode)
+        UIDropDownMenu_SetText(raidLayoutDropDown, "No saved raid layouts")
+        RefreshRaidEditorBoard()
         return
     end
 
@@ -1337,9 +2038,8 @@ local function RefreshRaidLayoutUI()
     local active = ARL.GetActiveRaidLayoutProfile
         and ARL.GetActiveRaidLayoutProfile() or nil
     if not active then
-        UIDropDownMenu_SetText(
-            raidLayoutDropDown, "None (disabled)")
-        SetRaidLayoutMode(raidLayoutMode)
+        UIDropDownMenu_SetText(raidLayoutDropDown, "None (disabled)")
+        RefreshRaidEditorBoard()
         return
     end
 
@@ -1353,8 +2053,9 @@ local function RefreshRaidLayoutUI()
     applyRaidLayoutButton:Enable()
     deleteRaidLayoutButton:Enable()
     overwriteRaidLayoutButton:Enable()
+    loadSelectedToEditorButton:Enable()
 
-    SetRaidLayoutMode(raidLayoutMode)
+    RefreshRaidEditorPanel()
 end
 
 UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
@@ -1372,7 +2073,21 @@ UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
             Print("Cannot change the selected raid layout while in combat.")
             return
         end
+        if activeKey == "" then
+            return
+        end
+        if raidEditorHasDraft and _G.StaticPopup_Show then
+            _G.StaticPopup_Show(
+                "ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM",
+                "(disable layout selection)",
+                nil,
+                { layoutKey = "" }
+            )
+            return
+        end
         ARL.db.activeRaidLayoutKey = ""
+        raidEditorLoadedKey = nil
+        raidEditorHasDraft = false
         RefreshRaidLayoutUI()
         Print("Cleared selected raid layout.")
     end
@@ -1388,9 +2103,18 @@ UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
                 return
             end
             if ARL.db.activeRaidLayoutKey == profile.key then
-                ARL.db.activeRaidLayoutKey = ""
-                RefreshRaidLayoutUI()
-                Print("Cleared selected raid layout.")
+                Print("That raid layout is already selected.")
+                return
+            end
+            if raidEditorHasDraft and _G.StaticPopup_Show then
+                local label = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(profile)
+                    or (profile.name or "Unknown")
+                _G.StaticPopup_Show(
+                    "ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM",
+                    label,
+                    nil,
+                    { layoutKey = profile.key }
+                )
                 return
             end
             if not ARL.SetActiveRaidLayoutByQuery then return end
@@ -1399,6 +2123,10 @@ UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
                 Print(result)
                 return
             end
+            LoadEditorFromProfile(result)
+            raidEditorLoadedKey = result.key
+            raidEditorHasDraft = false
+            RefreshRaidEditorBoard()
             RefreshRaidLayoutUI()
             Print(string.format(
                 "Selected raid layout |cffffd100%s|r.",
@@ -1923,7 +2651,7 @@ end)
 -- Tab 6 - Raid Groups: handlers
 -- ============================================================
 
-local function SetRaidLayoutEditorText(text)
+local function SetRaidLayoutImportText(text)
     raidImportEdit:SetText(text or "")
     raidImportEdit:ClearFocus()
     raidImportScroll:UpdateScrollChildRect()
@@ -1931,15 +2659,22 @@ local function SetRaidLayoutEditorText(text)
 end
 
 local function SaveEditedRaidLayout(options)
-    if not ARL.SaveRaidLayoutFromImportText then
+    if not ARL.SaveRaidLayoutProfileData then
         Print("Raid layout save is not available yet. Try again in a moment.")
         return false
     end
 
-    local ok, result = ARL.SaveRaidLayoutFromImportText(raidImportEdit:GetText(), options)
+    local profile = BuildProfileFromEditorState()
+    local ok, result = ARL.SaveRaidLayoutProfileData(profile, options)
     if not ok then
         Print(result)
         return false
+    end
+
+    if result and result.profile then
+        LoadEditorFromProfile(result.profile)
+        raidEditorLoadedKey = result.profile.key
+        raidEditorHasDraft = false
     end
 
     RefreshRaidLayoutUI()
@@ -1972,20 +2707,117 @@ if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_OVERWRI
     }
 end
 
-importModeTab:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot switch modes while in combat.")
+if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM"] then
+    _G.StaticPopupDialogs["ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM"] = {
+        text = "Discard changes to current draft and switch to |cffffd100%s|r?",
+        button1 = "Discard and Switch",
+        button2 = "Cancel",
+        OnAccept = function(_, data)
+            if not data then return end
+            local layoutKey = data.layoutKey
+            if layoutKey == "" then
+                ARL.db.activeRaidLayoutKey = ""
+                raidEditorLoadedKey = nil
+                raidEditorHasDraft = false
+                RefreshRaidLayoutUI()
+                Print("Cleared selected raid layout.")
+                return
+            end
+            if not ARL.SetActiveRaidLayoutByQuery then return end
+            local ok, result = ARL.SetActiveRaidLayoutByQuery(layoutKey)
+            if not ok then
+                Print(result)
+                return
+            end
+            raidEditorLoadedKey = nil
+            raidEditorHasDraft = false
+            RefreshRaidLayoutUI()
+            Print(string.format(
+                "Switched to raid layout |cffffd100%s|r.",
+                ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
+            ))
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
+if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT"] then
+    _G.StaticPopupDialogs["ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT"] = {
+        text = "Discard the current draft and reload |cffffd100%s|r from saved layouts?",
+        button1 = "Reset Draft",
+        button2 = "Cancel",
+        OnAccept = function(_, data)
+            if not data or not data.profile then return end
+            LoadEditorFromProfile(data.profile)
+            RefreshRaidEditorBoard()
+            Print("Draft reset to the saved raid layout.")
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
+loadSelectedToEditorButton:SetScript("OnClick", function()
+    if not ARL.GetActiveRaidLayoutProfile then
+        Print("Raid layout selection is not available yet. Try again in a moment.")
         return
     end
-    SetRaidLayoutMode(RAID_MODE_IMPORT)
+    local active = ARL.GetActiveRaidLayoutProfile()
+    if not active then
+        Print("Select a saved raid layout to load into the editor.")
+        return
+    end
+    local label = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(active)
+        or (active.name or "Unknown")
+
+    if raidEditorHasDraft and _G.StaticPopup_Show then
+        _G.StaticPopup_Show(
+            "ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT",
+            label,
+            nil,
+            { profile = active }
+        )
+        return
+    end
+
+    LoadEditorFromProfile(active)
+    RefreshRaidEditorBoard()
+    Print("Loaded the saved raid layout into the draft editor.")
 end)
 
-editorModeTab:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot switch modes while in combat.")
+editorAddPlayerButton:SetScript("OnClick", function()
+    local playerName = Normalize(editorPlayerEdit:GetText())
+    if playerName == "" then
+        Print("Enter a player name first.")
         return
     end
-    SetRaidLayoutMode(RAID_MODE_EDITOR)
+    local groupIndex = GetEditorTargetGroup()
+    if #raidEditorState.groups[groupIndex] >= 5 then
+        Print("Target group is full (5 players max).")
+        return
+    end
+    RemoveEditorPlayer(playerName)
+    raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+    editorPlayerEdit:SetText("")
+    RefreshRaidEditorBoard()
+end)
+
+loadToEditorButton:SetScript("OnClick", function()
+    local ok, err = LoadEditorFromImportText(raidImportEdit:GetText())
+    if not ok then
+        Print(err)
+        return
+    end
+    RefreshRaidEditorBoard()
+    if currentMainTabIndex == 4 then
+        SelectSubTab(1)
+    end
+    Print("Loaded import text into the visual editor.")
 end)
 
 newEmptyRaidLayoutButton:SetScript("OnClick", function()
@@ -2002,8 +2834,13 @@ newEmptyRaidLayoutButton:SetScript("OnClick", function()
         Print(result)
         return
     end
-    SetRaidLayoutEditorText(result)
-    Print("Created a new empty raid layout template in the editor.")
+    local loaded, err = LoadEditorFromImportText(result)
+    if not loaded then
+        Print(err)
+        return
+    end
+    RefreshRaidEditorBoard()
+    Print("Created a new empty raid layout in the visual editor.")
 end)
 
 newFromRaidLayoutButton:SetScript("OnClick", function()
@@ -2011,17 +2848,21 @@ newFromRaidLayoutButton:SetScript("OnClick", function()
         Print("Cannot create a raid layout from roster while in combat.")
         return
     end
-    if not ARL.BuildNewRaidLayoutImportText then
-        Print("Raid layout template tools are not available yet. Try again in a moment.")
+
+    local loaded, err = LoadEditorFromCurrentRaid()
+    if not loaded then
+        Print(err)
         return
     end
-    local ok, result = ARL.BuildNewRaidLayoutImportText(true)
-    if not ok then
-        Print(result)
-        return
-    end
-    SetRaidLayoutEditorText(result)
-    Print("Created a new roster-seeded raid layout template in the editor.")
+
+    RefreshRaidEditorBoard()
+    Print("Created a raid-seeded layout with current subgroup assignments.")
+end)
+
+reorganizeRaidLayoutButton:SetScript("OnClick", function()
+    ReorganizeRaidEditorGroups()
+    RefreshRaidEditorBoard()
+    Print("Reorganized the draft into sequential five-player groups.")
 end)
 
 saveNewRaidLayoutButton:SetScript("OnClick", function()
@@ -2087,9 +2928,20 @@ importRaidLayoutsButton:SetScript("OnClick", function()
 end)
 
 clearRaidImportButton:SetScript("OnClick", function()
-    raidImportEdit:SetText("")
-    raidImportEdit:ClearFocus()
-    raidImportScroll:SetVerticalScroll(0)
+    SetRaidLayoutImportText("")
+end)
+
+editorPlayerEdit:SetScript("OnEnterPressed", function()
+    editorAddPlayerButton:Click()
+end)
+editorEncounterEdit:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
+editorDifficultyEdit:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
+editorNameEdit:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
 end)
 
 applyRaidLayoutButton:SetScript("OnClick", function()
