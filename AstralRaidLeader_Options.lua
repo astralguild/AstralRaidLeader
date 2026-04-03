@@ -11,6 +11,7 @@ local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
 local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
+local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -958,7 +959,8 @@ raidGroupsUI.editorHelp:SetPoint("TOPLEFT", 10, -28)
 raidGroupsUI.editorHelp:SetWidth(620)
 raidGroupsUI.editorHelp:SetJustifyH("LEFT")
 raidGroupsUI.editorHelp:SetText(
-    "Plan subgroup assignments here. Left-click a player to pick up, click a group header to drop, right-click to remove.")
+    "Plan subgroup assignments here. Left-click a player to pick up,"
+        .. " click a group header to drop, right-click to remove.")
 
 raidGroupsUI.editorStatusText = raidEditorSection:CreateFontString(
     nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1223,27 +1225,27 @@ saveNewRaidLayoutButton:ClearAllPoints()
 saveNewRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
 
 local function CreateEditorGroupBox(groupIndex, x, y)
-    local frame = CreateFrame(
+    local groupFrame = CreateFrame(
         "Frame", nil, raidEditorSection,
         BackdropTemplateMixin and "BackdropTemplate" or nil
     )
-    frame:SetPoint("TOPLEFT", x, y)
-    frame:SetSize(148, 118)
+    groupFrame:SetPoint("TOPLEFT", x, y)
+    groupFrame:SetSize(148, 118)
     SkinPanel(
-        frame,
+        groupFrame,
         0.07, 0.10, 0.14, 0.34,
         0.22, 0.28, 0.36, 0.24)
 
-    local header = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    header:SetPoint("TOPLEFT", 4, -4)
-    header:SetSize(140, 20)
-    header:SetText("Group " .. tostring(groupIndex))
-    header._groupIndex = groupIndex
-    raidEditorGroupButtons[groupIndex] = header
+    local groupHeader = CreateFrame("Button", nil, groupFrame, "UIPanelButtonTemplate")
+    groupHeader:SetPoint("TOPLEFT", 4, -4)
+    groupHeader:SetSize(140, 20)
+    groupHeader:SetText("Group " .. tostring(groupIndex))
+    groupHeader._groupIndex = groupIndex
+    raidEditorGroupButtons[groupIndex] = groupHeader
 
     raidEditorPlayerButtons[groupIndex] = {}
     for slot = 1, 5 do
-        local btn = CreateFrame("Button", nil, frame)
+        local btn = CreateFrame("Button", nil, groupFrame)
         btn:SetPoint("TOPLEFT", 6, -10 - (slot * 15))
         btn:SetSize(134, 14)
         local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1258,7 +1260,7 @@ local function CreateEditorGroupBox(groupIndex, x, y)
         raidEditorPlayerButtons[groupIndex][slot] = btn
     end
 
-    local more = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    local more = groupFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     more:SetPoint("BOTTOMLEFT", 6, 5)
     more:SetJustifyH("LEFT")
     more:SetText("")
@@ -1386,7 +1388,8 @@ AttachButtonTooltip(
 AttachButtonTooltip(
     loadSelectedToEditorButton,
     "Reset To Saved",
-    "Reloads the selected saved layout into the draft planner. If the draft has unsaved changes, you will be asked before they are discarded."
+    "Reloads the selected saved layout into the draft planner."
+        .. " If the draft has unsaved changes, you will be asked before they are discarded."
 )
 AttachButtonTooltip(
     raidGroupsUI.editorGroupPrevButton,
@@ -1401,7 +1404,8 @@ AttachButtonTooltip(
 AttachButtonTooltip(
     editorAddPlayerButton,
     "Add Player",
-    "Adds the typed player name to the chosen group in the visual editor. Existing entries are moved instead of duplicated."
+    "Adds the typed player name to the chosen group in the visual editor."
+        .. " Existing entries are moved instead of duplicated."
 )
 AttachButtonTooltip(
     newEmptyRaidLayoutButton,
@@ -1869,14 +1873,14 @@ local function RefreshRaidEditorBoard()
 
     for groupIndex = 1, 8 do
         local groupList = raidEditorState.groups[groupIndex] or {}
-        local header = raidEditorGroupButtons[groupIndex]
-        if header then
+        local groupHeader = raidEditorGroupButtons[groupIndex]
+        if groupHeader then
             if raidEditorDrag then
-                header:SetText(string.format("Drop G%d (%d)", groupIndex, #groupList))
+                groupHeader:SetText(string.format("Drop G%d (%d)", groupIndex, #groupList))
             else
-                header:SetText(string.format("Group %d (%d)", groupIndex, #groupList))
+                groupHeader:SetText(string.format("Group %d (%d)", groupIndex, #groupList))
             end
-            local headerText = header:GetFontString()
+            local headerText = groupHeader:GetFontString()
             if headerText and headerText.SetTextColor then
                 if raidEditorDrag then
                     headerText:SetTextColor(0.95, 0.81, 0.24)
@@ -1945,9 +1949,9 @@ local function RefreshRaidEditorPanel()
 end
 
 for groupIndex = 1, 8 do
-    local header = raidEditorGroupButtons[groupIndex]
-    if header then
-        header:SetScript("OnClick", function(self)
+    local groupHeader = raidEditorGroupButtons[groupIndex]
+    if groupHeader then
+        groupHeader:SetScript("OnClick", function(self)
             if not raidEditorDrag then
                 SetEditorTargetGroup(self._groupIndex)
                 return
