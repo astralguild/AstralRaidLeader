@@ -12,6 +12,7 @@ local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
 local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
+local UnitInRaid = _G.UnitInRaid
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -31,6 +32,20 @@ local function NamesMatch(a, b)
     local bl = (b or ""):lower()
     if al == bl then return true end
     return ShortName(al) == ShortName(bl)
+end
+
+local function RequireBuilderFields(builderName, ui, requiredFields)
+    if type(ui) ~= "table" then
+        Print(builderName .. " builder returned invalid data.")
+        return nil
+    end
+    for _, field in ipairs(requiredFields) do
+        if ui[field] == nil then
+            Print(builderName .. " builder is missing field: " .. tostring(field))
+            return nil
+        end
+    end
+    return ui
 end
 
 local frame = CreateFrame(
@@ -494,836 +509,272 @@ closeButton:SetScript("OnClick", function() frame:Hide() end)
 -- Tab 1 – General
 -- ============================================================
 
-local p1 = panels[1]
+local generalBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildGeneralPanel
+if not generalBuilder then
+    Print("General options builder is unavailable; settings window is disabled.")
+    return
+end
 
-local autoCB = CreateCheckbox(p1,
-    "Enable auto-promote",
-    "Automatically promote the highest-priority preferred leader when available.",
-    8, -8)
+local generalUI = generalBuilder({
+    panel = panels[1],
+    CreateCheckbox = CreateCheckbox,
+})
 
-local reminderCB = CreateCheckbox(p1,
-    "Enable reminder chat messages",
-    "Show reminder messages when members join and no preferred leader is present.",
-    8, -36)
-
-local notifyCB = CreateCheckbox(p1,
-    "Enable manual-promote popup",
-    "Show a popup with a Promote button when auto-promote is disabled and a preferred leader is available.",
-    8, -64)
-
-local notifySoundCB = CreateCheckbox(p1,
-    "Enable popup sound",
-    "Play a sound when the manual-promote popup is shown.",
-    8, -92)
-
-local quietCB = CreateCheckbox(p1,
-    "Enable quiet mode",
-    "Suppress all chat output from AstralRaidLeader (auto-promote still works silently).",
-    8, -120)
-
-local reminderHelpText = p1:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-reminderHelpText:SetPoint("TOPLEFT", 8, -160)
-reminderHelpText:SetWidth(528)
-reminderHelpText:SetJustifyH("LEFT")
-reminderHelpText:SetText("Reminders are event-driven and trigger when party/raid roster changes.")
-
-local groupTypeLabel = p1:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-groupTypeLabel:SetPoint("TOPLEFT", 8, -196)
-groupTypeLabel:SetText("Auto-promote in:")
-
-local groupRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 8, -218)
-groupRaidCB.Text:SetText("Raids")
-groupRaidCB.tooltipText = "Auto-promote when in any raid group."
-
-local groupPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 175, -218)
-groupPartyCB.Text:SetText("Parties")
-groupPartyCB.tooltipText = "Auto-promote when in a party (not a raid)."
-
-local groupGuildRaidCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupGuildRaidCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 8, -246)
-groupGuildRaidCB.Text:SetText("Guild Raids")
-groupGuildRaidCB.tooltipText = "Auto-promote in raids that Blizzard marks as guild groups."
-
-local groupGuildPartyCB = CreateFrame("CheckButton", nil, p1, "InterfaceOptionsCheckButtonTemplate")
-groupGuildPartyCB:SetPoint("TOPLEFT", p1, "TOPLEFT", 175, -246)
-groupGuildPartyCB.Text:SetText("Guild Parties")
-groupGuildPartyCB.tooltipText = "Auto-promote in parties that Blizzard marks as guild groups."
+generalUI = RequireBuilderFields("General", generalUI, {
+    "autoCB",
+    "reminderCB",
+    "notifyCB",
+    "notifySoundCB",
+    "quietCB",
+    "groupRaidCB",
+    "groupPartyCB",
+    "groupGuildRaidCB",
+    "groupGuildPartyCB",
+})
+if not generalUI then return end
 
 -- ============================================================
 -- Tab 2 – Leaders
 -- ============================================================
 
-local p2 = panels[2]
+local leadersBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildLeadersPanel
+if not leadersBuilder then
+    Print("Leaders options builder is unavailable; settings window is disabled.")
+    return
+end
 
-local preferredHeader = p2:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-preferredHeader:SetPoint("TOPLEFT", 8, -8)
-preferredHeader:SetText("Preferred leaders (highest priority first)")
+local leadersUI = leadersBuilder({
+    panel = panels[2],
+    SkinPanel = SkinPanel,
+})
 
-local listInset = CreateFrame("Frame", nil, p2, BackdropTemplateMixin and "BackdropTemplate" or nil)
-listInset:SetPoint("TOPLEFT", 8, -28)
-listInset:SetSize(528, 140)
-SkinPanel(listInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
-
-local listText = listInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-listText:SetPoint("TOPLEFT", 8, -8)
-listText:SetPoint("TOPRIGHT", -8, -8)
-listText:SetJustifyH("LEFT")
-listText:SetJustifyV("TOP")
-
-local nameLabel = p2:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-nameLabel:SetPoint("TOPLEFT", 8, -178)
-nameLabel:SetText("Character")
-
-local nameEdit = CreateFrame("EditBox", nil, p2, "InputBoxTemplate")
-nameEdit:SetPoint("TOPLEFT", 8, -198)
-nameEdit:SetSize(180, 24)
-nameEdit:SetAutoFocus(false)
-nameEdit:SetMaxLetters(48)
-
-local addButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-addButton:SetPoint("LEFT", nameEdit, "RIGHT", 10, 0)
-addButton:SetSize(70, 24)
-addButton:SetText("Add")
-
-local removeButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-removeButton:SetPoint("LEFT", addButton, "RIGHT", 8, 0)
-removeButton:SetSize(90, 24)
-removeButton:SetText("Remove")
-
-local clearButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-clearButton:SetPoint("LEFT", removeButton, "RIGHT", 8, 0)
-clearButton:SetSize(70, 24)
-clearButton:SetText("Clear")
-
-local promoteButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-promoteButton:SetPoint("LEFT", clearButton, "RIGHT", 8, 0)
-promoteButton:SetSize(70, 24)
-promoteButton:SetText("Promote")
-
-local moveUpButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-moveUpButton:SetPoint("TOPLEFT", 8, -228)
-moveUpButton:SetSize(90, 24)
-moveUpButton:SetText("Move Up")
-
-local moveDownButton = CreateFrame("Button", nil, p2, "UIPanelButtonTemplate")
-moveDownButton:SetPoint("LEFT", moveUpButton, "RIGHT", 8, 0)
-moveDownButton:SetSize(100, 24)
-moveDownButton:SetText("Move Down")
+leadersUI = RequireBuilderFields("Leaders", leadersUI, {
+    "listText",
+    "nameEdit",
+    "addButton",
+    "removeButton",
+    "clearButton",
+    "promoteButton",
+    "moveUpButton",
+    "moveDownButton",
+})
+if not leadersUI then return end
 
 -- ============================================================
 -- Tab 3 – Guild Ranks
 -- ============================================================
 
-local p3 = panels[3]
-
-local useGuildRankCB = CreateCheckbox(p3,
-    "Enable guild rank priority (fallback when no preferred leader is in group)",
-    "When no character from the preferred leaders list is present, promote the "
-    .. "highest-priority guild rank member instead.",
-    8, -8)
-
-local guildRankListLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guildRankListLabel:SetPoint("TOPLEFT", 8, -44)
-guildRankListLabel:SetText("Guild rank priority (highest priority first)")
-
-local guildRankListInset = CreateFrame("Frame", nil, p3, BackdropTemplateMixin and "BackdropTemplate" or nil)
-guildRankListInset:SetPoint("TOPLEFT", 8, -64)
-guildRankListInset:SetSize(528, 96)
-SkinPanel(guildRankListInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
-
-local guildRankListText = guildRankListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-guildRankListText:SetPoint("TOPLEFT", 8, -8)
-guildRankListText:SetPoint("TOPRIGHT", -8, -8)
-guildRankListText:SetJustifyH("LEFT")
-guildRankListText:SetJustifyV("TOP")
-
-local rankNameLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-rankNameLabel:SetPoint("TOPLEFT", 8, -170)
-rankNameLabel:SetText("Guild Rank")
-
-local rankNameEdit = CreateFrame("EditBox", nil, p3, "InputBoxTemplate")
-rankNameEdit:SetPoint("TOPLEFT", 8, -190)
-rankNameEdit:SetSize(180, 24)
-rankNameEdit:SetAutoFocus(false)
-rankNameEdit:SetMaxLetters(48)
-
-local addRankButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-addRankButton:SetPoint("LEFT", rankNameEdit, "RIGHT", 10, 0)
-addRankButton:SetSize(70, 24)
-addRankButton:SetText("Add")
-
-local removeRankButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-removeRankButton:SetPoint("LEFT", addRankButton, "RIGHT", 8, 0)
-removeRankButton:SetSize(90, 24)
-removeRankButton:SetText("Remove")
-
-local clearRanksButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-clearRanksButton:SetPoint("LEFT", removeRankButton, "RIGHT", 8, 0)
-clearRanksButton:SetSize(70, 24)
-clearRanksButton:SetText("Clear")
-
-local moveRankUpButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-moveRankUpButton:SetPoint("TOPLEFT", 8, -220)
-moveRankUpButton:SetSize(90, 24)
-moveRankUpButton:SetText("Move Up")
-
-local moveRankDownButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-moveRankDownButton:SetPoint("LEFT", moveRankUpButton, "RIGHT", 8, 0)
-moveRankDownButton:SetSize(100, 24)
-moveRankDownButton:SetText("Move Down")
-
-local guildRankPickerLabel = p3:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guildRankPickerLabel:SetPoint("TOPLEFT", 8, -252)
-guildRankPickerLabel:SetText("Available ranks in your guild (click to add):")
-
-local refreshGuildRanksButton = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-refreshGuildRanksButton:SetPoint("LEFT", guildRankPickerLabel, "RIGHT", 10, 0)
-refreshGuildRanksButton:SetSize(80, 22)
-refreshGuildRanksButton:SetText("Refresh")
-
--- Pool of up to 10 clickable rank buttons (2 columns x 5 rows)
-local MAX_RANK_BUTTONS = 10
-local guildRankButtons = {}
-for _i = 1, MAX_RANK_BUTTONS do
-    local col = (_i - 1) % 2
-    local row = math.floor((_i - 1) / 2)
-    local btn = CreateFrame("Button", nil, p3, "UIPanelButtonTemplate")
-    btn:SetPoint("TOPLEFT", 8 + col * 266, -270 + row * -22)
-    btn:SetSize(257, 20)
-    btn:SetText("")
-    btn:Hide()
-    guildRankButtons[_i] = btn
+local guildRanksBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildGuildRanksPanel
+if not guildRanksBuilder then
+    Print("Guild Ranks options builder is unavailable; settings window is disabled.")
+    return
 end
 
-local noGuildRanksText = p3:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-noGuildRanksText:SetPoint("TOPLEFT", 8, -274)
-noGuildRanksText:SetText("")
-noGuildRanksText:Hide()
+local guildRanksUI = guildRanksBuilder({
+    panel = panels[3],
+    CreateCheckbox = CreateCheckbox,
+    SkinPanel = SkinPanel,
+})
+
+guildRanksUI = RequireBuilderFields("Guild Ranks", guildRanksUI, {
+    "useGuildRankCB",
+    "guildRankListText",
+    "rankNameEdit",
+    "addRankButton",
+    "removeRankButton",
+    "clearRanksButton",
+    "moveRankUpButton",
+    "moveRankDownButton",
+    "refreshGuildRanksButton",
+    "guildRankButtons",
+    "noGuildRanksText",
+})
+if not guildRanksUI then return end
 
 -- ============================================================
 -- Tab 4 – Consumables
 -- ============================================================
 
-local p4 = panels[4]
+local consumablesBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildConsumablesPanel
+if not consumablesBuilder then
+    Print("Consumables options builder is unavailable; settings window is disabled.")
+    return
+end
 
-local consumableAuditCB = CreateCheckbox(p4,
-    "Enable consumable audit on ready check",
-    "When a ready check is initiated, report which group members are missing tracked consumable buffs.",
-    8, -8)
+local consumablesUI = consumablesBuilder({
+    panel = panels[4],
+    CreateCheckbox = CreateCheckbox,
+    SkinPanel = SkinPanel,
+})
 
-local consumableListLabel = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-consumableListLabel:SetPoint("TOPLEFT", 8, -44)
-consumableListLabel:SetText("Tracked consumable categories")
-
-local consumableListInset = CreateFrame("Frame", nil, p4, BackdropTemplateMixin and "BackdropTemplate" or nil)
-consumableListInset:SetPoint("TOPLEFT", 8, -64)
-consumableListInset:SetSize(528, 140)
-SkinPanel(consumableListInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
-
-local consumableListText = consumableListInset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-consumableListText:SetPoint("TOPLEFT", 8, -8)
-consumableListText:SetPoint("TOPRIGHT", -8, -8)
-consumableListText:SetJustifyH("LEFT")
-consumableListText:SetJustifyV("TOP")
-
-local catLabelTitle = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-catLabelTitle:SetPoint("TOPLEFT", 8, -214)
-catLabelTitle:SetText("Category")
-
-local spellIdTitle = p4:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-spellIdTitle:SetPoint("TOPLEFT", 270, -214)
-spellIdTitle:SetText("Spell ID")
-
-local catEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
-catEdit:SetPoint("TOPLEFT", 8, -234)
-catEdit:SetSize(250, 24)
-catEdit:SetAutoFocus(false)
-catEdit:SetMaxLetters(64)
-
-local spellIdEdit = CreateFrame("EditBox", nil, p4, "InputBoxTemplate")
-spellIdEdit:SetPoint("TOPLEFT", 270, -234)
-spellIdEdit:SetSize(90, 24)
-spellIdEdit:SetAutoFocus(false)
-spellIdEdit:SetMaxLetters(12)
-
-local addConsumableButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-addConsumableButton:SetPoint("TOPLEFT", 8, -266)
-addConsumableButton:SetSize(160, 24)
-addConsumableButton:SetText("Add Spell ID")
-
-local removeSpellIdButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-removeSpellIdButton:SetPoint("LEFT", addConsumableButton, "RIGHT", 10, 0)
-removeSpellIdButton:SetSize(160, 24)
-removeSpellIdButton:SetText("Remove Spell ID")
-
-local deleteCatButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-deleteCatButton:SetPoint("LEFT", removeSpellIdButton, "RIGHT", 10, 0)
-deleteCatButton:SetSize(160, 24)
-deleteCatButton:SetText("Delete Category")
-
-local clearConsumablesButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-clearConsumablesButton:SetPoint("TOPLEFT", 8, -298)
-clearConsumablesButton:SetSize(160, 24)
-clearConsumablesButton:SetText("Clear All")
-
-local runAuditButton = CreateFrame("Button", nil, p4, "UIPanelButtonTemplate")
-runAuditButton:SetPoint("LEFT", clearConsumablesButton, "RIGHT", 10, 0)
-runAuditButton:SetSize(160, 24)
-runAuditButton:SetText("Run Audit Now")
+consumablesUI = RequireBuilderFields("Consumables", consumablesUI, {
+    "consumableAuditCB",
+    "consumableListText",
+    "catEdit",
+    "spellIdEdit",
+    "addConsumableButton",
+    "removeSpellIdButton",
+    "deleteCatButton",
+    "clearConsumablesButton",
+    "runAuditButton",
+})
+if not consumablesUI then return end
 
 -- ============================================================
 -- Tab 5 - Deaths
 -- ============================================================
 
-local p5 = panels[5]
+local deathsBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildDeathsPanel
+if not deathsBuilder then
+    Print("Deaths options builder is unavailable; settings window is disabled.")
+    return
+end
 
-local deathTrackingCB = CreateCheckbox(p5,
-    "Enable death tracking during encounters",
-    "Record raid and party deaths during encounter attempts.",
-    8, -8)
+local deathsUI = deathsBuilder({
+    panel = panels[5],
+    CreateCheckbox = CreateCheckbox,
+})
 
-local showRecapCB = CreateCheckbox(p5,
-    "Open recap window automatically on wipe",
-    "Show the Death Recap window automatically when an encounter ends in a wipe.",
-    8, -36)
-
-local showRecapOnAnyEndCB = CreateCheckbox(p5,
-    "Open recap window on encounter kill",
-    "Also open the Death Recap when the encounter ends successfully.",
-    8, -64)
-
-local deathGroupFilterLabel = p5:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -96)
-deathGroupFilterLabel:SetText("Track recap data in:")
-
-local deathGroupRaidCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 8, -118)
-deathGroupRaidCB.Text:SetText("Raids")
-deathGroupRaidCB.tooltipText = "Track death recap data in any raid group."
-
-local deathGroupPartyCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 175, -118)
-deathGroupPartyCB.Text:SetText("Parties")
-deathGroupPartyCB.tooltipText = "Track death recap data in parties (not raids)."
-
-local deathGroupGuildRaidCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupGuildRaidCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 8, -146)
-deathGroupGuildRaidCB.Text:SetText("Guild Raids")
-deathGroupGuildRaidCB.tooltipText = "Track death recap data in raids that Blizzard marks as guild groups."
-
-local deathGroupGuildPartyCB = CreateFrame("CheckButton", nil, p5, "InterfaceOptionsCheckButtonTemplate")
-deathGroupGuildPartyCB:SetPoint("TOPLEFT", p5, "TOPLEFT", 175, -146)
-deathGroupGuildPartyCB.Text:SetText("Guild Parties")
-deathGroupGuildPartyCB.tooltipText = "Track death recap data in parties that Blizzard marks as guild groups."
-
-local recapInfoText = p5:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-recapInfoText:SetPoint("TOPLEFT", 8, -184)
-recapInfoText:SetWidth(520)
-recapInfoText:SetJustifyH("LEFT")
-recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
-
-local openRecapButton = CreateFrame("Button", nil, p5, "UIPanelButtonTemplate")
-openRecapButton:SetPoint("TOPLEFT", 8, -214)
-openRecapButton:SetSize(140, 24)
-openRecapButton:SetText("Open Last Recap")
+deathsUI = RequireBuilderFields("Deaths", deathsUI, {
+    "deathTrackingCB",
+    "showRecapCB",
+    "showRecapOnAnyEndCB",
+    "deathGroupRaidCB",
+    "deathGroupPartyCB",
+    "deathGroupGuildRaidCB",
+    "deathGroupGuildPartyCB",
+    "openRecapButton",
+})
+if not deathsUI then return end
 
 -- ============================================================
 -- Tab 6 - Raid Groups
 -- ============================================================
 
-local p6 = panels[6]
-
--- ---- Dropdown selector (top) --------------------------------
-local raidLayoutListLabel = p6:CreateFontString(
-    nil, "ARTWORK", "GameFontNormal"
-)
-raidLayoutListLabel:SetPoint("TOPLEFT", 8, -8)
-raidLayoutListLabel:SetText("Saved raid layout")
-
-local raidLayoutDropDown = CreateFrame(
-    "Frame",
-    "AstralRaidLeaderRaidLayoutDropDown",
-    p6,
-    "UIDropDownMenuTemplate"
-)
-raidLayoutDropDown:SetPoint("TOPLEFT", p6, "TOPLEFT", -8, -24)
-UIDropDownMenu_SetWidth(raidLayoutDropDown, 590)
-UIDropDownMenu_SetText(raidLayoutDropDown, "No saved raid layouts")
-raidLayoutDropDown:EnableMouse(false)
-
-local raidLayoutDropDownButton =
-    _G["AstralRaidLeaderRaidLayoutDropDownButton"]
-if raidLayoutDropDownButton then
-    raidLayoutDropDownButton:EnableMouse(true)
-    raidLayoutDropDownButton:SetHitRectInsets(0, 0, 0, 0)
-    raidLayoutDropDownButton:SetScript("OnClick", function()
-        if InCombatLockdown() then
-            Print("Cannot change the selected raid layout"
-                .. " while in combat.")
-            return
-        end
-        if ToggleDropDownMenu then
-            ToggleDropDownMenu(1, nil, raidLayoutDropDown)
-        end
-    end)
+local raidGroupsLayoutsBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel
+if not raidGroupsLayoutsBuilder then
+    Print("Raid Groups layouts builder is unavailable; settings window is disabled.")
+    return
 end
 
-raidLayoutDropDown:SetScript("OnMouseDown",
-    function(_, mouseButton)
-        if mouseButton == "LeftButton"
-            and ToggleDropDownMenu
-            and not InCombatLockdown()
-        then
-            ToggleDropDownMenu(1, nil, raidLayoutDropDown)
-        elseif mouseButton == "LeftButton"
-            and InCombatLockdown()
-        then
-            Print("Cannot change the selected raid layout"
-                .. " while in combat.")
-        end
-    end)
+local raidGroupsLayoutsUI = raidGroupsLayoutsBuilder({
+    panel = panels[6],
+    SkinPanel = SkinPanel,
+    UIDropDownMenu_SetWidth = UIDropDownMenu_SetWidth,
+    UIDropDownMenu_SetText = UIDropDownMenu_SetText,
+    ToggleDropDownMenu = ToggleDropDownMenu,
+    Print = Print,
+})
 
-local raidLayoutDropDownText =
-    _G["AstralRaidLeaderRaidLayoutDropDownText"]
-if raidLayoutDropDownText then
-    raidLayoutDropDownText:ClearAllPoints()
-    raidLayoutDropDownText:SetPoint(
-        "LEFT", raidLayoutDropDown, "LEFT", 32, 2)
-    raidLayoutDropDownText:SetPoint(
-        "RIGHT", raidLayoutDropDown, "RIGHT", -43, 2)
-    raidLayoutDropDownText:SetJustifyH("LEFT")
-end
+raidGroupsLayoutsUI = RequireBuilderFields("Raid Groups layouts", raidGroupsLayoutsUI, {
+    "raidLayoutDropDown",
+    "applyRaidLayoutButton",
+    "deleteRaidLayoutButton",
+    "clearRaidLayoutsButton",
+    "raidGroupsUI",
+    "raidEditorState",
+    "raidEditorGroupButtons",
+    "raidEditorPlayerButtons",
+    "raidEditorMoreText",
+    "editorEncounterEdit",
+    "editorDifficultyEdit",
+    "editorNameEdit",
+    "loadSelectedToEditorButton",
+    "editorPlayerEdit",
+    "editorAddPlayerButton",
+    "newEmptyRaidLayoutButton",
+    "newFromRaidLayoutButton",
+    "reorganizeRaidLayoutButton",
+    "saveNewRaidLayoutButton",
+    "overwriteRaidLayoutButton",
+})
+if not raidGroupsLayoutsUI then return end
 
--- ---- Top action buttons (Apply / Delete / Clear Saved) ------
-local applyRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
-)
-applyRaidLayoutButton:SetPoint("TOPLEFT", 8, -64)
-applyRaidLayoutButton:SetSize(112, 24)
-applyRaidLayoutButton:SetText("Apply")
-
-local deleteRaidLayoutButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
-)
-deleteRaidLayoutButton:SetPoint(
-    "LEFT", applyRaidLayoutButton, "RIGHT", 10, 0)
-deleteRaidLayoutButton:SetSize(112, 24)
-deleteRaidLayoutButton:SetText("Delete")
-
-local clearRaidLayoutsButton = CreateFrame(
-    "Button", nil, p6, "UIPanelButtonTemplate"
-)
-clearRaidLayoutsButton:SetPoint(
-    "LEFT", deleteRaidLayoutButton, "RIGHT", 10, 0)
-clearRaidLayoutsButton:SetSize(124, 24)
-clearRaidLayoutsButton:SetText("Clear Saved")
-
-local raidGroupsUI = {}
-
-raidGroupsUI.layoutPlanningHelp = p6:CreateFontString(
-    nil, "ARTWORK", "GameFontHighlightSmall")
-raidGroupsUI.layoutPlanningHelp:SetPoint("TOPLEFT", 8, -94)
-raidGroupsUI.layoutPlanningHelp:SetWidth(640)
-raidGroupsUI.layoutPlanningHelp:SetJustifyH("LEFT")
-raidGroupsUI.layoutPlanningHelp:SetText(
-    "Start from the selected saved layout, adjust the draft below, then save a new version or overwrite the baseline.")
+local raidLayoutDropDown = raidGroupsLayoutsUI.raidLayoutDropDown
+local applyRaidLayoutButton = raidGroupsLayoutsUI.applyRaidLayoutButton
+local deleteRaidLayoutButton = raidGroupsLayoutsUI.deleteRaidLayoutButton
+local clearRaidLayoutsButton = raidGroupsLayoutsUI.clearRaidLayoutsButton
+local raidGroupsUI = raidGroupsLayoutsUI.raidGroupsUI
+local raidEditorState = raidGroupsLayoutsUI.raidEditorState
+local raidEditorLoadedKey = nil
+local raidEditorHasDraft = false
+local raidEditorDrag = nil
+local raidEditorTargetGroup = 1
+local raidEditorGroupButtons = raidGroupsLayoutsUI.raidEditorGroupButtons
+local raidEditorPlayerButtons = raidGroupsLayoutsUI.raidEditorPlayerButtons
+local raidEditorMoreText = raidGroupsLayoutsUI.raidEditorMoreText
+local editorEncounterEdit = raidGroupsLayoutsUI.editorEncounterEdit
+local editorDifficultyEdit = raidGroupsLayoutsUI.editorDifficultyEdit
+local editorNameEdit = raidGroupsLayoutsUI.editorNameEdit
+local loadSelectedToEditorButton = raidGroupsLayoutsUI.loadSelectedToEditorButton
+local editorPlayerEdit = raidGroupsLayoutsUI.editorPlayerEdit
+local editorAddPlayerButton = raidGroupsLayoutsUI.editorAddPlayerButton
+local newEmptyRaidLayoutButton = raidGroupsLayoutsUI.newEmptyRaidLayoutButton
+local newFromRaidLayoutButton = raidGroupsLayoutsUI.newFromRaidLayoutButton
+local reorganizeRaidLayoutButton = raidGroupsLayoutsUI.reorganizeRaidLayoutButton
+local saveNewRaidLayoutButton = raidGroupsLayoutsUI.saveNewRaidLayoutButton
+local overwriteRaidLayoutButton = raidGroupsLayoutsUI.overwriteRaidLayoutButton
 
 local raidImportPanel = panels[7]
 local raidSettingsPanel = panels[8]
 
-local raidEditorSection = CreateFrame("Frame", nil, p6)
-raidEditorSection:SetPoint("TOPLEFT", 8, -108)
-raidEditorSection:SetPoint("BOTTOMRIGHT", p6, "BOTTOMRIGHT", -8, -8)
-
-raidGroupsUI.editorInset = CreateFrame(
-    "Frame", nil, raidEditorSection,
-    BackdropTemplateMixin and "BackdropTemplate" or nil
-)
-raidGroupsUI.editorInset:SetPoint("TOPLEFT", 0, 0)
-raidGroupsUI.editorInset:SetPoint("BOTTOMRIGHT", raidEditorSection, "BOTTOMRIGHT", 0, 0)
-SkinPanel(
-    raidGroupsUI.editorInset,
-    0.05, 0.09, 0.15, 0.22,
-    0.22, 0.28, 0.36, 0.18)
-
-raidGroupsUI.editorHeader = raidEditorSection:CreateFontString(
-    nil, "OVERLAY", "GameFontNormal")
-raidGroupsUI.editorHeader:SetPoint("TOPLEFT", 10, -10)
-raidGroupsUI.editorHeader:SetText("Draft planner")
-
-raidGroupsUI.editorHelp = raidEditorSection:CreateFontString(
-    nil, "OVERLAY", "GameFontHighlightSmall")
-raidGroupsUI.editorHelp:SetPoint("TOPLEFT", 10, -28)
-raidGroupsUI.editorHelp:SetWidth(620)
-raidGroupsUI.editorHelp:SetJustifyH("LEFT")
-raidGroupsUI.editorHelp:SetText(
-    "Plan subgroup assignments here. Left-click a player to pick up,"
-        .. " click a group header to drop, right-click to remove.")
-
-raidGroupsUI.editorStatusText = raidEditorSection:CreateFontString(
-    nil, "OVERLAY", "GameFontHighlightSmall")
-raidGroupsUI.editorStatusText:SetPoint("TOPLEFT", 10, -168)
-raidGroupsUI.editorStatusText:SetWidth(620)
-raidGroupsUI.editorStatusText:SetJustifyH("LEFT")
-raidGroupsUI.editorStatusText:SetText("")
-
 -- ---- Import section -----------------------------------------
-local raidImportHeader = raidImportPanel:CreateFontString(
-    nil, "ARTWORK", "GameFontNormal")
-raidImportHeader:SetPoint("TOPLEFT", 8, -8)
-raidImportHeader:SetText("Import raid layouts")
-
-local raidImportHelp = raidImportPanel:CreateFontString(
-    nil, "ARTWORK", "GameFontHighlightSmall")
-raidImportHelp:SetPoint("TOPLEFT", 8, -28)
-raidImportHelp:SetWidth(520)
-raidImportHelp:SetJustifyH("LEFT")
-raidImportHelp:SetText(
-    "Paste a raid layout note here, then import it directly or load the first parsed layout into the visual editor.")
-
-local raidImportInset = CreateFrame(
-    "Frame", nil, raidImportPanel,
-    BackdropTemplateMixin and "BackdropTemplate" or nil
-)
-raidImportInset:SetPoint("TOPLEFT", 8, -50)
-raidImportInset:SetPoint("BOTTOMRIGHT", raidImportPanel, "BOTTOMRIGHT", -8, 34)
-SkinPanel(
-    raidImportInset,
-    0.07, 0.10, 0.14, 0.34,
-    0.22, 0.28, 0.36, 0.24)
-
-local raidImportScroll = CreateFrame(
-    "ScrollFrame",
-    "AstralRaidLeaderRaidImportScrollFrame",
-    raidImportInset,
-    "UIPanelScrollFrameTemplate"
-)
-raidImportScroll:SetPoint("TOPLEFT", 10, -10)
-raidImportScroll:SetPoint("BOTTOMRIGHT", -30, 10)
-
-local raidImportScrollBar =
-    _G["AstralRaidLeaderRaidImportScrollFrameScrollBar"]
-if raidImportScrollBar then
-    raidImportScrollBar:ClearAllPoints()
-    raidImportScrollBar:SetPoint(
-        "TOPRIGHT", raidImportInset, "TOPRIGHT", -4, -18)
-    raidImportScrollBar:SetPoint(
-        "BOTTOMRIGHT", raidImportInset,
-        "BOTTOMRIGHT", -4, 18)
+local raidImportBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildRaidGroupsImportPanel
+if not raidImportBuilder then
+    Print("Raid Groups import builder is unavailable; settings window is disabled.")
+    return
 end
 
-local raidImportEdit = CreateFrame(
-    "EditBox", nil, raidImportScroll
-)
-raidImportEdit:SetMultiLine(true)
-raidImportEdit:SetAutoFocus(false)
-raidImportEdit:SetFontObject(ChatFontNormal)
-raidImportEdit:SetWidth(484)
-raidImportEdit:SetHeight(1024)
-raidImportEdit:SetTextInsets(4, 4, 4, 4)
-raidImportEdit:SetScript("OnEscapePressed",
-    function(self) self:ClearFocus() end)
-raidImportEdit:SetScript("OnTextChanged", function()
-    raidImportScroll:UpdateScrollChildRect()
-end)
-raidImportEdit:SetScript("OnCursorChanged",
-    function(_, _, y)
-        raidImportScroll:SetVerticalScroll(
-            math.max(0, y - 12))
-    end)
-raidImportScroll:SetScrollChild(raidImportEdit)
+local raidImportUI = raidImportBuilder({
+    panel = raidImportPanel,
+    SkinPanel = SkinPanel,
+})
 
--- ---- Import section buttons ---------------------------------
-local importRaidLayoutsButton = CreateFrame(
-    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
-)
-importRaidLayoutsButton:ClearAllPoints()
-importRaidLayoutsButton:SetPoint("BOTTOMLEFT", raidImportPanel, "BOTTOMLEFT", 8, 2)
-importRaidLayoutsButton:SetSize(100, 24)
-importRaidLayoutsButton:SetText("Import Note")
-
-local clearRaidImportButton = CreateFrame(
-    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
-)
-clearRaidImportButton:SetPoint(
-    "LEFT", importRaidLayoutsButton, "RIGHT", 8, 0)
-clearRaidImportButton:SetSize(90, 24)
-clearRaidImportButton:SetText("Clear Text")
-
-local loadToEditorButton = CreateFrame(
-    "Button", nil, raidImportPanel, "UIPanelButtonTemplate"
-)
-loadToEditorButton:SetPoint(
-    "LEFT", clearRaidImportButton, "RIGHT", 8, 0)
-loadToEditorButton:SetSize(110, 24)
-loadToEditorButton:SetText("Load To Editor")
-
--- ---- Editor section model + controls ------------------------
-local raidEditorState = {
-    encounterID = 0,
-    difficulty = "mythic",
-    name = "",
-    groups = {},
-}
-
-local raidEditorLoadedKey = nil
-local raidEditorHasDraft = false
-
-for i = 1, 8 do
-    raidEditorState.groups[i] = {}
-end
-
-local raidEditorDrag = nil
-local raidEditorTargetGroup = 1
-local raidEditorGroupButtons = {}
-local raidEditorPlayerButtons = {}
-local raidEditorMoreText = {}
-
-local editorEncounterLabel = raidEditorSection:CreateFontString(
-    nil, "ARTWORK", "GameFontNormalSmall")
-editorEncounterLabel:SetPoint("TOPLEFT", 10, -58)
-editorEncounterLabel:SetText("Encounter")
-
-local editorEncounterEdit = CreateFrame(
-    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
-editorEncounterEdit:SetPoint("LEFT", editorEncounterLabel, "RIGHT", 6, 0)
-editorEncounterEdit:SetSize(58, 22)
-editorEncounterEdit:SetAutoFocus(false)
-
-local editorDifficultyLabel = raidEditorSection:CreateFontString(
-    nil, "ARTWORK", "GameFontNormalSmall")
-editorDifficultyLabel:SetPoint("LEFT", editorEncounterEdit, "RIGHT", 10, 0)
-editorDifficultyLabel:SetText("Difficulty")
-
-local editorDifficultyEdit = CreateFrame(
-    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
-editorDifficultyEdit:SetPoint("LEFT", editorDifficultyLabel, "RIGHT", 6, 0)
-editorDifficultyEdit:SetSize(68, 22)
-editorDifficultyEdit:SetAutoFocus(false)
-
-local editorNameLabel = raidEditorSection:CreateFontString(
-    nil, "ARTWORK", "GameFontNormalSmall")
-editorNameLabel:SetPoint("LEFT", editorDifficultyEdit, "RIGHT", 10, 0)
-editorNameLabel:SetText("Name")
-
-local editorNameEdit = CreateFrame(
-    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
-editorNameEdit:SetAutoFocus(false)
-
-local loadSelectedToEditorButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
-loadSelectedToEditorButton:SetSize(104, 24)
-loadSelectedToEditorButton:SetText("Load Saved")
-
-editorNameEdit:SetPoint("LEFT", editorNameLabel, "RIGHT", 6, 0)
-editorNameEdit:SetPoint("RIGHT", raidEditorSection, "RIGHT", -116, 0)
-editorNameEdit:SetHeight(22)
-
-loadSelectedToEditorButton:SetPoint("LEFT", editorNameEdit, "RIGHT", 8, 0)
-
-local editorPlayerLabel = raidEditorSection:CreateFontString(
-    nil, "ARTWORK", "GameFontNormalSmall")
-editorPlayerLabel:SetPoint("TOPLEFT", 10, -98)
-editorPlayerLabel:SetText("Player")
-
-local editorPlayerEdit = CreateFrame(
-    "EditBox", nil, raidEditorSection, "InputBoxTemplate")
-editorPlayerEdit:SetPoint("LEFT", editorPlayerLabel, "RIGHT", 6, 0)
-editorPlayerEdit:SetSize(144, 22)
-editorPlayerEdit:SetAutoFocus(false)
-
-local editorGroupLabel = raidEditorSection:CreateFontString(
-    nil, "ARTWORK", "GameFontNormalSmall")
-editorGroupLabel:SetPoint("LEFT", editorPlayerEdit, "RIGHT", 10, 0)
-editorGroupLabel:SetText("Group")
-
-raidGroupsUI.editorGroupPrevButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
-raidGroupsUI.editorGroupPrevButton:SetPoint("LEFT", editorGroupLabel, "RIGHT", 6, 0)
-raidGroupsUI.editorGroupPrevButton:SetSize(24, 24)
-raidGroupsUI.editorGroupPrevButton:SetText("<")
-
-raidGroupsUI.editorGroupValueFrame = CreateFrame(
-    "Frame", nil, raidEditorSection,
-    BackdropTemplateMixin and "BackdropTemplate" or nil)
-raidGroupsUI.editorGroupValueFrame:SetPoint(
-    "LEFT", raidGroupsUI.editorGroupPrevButton, "RIGHT", 4, 0)
-raidGroupsUI.editorGroupValueFrame:SetSize(34, 22)
-SkinPanel(
-    raidGroupsUI.editorGroupValueFrame,
-    0.05, 0.08, 0.12, 0.96,
-    0.32, 0.41, 0.53, 0.92)
-
-raidGroupsUI.editorGroupValueText = raidGroupsUI.editorGroupValueFrame:CreateFontString(
-    nil, "OVERLAY", "GameFontNormalSmall")
-raidGroupsUI.editorGroupValueText:SetPoint("CENTER")
-raidGroupsUI.editorGroupValueText:SetText("1")
-
-raidGroupsUI.editorGroupNextButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
-raidGroupsUI.editorGroupNextButton:SetPoint(
-    "LEFT", raidGroupsUI.editorGroupValueFrame, "RIGHT", 4, 0)
-raidGroupsUI.editorGroupNextButton:SetSize(24, 24)
-raidGroupsUI.editorGroupNextButton:SetText(">")
-
-local editorAddPlayerButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate")
-editorAddPlayerButton:SetPoint("LEFT", raidGroupsUI.editorGroupNextButton, "RIGHT", 8, 0)
-editorAddPlayerButton:SetSize(54, 24)
-editorAddPlayerButton:SetText("Add")
-
-local newEmptyRaidLayoutButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
-)
-newEmptyRaidLayoutButton:SetSize(66, 24)
-newEmptyRaidLayoutButton:SetText("Empty")
-
-local newFromRaidLayoutButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
-)
-newFromRaidLayoutButton:SetSize(88, 24)
-newFromRaidLayoutButton:SetText("From Raid")
-
-local reorganizeRaidLayoutButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
-)
-reorganizeRaidLayoutButton:SetSize(96, 24)
-reorganizeRaidLayoutButton:SetText("Reorganize")
-
-local saveNewRaidLayoutButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
-)
-saveNewRaidLayoutButton:SetPoint("TOPRIGHT", raidEditorSection, "TOPRIGHT", -110, -74)
-saveNewRaidLayoutButton:SetSize(98, 24)
-saveNewRaidLayoutButton:SetText("Save New")
-
-local overwriteRaidLayoutButton = CreateFrame(
-    "Button", nil, raidEditorSection, "UIPanelButtonTemplate"
-)
-overwriteRaidLayoutButton:SetPoint("TOPRIGHT", raidEditorSection, "TOPRIGHT", -2, -74)
-overwriteRaidLayoutButton:SetSize(100, 24)
-overwriteRaidLayoutButton:SetText("Overwrite")
-
-saveNewRaidLayoutButton:ClearAllPoints()
-saveNewRaidLayoutButton:SetPoint("LEFT", newFromRaidLayoutButton, "RIGHT", 10, 0)
-
-overwriteRaidLayoutButton:ClearAllPoints()
-overwriteRaidLayoutButton:SetPoint("LEFT", saveNewRaidLayoutButton, "RIGHT", 10, 0)
-
-newEmptyRaidLayoutButton:ClearAllPoints()
-newEmptyRaidLayoutButton:SetPoint("TOPLEFT", raidEditorSection, "TOPLEFT", 10, -132)
-
-newFromRaidLayoutButton:ClearAllPoints()
-newFromRaidLayoutButton:SetPoint("LEFT", newEmptyRaidLayoutButton, "RIGHT", 10, 0)
-
-reorganizeRaidLayoutButton:ClearAllPoints()
-reorganizeRaidLayoutButton:SetPoint("LEFT", newFromRaidLayoutButton, "RIGHT", 10, 0)
-
-saveNewRaidLayoutButton:ClearAllPoints()
-saveNewRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
-
-local function CreateEditorGroupBox(groupIndex, x, y)
-    local groupFrame = CreateFrame(
-        "Frame", nil, raidEditorSection,
-        BackdropTemplateMixin and "BackdropTemplate" or nil
-    )
-    groupFrame:SetPoint("TOPLEFT", x, y)
-    groupFrame:SetSize(148, 118)
-    SkinPanel(
-        groupFrame,
-        0.07, 0.10, 0.14, 0.34,
-        0.22, 0.28, 0.36, 0.24)
-
-    local groupHeader = CreateFrame("Button", nil, groupFrame, "UIPanelButtonTemplate")
-    groupHeader:SetPoint("TOPLEFT", 4, -4)
-    groupHeader:SetSize(140, 20)
-    groupHeader:SetText("Group " .. tostring(groupIndex))
-    groupHeader._groupIndex = groupIndex
-    raidEditorGroupButtons[groupIndex] = groupHeader
-
-    raidEditorPlayerButtons[groupIndex] = {}
-    for slot = 1, 5 do
-        local btn = CreateFrame("Button", nil, groupFrame)
-        btn:SetPoint("TOPLEFT", 6, -10 - (slot * 15))
-        btn:SetSize(134, 14)
-        local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        txt:SetPoint("LEFT", 2, 0)
-        txt:SetJustifyH("LEFT")
-        txt:SetJustifyV("MIDDLE")
-        txt:SetWordWrap(false)
-        txt:SetWidth(130)
-        btn.Text = txt
-        btn._groupIndex = groupIndex
-        btn._slot = slot
-        raidEditorPlayerButtons[groupIndex][slot] = btn
-    end
-
-    local more = groupFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    more:SetPoint("BOTTOMLEFT", 6, 5)
-    more:SetJustifyH("LEFT")
-    more:SetText("")
-    raidEditorMoreText[groupIndex] = more
-end
-
-for groupIndex = 1, 8 do
-    local col = (groupIndex - 1) % 4
-    local row = math.floor((groupIndex - 1) / 4)
-    CreateEditorGroupBox(groupIndex, 10 + (col * 153), -190 - (row * 126))
-end
+raidImportUI = RequireBuilderFields("Raid Groups import", raidImportUI, {
+    "raidImportScroll",
+    "raidImportEdit",
+    "importRaidLayoutsButton",
+    "clearRaidImportButton",
+    "loadToEditorButton",
+})
+if not raidImportUI then return end
 
 -- ---- Checkboxes (bottom) ------------------------------------
 -- ---- Panel 7 - Raid Groups Settings ------------------------
-local p8 = raidSettingsPanel
+local raidGroupsSettingsBuilder = ARL.OptionsBuilders and ARL.OptionsBuilders.BuildRaidGroupsSettingsPanel
+if not raidGroupsSettingsBuilder then
+    Print("Raid Groups settings builder is unavailable; settings window is disabled.")
+    return
+end
 
-local raidGroupSettingsHeader = p8:CreateFontString(
-    nil, "ARTWORK", "GameFontNormal")
-raidGroupSettingsHeader:SetPoint("TOPLEFT", 8, -8)
-raidGroupSettingsHeader:SetText("Raid Group Settings")
+local raidGroupsSettingsUI = raidGroupsSettingsBuilder({
+    panel = raidSettingsPanel,
+    CreateCheckbox = CreateCheckbox,
+})
 
-local raidGroupSettingsHelp = p8:CreateFontString(
-    nil, "ARTWORK", "GameFontHighlightSmall")
-raidGroupSettingsHelp:SetPoint("TOPLEFT", 8, -28)
-raidGroupSettingsHelp:SetWidth(520)
-raidGroupSettingsHelp:SetJustifyH("LEFT")
-raidGroupSettingsHelp:SetText(
-    "These options control apply behavior for saved raid layouts.")
-
-local raidGroupAutoApplyOnJoinListCB = CreateCheckbox(p8,
-    "Auto-apply selected layout when a member joins",
-    "When enabled, the selected layout is re-applied"
-        .. " whenever a new raid member joins.",
-    8, -60)
-
-local raidGroupShowMissingNamesCB = CreateCheckbox(p8,
-    "Show names of missing players in apply output",
-    "When enabled, the apply completion message lists each"
-        .. " invited player that was not in the raid.",
-    8, -88)
-
-local raidGroupInviteMissingPlayersCB = CreateCheckbox(p8,
-    "Invite listed players not already in the raid on apply",
-    "When enabled, applying the selected raid layout also"
-        .. " invites listed players who are not already in"
-        .. " the group.",
-    8, -116)
+raidGroupsSettingsUI = RequireBuilderFields("Raid Groups settings", raidGroupsSettingsUI, {
+    "raidGroupAutoApplyOnJoinListCB",
+    "raidGroupShowMissingNamesCB",
+    "raidGroupInviteMissingPlayersCB",
+})
+if not raidGroupsSettingsUI then return end
 
 for _, cb in ipairs({
-    autoCB, reminderCB, notifyCB, notifySoundCB, quietCB,
-    groupRaidCB, groupPartyCB, groupGuildRaidCB, groupGuildPartyCB,
-    useGuildRankCB, consumableAuditCB,
-    deathTrackingCB, showRecapCB, showRecapOnAnyEndCB,
-    deathGroupRaidCB, deathGroupPartyCB, deathGroupGuildRaidCB, deathGroupGuildPartyCB,
-    raidGroupAutoApplyOnJoinListCB,
-    raidGroupShowMissingNamesCB,
-    raidGroupInviteMissingPlayersCB,
+    generalUI.autoCB, generalUI.reminderCB, generalUI.notifyCB, generalUI.notifySoundCB, generalUI.quietCB,
+    generalUI.groupRaidCB, generalUI.groupPartyCB, generalUI.groupGuildRaidCB, generalUI.groupGuildPartyCB,
+    guildRanksUI.useGuildRankCB, consumablesUI.consumableAuditCB,
+    deathsUI.deathTrackingCB, deathsUI.showRecapCB, deathsUI.showRecapOnAnyEndCB,
+    deathsUI.deathGroupRaidCB, deathsUI.deathGroupPartyCB,
+    deathsUI.deathGroupGuildRaidCB, deathsUI.deathGroupGuildPartyCB,
+    raidGroupsSettingsUI.raidGroupAutoApplyOnJoinListCB,
+    raidGroupsSettingsUI.raidGroupShowMissingNamesCB,
+    raidGroupsSettingsUI.raidGroupInviteMissingPlayersCB,
 }) do
     StyleCheckbox(cb)
 end
 
 for _, edit in ipairs({
-    nameEdit, rankNameEdit, catEdit, spellIdEdit,
+    leadersUI.nameEdit, guildRanksUI.rankNameEdit, consumablesUI.catEdit, consumablesUI.spellIdEdit,
     editorEncounterEdit, editorDifficultyEdit,
     editorNameEdit, editorPlayerEdit,
 }) do
@@ -1332,11 +783,17 @@ end
 
 for _, btn in ipairs({
     closeButton,
-    addButton, removeButton, clearButton, promoteButton, moveUpButton, moveDownButton,
-    addRankButton, removeRankButton, clearRanksButton, moveRankUpButton, moveRankDownButton, refreshGuildRanksButton,
-    addConsumableButton, removeSpellIdButton, deleteCatButton, clearConsumablesButton, runAuditButton,
-    openRecapButton,
-    importRaidLayoutsButton, clearRaidImportButton, loadToEditorButton, applyRaidLayoutButton,
+    leadersUI.addButton, leadersUI.removeButton, leadersUI.clearButton,
+    leadersUI.promoteButton, leadersUI.moveUpButton, leadersUI.moveDownButton,
+    guildRanksUI.addRankButton, guildRanksUI.removeRankButton,
+    guildRanksUI.clearRanksButton, guildRanksUI.moveRankUpButton,
+    guildRanksUI.moveRankDownButton, guildRanksUI.refreshGuildRanksButton,
+    consumablesUI.addConsumableButton, consumablesUI.removeSpellIdButton,
+    consumablesUI.deleteCatButton, consumablesUI.clearConsumablesButton,
+    consumablesUI.runAuditButton,
+    deathsUI.openRecapButton,
+    raidImportUI.importRaidLayoutsButton, raidImportUI.clearRaidImportButton,
+    raidImportUI.loadToEditorButton, applyRaidLayoutButton,
     deleteRaidLayoutButton, clearRaidLayoutsButton,
     loadSelectedToEditorButton,
     raidGroupsUI.editorGroupPrevButton, raidGroupsUI.editorGroupNextButton,
@@ -1347,7 +804,7 @@ for _, btn in ipairs({
     SkinActionButton(btn)
 end
 
-for _, btn in ipairs(guildRankButtons) do
+for _, btn in ipairs(guildRanksUI.guildRankButtons) do
     SkinActionButton(btn)
 end
 
@@ -1371,17 +828,17 @@ AttachButtonTooltip(
     "Deletes every saved raid layout and clears the current selection."
 )
 AttachButtonTooltip(
-    importRaidLayoutsButton,
+    raidImportUI.importRaidLayoutsButton,
     "Import Note",
     "Parses the text in the import box and adds or updates saved raid layouts from that note format."
 )
 AttachButtonTooltip(
-    clearRaidImportButton,
+    raidImportUI.clearRaidImportButton,
     "Clear Text",
     "Clears the import text box without changing any saved layouts."
 )
 AttachButtonTooltip(
-    loadToEditorButton,
+    raidImportUI.loadToEditorButton,
     "Load To Editor",
     "Parses the first layout found in the import text and opens it in the visual editor."
 )
@@ -1439,27 +896,27 @@ AttachButtonTooltip(
 
 local function RefreshListText()
     if not ARL.db then
-        listText:SetText("Waiting for saved variables to load...")
+        leadersUI.listText:SetText("Waiting for saved variables to load...")
         return
     end
     if #ARL.db.preferredLeaders == 0 then
-        listText:SetText("No preferred leaders configured. Add one below.")
+        leadersUI.listText:SetText("No preferred leaders configured. Add one below.")
         return
     end
     local lines = {}
     for i, name in ipairs(ARL.db.preferredLeaders) do
         lines[#lines + 1] = string.format("%d. %s", i, name)
     end
-    listText:SetText(table.concat(lines, "\n"))
+    leadersUI.listText:SetText(table.concat(lines, "\n"))
 end
 
 local function RefreshRankListText()
     if not ARL.db then
-        guildRankListText:SetText("Waiting for saved variables to load...")
+        guildRanksUI.guildRankListText:SetText("Waiting for saved variables to load...")
         return
     end
     if #ARL.db.guildRankPriority == 0 then
-        guildRankListText:SetText("No guild ranks configured. Add a rank name below.")
+        guildRanksUI.guildRankListText:SetText("No guild ranks configured. Add a rank name below.")
         return
     end
     local lines = {}
@@ -1467,15 +924,15 @@ local function RefreshRankListText()
         local name = type(entry) == "table" and entry.name or tostring(entry)
         lines[#lines + 1] = string.format("%d. %s", i, name)
     end
-    guildRankListText:SetText(table.concat(lines, "\n"))
+    guildRanksUI.guildRankListText:SetText(table.concat(lines, "\n"))
 end
 
 local function RefreshGuildRankButtons()
-    for _, btn in ipairs(guildRankButtons) do btn:Hide() end
-    noGuildRanksText:Hide()
+    for _, btn in ipairs(guildRanksUI.guildRankButtons) do btn:Hide() end
+    guildRanksUI.noGuildRanksText:Hide()
     if not IsInGuild() then
-        noGuildRanksText:SetText("Not in a guild.")
-        noGuildRanksText:Show()
+        guildRanksUI.noGuildRanksText:SetText("Not in a guild.")
+        guildRanksUI.noGuildRanksText:Show()
         return
     end
     if C_GuildInfo and C_GuildInfo.GuildRoster then
@@ -1483,23 +940,23 @@ local function RefreshGuildRankButtons()
     end
     local numRanks = GuildControlGetNumRanks()
     if numRanks == 0 then
-        noGuildRanksText:SetText("Guild data not yet loaded. Click Refresh.")
-        noGuildRanksText:Show()
+        guildRanksUI.noGuildRanksText:SetText("Guild data not yet loaded. Click Refresh.")
+        guildRanksUI.noGuildRanksText:Show()
         return
     end
-    for i = 1, math.min(numRanks, MAX_RANK_BUTTONS) do
+    for i = 1, math.min(numRanks, #guildRanksUI.guildRankButtons) do
         local rankName = GuildControlGetRankName(i)
         if rankName and rankName ~= "" then
-            guildRankButtons[i]:SetText(rankName)
-            guildRankButtons[i]._rankIndex = i
-            guildRankButtons[i]:Show()
+            guildRanksUI.guildRankButtons[i]:SetText(rankName)
+            guildRanksUI.guildRankButtons[i]._rankIndex = i
+            guildRanksUI.guildRankButtons[i]:Show()
         end
     end
 end
 
 local function RefreshConsumableListText()
     if not ARL.db then
-        consumableListText:SetText("Waiting for saved variables to load...")
+        consumablesUI.consumableListText:SetText("Waiting for saved variables to load...")
         return
     end
     local lines = {}
@@ -1536,7 +993,7 @@ local function RefreshConsumableListText()
     else
         lines[#lines + 1] = "  No custom categories. Add one below."
     end
-    consumableListText:SetText(table.concat(lines, "\n"))
+    consumablesUI.consumableListText:SetText(table.concat(lines, "\n"))
 end
 
 local function ResetRaidEditorState()
@@ -1843,14 +1300,20 @@ local function LoadEditorFromCurrentRaid()
 
     local seen = {}
     for raidIndex = 1, MAX_RAID_MEMBERS do
-        local name, _, subgroup = GetRaidRosterInfo(raidIndex)
-        local cleanName = Normalize(name)
-        if cleanName ~= "" then
-            local key = cleanName:lower()
-            if not seen[key] then
-                seen[key] = true
-                local targetGroup = math.max(1, math.min(8, tonumber(subgroup) or 1))
-                raidEditorState.groups[targetGroup][#raidEditorState.groups[targetGroup] + 1] = cleanName
+        local unit = "raid" .. raidIndex
+        if UnitExists(unit) then
+            local name, realm = UnitName(unit)
+            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
+            local cleanName = Normalize(fullName)
+            if cleanName ~= "" then
+                local rosterIndex = UnitInRaid and UnitInRaid(unit) or raidIndex
+                local subgroup = math.floor(((tonumber(rosterIndex) or raidIndex) - 1) / 5) + 1
+                local key = cleanName:lower()
+                if not seen[key] then
+                    seen[key] = true
+                    local targetGroup = math.max(1, math.min(8, tonumber(subgroup) or 1))
+                    raidEditorState.groups[targetGroup][#raidEditorState.groups[targetGroup] + 1] = cleanName
+                end
             end
         end
     end
@@ -1862,6 +1325,47 @@ local function LoadEditorFromCurrentRaid()
     return true
 end
 
+local function BuildRosterColorLookup()
+    local lookup = {}
+    local function ResolveRole(unit)
+        local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
+        if assigned ~= "NONE" then return assigned end
+        -- Fallback: derive role from the unit's current specialization.
+        -- GetInspectSpecialization returns cached spec data for group members
+        -- without requiring an explicit NotifyInspect call in modern clients.
+        local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
+        if specID and specID > 0 and GetSpecializationInfoByID then
+            local _, _, _, _, _, _, role = GetSpecializationInfoByID(specID)
+            if role and role ~= "" then return role end
+        end
+        return "NONE"
+    end
+
+    local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
+    for i = 1, numMembers do
+        local unit = "raid" .. i
+        local name, realm = UnitName(unit)
+        if name then
+            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
+            local _, classToken = UnitClass(unit)
+            local role = ResolveRole(unit)
+            local info = { classToken = classToken, role = role }
+            lookup[fullName] = info
+            lookup[name] = info
+        end
+    end
+    local selfName, selfRealm = UnitName("player")
+    if selfName then
+        local fullSelf = (selfRealm and selfRealm ~= "") and (selfName .. "-" .. selfRealm) or selfName
+        local _, classToken = UnitClass("player")
+        local role = ResolveRole("player")
+        local info = { classToken = classToken, role = role }
+        lookup[fullSelf] = info
+        lookup[selfName] = info
+    end
+    return lookup
+end
+
 local function RefreshRaidEditorBoard()
     editorEncounterEdit:SetText(tostring(raidEditorState.encounterID or 0))
     local displayDifficulty = ARL.FormatRaidDifficultyDisplay
@@ -1870,6 +1374,8 @@ local function RefreshRaidEditorBoard()
     editorDifficultyEdit:SetText(tostring(displayDifficulty))
     editorNameEdit:SetText(tostring(raidEditorState.name or ""))
     raidGroupsUI.editorGroupValueText:SetText(tostring(raidEditorTargetGroup))
+
+    local rosterColors = BuildRosterColorLookup()
 
     for groupIndex = 1, 8 do
         local groupList = raidEditorState.groups[groupIndex] or {}
@@ -1895,16 +1401,43 @@ local function RefreshRaidEditorBoard()
             btn._playerName = name
             if name then
                 btn.Text:SetText(ShortName(name))
-                if raidEditorDrag
+                local isDragging = raidEditorDrag
                     and raidEditorDrag.name == name
                     and raidEditorDrag.fromGroup == groupIndex
-                then
+                if isDragging then
                     btn.Text:SetTextColor(0.95, 0.81, 0.24)
+                    if btn.RoleIcon then btn.RoleIcon:Hide() end
                 else
-                    btn.Text:SetTextColor(0.90, 0.92, 0.96)
+                    local info = rosterColors[name] or rosterColors[ShortName(name)]
+                    if info and info.classToken then
+                        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[info.classToken]
+                        if cc then
+                            btn.Text:SetTextColor(cc.r, cc.g, cc.b)
+                        else
+                            btn.Text:SetTextColor(0.90, 0.92, 0.96)
+                        end
+                        local atlas
+                        if info.role == "TANK" then
+                            atlas = "roleicon-tank"
+                        elseif info.role == "HEALER" then
+                            atlas = "roleicon-healer"
+                        elseif info.role == "DAMAGER" then
+                            atlas = "roleicon-dps"
+                        end
+                        if btn.RoleIcon and atlas then
+                            btn.RoleIcon:SetAtlas(atlas, false)
+                            btn.RoleIcon:Show()
+                        elseif btn.RoleIcon then
+                            btn.RoleIcon:Hide()
+                        end
+                    else
+                        btn.Text:SetTextColor(0.90, 0.92, 0.96)
+                        if btn.RoleIcon then btn.RoleIcon:Hide() end
+                    end
                 end
                 btn:Show()
             else
+                if btn.RoleIcon then btn.RoleIcon:Hide() end
                 btn:Hide()
             end
         end
@@ -2142,35 +1675,35 @@ local function RefreshUI()
 
     updating = true
 
-    autoCB:SetChecked(ARL.db.autoPromote)
-    reminderCB:SetChecked(ARL.db.reminderEnabled)
-    notifyCB:SetChecked(ARL.db.notifyEnabled)
-    notifySoundCB:SetChecked(ARL.db.notifySound)
-    quietCB:SetChecked(ARL.db.quietMode)
+    generalUI.autoCB:SetChecked(ARL.db.autoPromote)
+    generalUI.reminderCB:SetChecked(ARL.db.reminderEnabled)
+    generalUI.notifyCB:SetChecked(ARL.db.notifyEnabled)
+    generalUI.notifySoundCB:SetChecked(ARL.db.notifySound)
+    generalUI.quietCB:SetChecked(ARL.db.quietMode)
 
     local filter = ARL.db.groupTypeFilter or "all"
     local ft = type(filter) == "table" and filter or {}
-    groupRaidCB:SetChecked(ft.raid and true or false)
-    groupPartyCB:SetChecked(ft.party and true or false)
-    groupGuildRaidCB:SetChecked(ft.guild_raid and true or false)
-    groupGuildPartyCB:SetChecked(ft.guild_party and true or false)
+    generalUI.groupRaidCB:SetChecked(ft.raid and true or false)
+    generalUI.groupPartyCB:SetChecked(ft.party and true or false)
+    generalUI.groupGuildRaidCB:SetChecked(ft.guild_raid and true or false)
+    generalUI.groupGuildPartyCB:SetChecked(ft.guild_party and true or false)
 
-    useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
-    consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
-    deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
-    showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
-    showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
+    guildRanksUI.useGuildRankCB:SetChecked(ARL.db.useGuildRankPriority)
+    consumablesUI.consumableAuditCB:SetChecked(ARL.db.consumableAuditEnabled)
+    deathsUI.deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
+    deathsUI.showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
+    deathsUI.showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
 
     local deathFilter = ARL.db.deathGroupTypeFilter or "raid"
     local dft = type(deathFilter) == "table" and deathFilter or {}
-    deathGroupRaidCB:SetChecked(dft.raid and true or false)
-    deathGroupPartyCB:SetChecked(dft.party and true or false)
-    deathGroupGuildRaidCB:SetChecked(dft.guild_raid and true or false)
-    deathGroupGuildPartyCB:SetChecked(dft.guild_party and true or false)
+    deathsUI.deathGroupRaidCB:SetChecked(dft.raid and true or false)
+    deathsUI.deathGroupPartyCB:SetChecked(dft.party and true or false)
+    deathsUI.deathGroupGuildRaidCB:SetChecked(dft.guild_raid and true or false)
+    deathsUI.deathGroupGuildPartyCB:SetChecked(dft.guild_party and true or false)
 
-    raidGroupAutoApplyOnJoinListCB:SetChecked(ARL.db.raidGroupAutoApplyOnJoin == true)
-    raidGroupShowMissingNamesCB:SetChecked(ARL.db.raidGroupShowMissingNames ~= false)
-    raidGroupInviteMissingPlayersCB:SetChecked(ARL.db.raidGroupInviteMissingPlayers == true)
+    raidGroupsSettingsUI.raidGroupAutoApplyOnJoinListCB:SetChecked(ARL.db.raidGroupAutoApplyOnJoin == true)
+    raidGroupsSettingsUI.raidGroupShowMissingNamesCB:SetChecked(ARL.db.raidGroupShowMissingNames ~= false)
+    raidGroupsSettingsUI.raidGroupInviteMissingPlayersCB:SetChecked(ARL.db.raidGroupInviteMissingPlayers == true)
 
     RefreshListText()
     RefreshRankListText()
@@ -2185,7 +1718,7 @@ end
 -- Tab 1 – General: handlers
 -- ============================================================
 
-autoCB:SetScript("OnClick", function(self)
+generalUI.autoCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.autoPromote = self:GetChecked() and true or false
     Print(string.format("Auto-promote |cff%s%s|r.",
@@ -2193,7 +1726,7 @@ autoCB:SetScript("OnClick", function(self)
         ARL.db.autoPromote and "enabled" or "disabled"))
 end)
 
-reminderCB:SetScript("OnClick", function(self)
+generalUI.reminderCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.reminderEnabled = self:GetChecked() and true or false
     if not ARL.db.reminderEnabled and ARL.CancelReminder then ARL:CancelReminder() end
@@ -2202,7 +1735,7 @@ reminderCB:SetScript("OnClick", function(self)
         ARL.db.reminderEnabled and "enabled" or "disabled"))
 end)
 
-notifyCB:SetScript("OnClick", function(self)
+generalUI.notifyCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.notifyEnabled = self:GetChecked() and true or false
     if not ARL.db.notifyEnabled and ARL.HideManualPromotePopup then ARL:HideManualPromotePopup() end
@@ -2211,7 +1744,7 @@ notifyCB:SetScript("OnClick", function(self)
         ARL.db.notifyEnabled and "enabled" or "disabled"))
 end)
 
-notifySoundCB:SetScript("OnClick", function(self)
+generalUI.notifySoundCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.notifySound = self:GetChecked() and true or false
     Print(string.format("Manual-promote popup sound |cff%s%s|r.",
@@ -2219,7 +1752,7 @@ notifySoundCB:SetScript("OnClick", function(self)
         ARL.db.notifySound and "enabled" or "disabled"))
 end)
 
-quietCB:SetScript("OnClick", function(self)
+generalUI.quietCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.quietMode = self:GetChecked() and true or false
     if ARL.db.quietMode then
@@ -2239,18 +1772,26 @@ local function SetGroupTypeFilter(filter)
         FLBL[filter] or filter, en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
 end
 
-groupRaidCB:SetScript("OnClick",      function() if not updating then SetGroupTypeFilter("raid")        end end)
-groupPartyCB:SetScript("OnClick",     function() if not updating then SetGroupTypeFilter("party")       end end)
-groupGuildRaidCB:SetScript("OnClick", function() if not updating then SetGroupTypeFilter("guild_raid")  end end)
-groupGuildPartyCB:SetScript("OnClick",function() if not updating then SetGroupTypeFilter("guild_party") end end)
+generalUI.groupRaidCB:SetScript("OnClick", function()
+    if not updating then SetGroupTypeFilter("raid") end
+end)
+generalUI.groupPartyCB:SetScript("OnClick", function()
+    if not updating then SetGroupTypeFilter("party") end
+end)
+generalUI.groupGuildRaidCB:SetScript("OnClick", function()
+    if not updating then SetGroupTypeFilter("guild_raid") end
+end)
+generalUI.groupGuildPartyCB:SetScript("OnClick", function()
+    if not updating then SetGroupTypeFilter("guild_party") end
+end)
 
 -- ============================================================
 -- Tab 2 – Leaders: handlers
 -- ============================================================
 
-addButton:SetScript("OnClick", function()
+leadersUI.addButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local name = Normalize(nameEdit:GetText())
+    local name = Normalize(leadersUI.nameEdit:GetText())
     if name == "" then return end
     for _, existing in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(existing, name) then
@@ -2259,19 +1800,19 @@ addButton:SetScript("OnClick", function()
         end
     end
     table.insert(ARL.db.preferredLeaders, name)
-    nameEdit:SetText("")
+    leadersUI.nameEdit:SetText("")
     RefreshListText()
     Print(string.format("Added |cffffd100%s|r to the preferred leaders list.", name))
 end)
 
-removeButton:SetScript("OnClick", function()
+leadersUI.removeButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local name = Normalize(nameEdit:GetText())
+    local name = Normalize(leadersUI.nameEdit:GetText())
     if name == "" then Print("Enter a character name to remove.") return end
     for i, existing in ipairs(ARL.db.preferredLeaders) do
         if NamesMatch(existing, name) then
             table.remove(ARL.db.preferredLeaders, i)
-            nameEdit:SetText("")
+            leadersUI.nameEdit:SetText("")
             RefreshListText()
             Print(string.format("Removed |cffffd100%s|r from the preferred leaders list.", existing))
             return
@@ -2280,7 +1821,7 @@ removeButton:SetScript("OnClick", function()
     Print(string.format("|cffffd100%s|r was not found in the preferred leaders list.", name))
 end)
 
-clearButton:SetScript("OnClick", function()
+leadersUI.clearButton:SetScript("OnClick", function()
     if not ARL.db then return end
     ARL.db.preferredLeaders = {}
     if ARL.CancelReminder then ARL:CancelReminder() end
@@ -2289,15 +1830,15 @@ clearButton:SetScript("OnClick", function()
     Print("Cleared the preferred leaders list.")
 end)
 
-promoteButton:SetScript("OnClick", function()
+leadersUI.promoteButton:SetScript("OnClick", function()
     if SlashCmdList and SlashCmdList["ASTRALRAIDLEADER"] then
         SlashCmdList["ASTRALRAIDLEADER"]("promote")
     end
 end)
 
-moveUpButton:SetScript("OnClick", function()
+leadersUI.moveUpButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local name = Normalize(nameEdit:GetText())
+    local name = Normalize(leadersUI.nameEdit:GetText())
     if name == "" then Print("Enter a character name to move.") return end
     local foundAt = nil
     for i, n in ipairs(ARL.db.preferredLeaders) do
@@ -2317,9 +1858,9 @@ moveUpButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt - 1))
 end)
 
-moveDownButton:SetScript("OnClick", function()
+leadersUI.moveDownButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local name = Normalize(nameEdit:GetText())
+    local name = Normalize(leadersUI.nameEdit:GetText())
     if name == "" then Print("Enter a character name to move.") return end
     local foundAt = nil
     for i, n in ipairs(ARL.db.preferredLeaders) do
@@ -2339,13 +1880,13 @@ moveDownButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entry, foundAt + 1))
 end)
 
-nameEdit:SetScript("OnEnterPressed", function() addButton:Click() end)
+leadersUI.nameEdit:SetScript("OnEnterPressed", function() leadersUI.addButton:Click() end)
 
 -- ============================================================
 -- Tab 3 – Guild Ranks: handlers
 -- ============================================================
 
-useGuildRankCB:SetScript("OnClick", function(self)
+guildRanksUI.useGuildRankCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.useGuildRankPriority = self:GetChecked() and true or false
     Print(string.format("Guild rank priority |cff%s%s|r.",
@@ -2353,9 +1894,9 @@ useGuildRankCB:SetScript("OnClick", function(self)
         ARL.db.useGuildRankPriority and "enabled" or "disabled"))
 end)
 
-addRankButton:SetScript("OnClick", function()
+guildRanksUI.addRankButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local rank = Normalize(rankNameEdit:GetText())
+    local rank = Normalize(guildRanksUI.rankNameEdit:GetText())
     if rank == "" then return end
     -- Resolve rank index for unambiguous storage when duplicate rank names exist.
     local rankIndex = 0
@@ -2379,20 +1920,20 @@ addRankButton:SetScript("OnClick", function()
         end
     end
     table.insert(ARL.db.guildRankPriority, { name = rank, rankIndex = rankIndex })
-    rankNameEdit:SetText("")
+    guildRanksUI.rankNameEdit:SetText("")
     RefreshRankListText()
     Print(string.format("Added |cffffd100%s|r to the guild rank priority list.", rank))
 end)
 
-removeRankButton:SetScript("OnClick", function()
+guildRanksUI.removeRankButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local rank = Normalize(rankNameEdit:GetText())
+    local rank = Normalize(guildRanksUI.rankNameEdit:GetText())
     if rank == "" then Print("Enter a guild rank name to remove.") return end
     for i, existing in ipairs(ARL.db.guildRankPriority) do
         local existingName = type(existing) == "table" and existing.name or tostring(existing)
         if existingName:lower() == rank:lower() then
             table.remove(ARL.db.guildRankPriority, i)
-            rankNameEdit:SetText("")
+            guildRanksUI.rankNameEdit:SetText("")
             RefreshRankListText()
             Print(string.format("Removed |cffffd100%s|r from the guild rank priority list.", existingName))
             return
@@ -2401,16 +1942,16 @@ removeRankButton:SetScript("OnClick", function()
     Print(string.format("|cffffd100%s|r was not found in the guild rank priority list.", rank))
 end)
 
-clearRanksButton:SetScript("OnClick", function()
+guildRanksUI.clearRanksButton:SetScript("OnClick", function()
     if not ARL.db then return end
     ARL.db.guildRankPriority = {}
     RefreshRankListText()
     Print("Cleared the guild rank priority list.")
 end)
 
-moveRankUpButton:SetScript("OnClick", function()
+guildRanksUI.moveRankUpButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local rank = Normalize(rankNameEdit:GetText())
+    local rank = Normalize(guildRanksUI.rankNameEdit:GetText())
     if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
@@ -2434,9 +1975,9 @@ moveRankUpButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, foundAt - 1))
 end)
 
-moveRankDownButton:SetScript("OnClick", function()
+guildRanksUI.moveRankDownButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local rank = Normalize(rankNameEdit:GetText())
+    local rank = Normalize(guildRanksUI.rankNameEdit:GetText())
     if rank == "" then Print("Enter a guild rank name to move.") return end
     local foundAt = nil
     for i, r in ipairs(ARL.db.guildRankPriority) do
@@ -2460,13 +2001,15 @@ moveRankDownButton:SetScript("OnClick", function()
     Print(string.format("Moved |cffffd100%s|r to position %d.", entryName, foundAt + 1))
 end)
 
-rankNameEdit:SetScript("OnEnterPressed", function() addRankButton:Click() end)
+guildRanksUI.rankNameEdit:SetScript("OnEnterPressed", function()
+    guildRanksUI.addRankButton:Click()
+end)
 
-refreshGuildRanksButton:SetScript("OnClick", function()
+guildRanksUI.refreshGuildRanksButton:SetScript("OnClick", function()
     RefreshGuildRankButtons()
 end)
 
-for _, btn in ipairs(guildRankButtons) do
+for _, btn in ipairs(guildRanksUI.guildRankButtons) do
     btn:SetScript("OnClick", function(self)
         if not ARL.db then return end
         local rank = self:GetText()
@@ -2492,7 +2035,7 @@ end
 -- Tab 4 – Consumables: handlers
 -- ============================================================
 
-consumableAuditCB:SetScript("OnClick", function(self)
+consumablesUI.consumableAuditCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.consumableAuditEnabled = self:GetChecked() and true or false
     Print(string.format("Consumable audit on ready check |cff%s%s|r.",
@@ -2502,10 +2045,10 @@ end)
 
 local FindConsumableCategory = ARL.FindConsumableCategory
 
-addConsumableButton:SetScript("OnClick", function()
+consumablesUI.addConsumableButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local label   = Normalize(catEdit:GetText())
-    local spellId = tonumber(spellIdEdit:GetText())
+    local label   = Normalize(consumablesUI.catEdit:GetText())
+    local spellId = tonumber(consumablesUI.spellIdEdit:GetText())
     if label == "" then Print("Enter a category name.") return end
     if not spellId or spellId < 1 then Print("Enter a valid spell ID.") return end
     local _, cat, isSystem = FindConsumableCategory(label)
@@ -2526,14 +2069,14 @@ addConsumableButton:SetScript("OnClick", function()
         table.insert(ARL.db.trackedConsumables, { label = label, spellIds = { spellId } })
         Print(string.format("Created category |cffffd100%s|r with spell ID %d.", label, spellId))
     end
-    spellIdEdit:SetText("")
+    consumablesUI.spellIdEdit:SetText("")
     RefreshConsumableListText()
 end)
 
-removeSpellIdButton:SetScript("OnClick", function()
+consumablesUI.removeSpellIdButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local label   = Normalize(catEdit:GetText())
-    local spellId = tonumber(spellIdEdit:GetText())
+    local label   = Normalize(consumablesUI.catEdit:GetText())
+    local spellId = tonumber(consumablesUI.spellIdEdit:GetText())
     if label == "" then Print("Enter a category name.") return end
     if not spellId or spellId < 1 then Print("Enter a valid spell ID.") return end
     local idx, cat, isSystem = FindConsumableCategory(label)
@@ -2550,7 +2093,7 @@ removeSpellIdButton:SetScript("OnClick", function()
                 table.remove(ARL.db.trackedConsumables, idx)
                 Print(string.format("Category |cffffd100%s|r deleted (no spell IDs remaining).", cat.label))
             end
-            spellIdEdit:SetText("")
+            consumablesUI.spellIdEdit:SetText("")
             RefreshConsumableListText()
             return
         end
@@ -2558,9 +2101,9 @@ removeSpellIdButton:SetScript("OnClick", function()
     Print(string.format("Spell ID %d was not found in |cffffd100%s|r.", spellId, cat.label))
 end)
 
-deleteCatButton:SetScript("OnClick", function()
+consumablesUI.deleteCatButton:SetScript("OnClick", function()
     if not ARL.db then return end
-    local label = Normalize(catEdit:GetText())
+    local label = Normalize(consumablesUI.catEdit:GetText())
     if label == "" then Print("Enter a category name to delete.") return end
     local idx, cat, isSystem = FindConsumableCategory(label)
     if not cat then Print(string.format("Category |cffffd100%s|r not found.", label)) return end
@@ -2569,30 +2112,34 @@ deleteCatButton:SetScript("OnClick", function()
         return
     end
     table.remove(ARL.db.trackedConsumables, idx)
-    catEdit:SetText("")
+    consumablesUI.catEdit:SetText("")
     RefreshConsumableListText()
     Print(string.format("Deleted category |cffffd100%s|r.", cat.label))
 end)
 
-clearConsumablesButton:SetScript("OnClick", function()
+consumablesUI.clearConsumablesButton:SetScript("OnClick", function()
     if not ARL.db then return end
     ARL.db.trackedConsumables = {}
     RefreshConsumableListText()
     Print("Cleared all custom consumable categories.")
 end)
 
-runAuditButton:SetScript("OnClick", function()
+consumablesUI.runAuditButton:SetScript("OnClick", function()
     if ARL.RunConsumableAudit then ARL.RunConsumableAudit(true) end
 end)
 
-catEdit:SetScript("OnEnterPressed",    function() spellIdEdit:SetFocus() end)
-spellIdEdit:SetScript("OnEnterPressed", function() addConsumableButton:Click() end)
+consumablesUI.catEdit:SetScript("OnEnterPressed", function()
+    consumablesUI.spellIdEdit:SetFocus()
+end)
+consumablesUI.spellIdEdit:SetScript("OnEnterPressed", function()
+    consumablesUI.addConsumableButton:Click()
+end)
 
 -- ============================================================
 -- Tab 5 - Deaths: handlers
 -- ============================================================
 
-deathTrackingCB:SetScript("OnClick", function(self)
+deathsUI.deathTrackingCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.deathTrackingEnabled = self:GetChecked() and true or false
     Print(string.format("Death tracking |cff%s%s|r.",
@@ -2600,7 +2147,7 @@ deathTrackingCB:SetScript("OnClick", function(self)
         ARL.db.deathTrackingEnabled and "enabled" or "disabled"))
 end)
 
-showRecapCB:SetScript("OnClick", function(self)
+deathsUI.showRecapCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.showRecapOnWipe = self:GetChecked() and true or false
     Print(string.format("Auto-open death recap on wipe |cff%s%s|r.",
@@ -2608,13 +2155,13 @@ showRecapCB:SetScript("OnClick", function(self)
         ARL.db.showRecapOnWipe and "enabled" or "disabled"))
 end)
 
-    showRecapOnAnyEndCB:SetScript("OnClick", function(self)
-        if updating or not ARL.db then return end
-        ARL.db.showRecapOnEncounterEnd = self:GetChecked() and true or false
-        Print(string.format("Auto-open death recap on encounter kill |cff%s%s|r.",
+deathsUI.showRecapOnAnyEndCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.showRecapOnEncounterEnd = self:GetChecked() and true or false
+    Print(string.format("Auto-open death recap on encounter kill |cff%s%s|r.",
         ARL.db.showRecapOnEncounterEnd and "00ff00" or "ff0000",
         ARL.db.showRecapOnEncounterEnd and "enabled" or "disabled"))
-    end)
+end)
 
 local function SetDeathGroupTypeFilter(filter)
     if not ARL.db then return end
@@ -2626,20 +2173,20 @@ local function SetDeathGroupTypeFilter(filter)
         FLBL[filter] or filter, en and "00ff00" or "ff0000", en and "enabled" or "disabled"))
 end
 
-deathGroupRaidCB:SetScript("OnClick", function()
+deathsUI.deathGroupRaidCB:SetScript("OnClick", function()
     if not updating then SetDeathGroupTypeFilter("raid") end
 end)
-deathGroupPartyCB:SetScript("OnClick", function()
+deathsUI.deathGroupPartyCB:SetScript("OnClick", function()
     if not updating then SetDeathGroupTypeFilter("party") end
 end)
-deathGroupGuildRaidCB:SetScript("OnClick", function()
+deathsUI.deathGroupGuildRaidCB:SetScript("OnClick", function()
     if not updating then SetDeathGroupTypeFilter("guild_raid") end
 end)
-deathGroupGuildPartyCB:SetScript("OnClick", function()
+deathsUI.deathGroupGuildPartyCB:SetScript("OnClick", function()
     if not updating then SetDeathGroupTypeFilter("guild_party") end
 end)
 
-openRecapButton:SetScript("OnClick", function()
+deathsUI.openRecapButton:SetScript("OnClick", function()
     if ARL.ShowDeathRecap then
         ARL:ShowDeathRecap()
     else
@@ -2651,393 +2198,50 @@ end)
 -- Tab 6 - Raid Groups: handlers
 -- ============================================================
 
-local function SetRaidLayoutImportText(text)
-    raidImportEdit:SetText(text or "")
-    raidImportEdit:ClearFocus()
-    raidImportScroll:UpdateScrollChildRect()
-    raidImportScroll:SetVerticalScroll(0)
+local raidGroupsLogicBinder = ARL.OptionsBuilders and ARL.OptionsBuilders.BindRaidGroupsLogic
+if not raidGroupsLogicBinder then
+    Print("Raid Groups logic binder is unavailable; settings window is disabled.")
+    return
 end
 
-local function SaveEditedRaidLayout(options)
-    if not ARL.SaveRaidLayoutProfileData then
-        Print("Raid layout save is not available yet. Try again in a moment.")
-        return false
-    end
+raidGroupsLogicBinder({
+    Print = Print,
+    Normalize = Normalize,
+    BuildProfileFromEditorState = BuildProfileFromEditorState,
+    LoadEditorFromProfile = LoadEditorFromProfile,
+    RefreshRaidEditorBoard = RefreshRaidEditorBoard,
+    RefreshRaidLayoutUI = RefreshRaidLayoutUI,
+    LoadEditorFromImportText = LoadEditorFromImportText,
+    LoadEditorFromCurrentRaid = LoadEditorFromCurrentRaid,
+    ReorganizeRaidEditorGroups = ReorganizeRaidEditorGroups,
+    GetEditorTargetGroup = GetEditorTargetGroup,
+    RemoveEditorPlayer = RemoveEditorPlayer,
+    SelectSubTab = SelectSubTab,
 
-    local profile = BuildProfileFromEditorState()
-    local ok, result = ARL.SaveRaidLayoutProfileData(profile, options)
-    if not ok then
-        Print(result)
-        return false
-    end
+    raidImportUI = raidImportUI,
+    raidGroupsSettingsUI = raidGroupsSettingsUI,
+    loadSelectedToEditorButton = loadSelectedToEditorButton,
+    editorAddPlayerButton = editorAddPlayerButton,
+    editorPlayerEdit = editorPlayerEdit,
+    editorEncounterEdit = editorEncounterEdit,
+    editorDifficultyEdit = editorDifficultyEdit,
+    editorNameEdit = editorNameEdit,
+    applyRaidLayoutButton = applyRaidLayoutButton,
+    deleteRaidLayoutButton = deleteRaidLayoutButton,
+    clearRaidLayoutsButton = clearRaidLayoutsButton,
+    newEmptyRaidLayoutButton = newEmptyRaidLayoutButton,
+    newFromRaidLayoutButton = newFromRaidLayoutButton,
+    reorganizeRaidLayoutButton = reorganizeRaidLayoutButton,
+    saveNewRaidLayoutButton = saveNewRaidLayoutButton,
+    overwriteRaidLayoutButton = overwriteRaidLayoutButton,
 
-    if result and result.profile then
-        LoadEditorFromProfile(result.profile)
-        raidEditorLoadedKey = result.profile.key
-        raidEditorHasDraft = false
-    end
-
-    RefreshRaidLayoutUI()
-    local label = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result.profile)
-        or (result.profile and result.profile.name or "Unknown")
-    if result.overwritten then
-        Print(string.format("Overwrote raid layout |cffffd100%s|r.", label))
-    else
-        Print(string.format("Saved new raid layout |cffffd100%s|r.", label))
-    end
-    return true
-end
-
-if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_OVERWRITE_LAYOUT"] then
-    _G.StaticPopupDialogs["ASTRALRAIDLEADER_OVERWRITE_LAYOUT"] = {
-        text = "Overwrite selected raid layout |cffffd100%s|r?",
-        button1 = "Overwrite",
-        button2 = "Cancel",
-        OnAccept = function(_, data)
-            if not data or not data.targetKey then return end
-            local ok = SaveEditedRaidLayout({ overwrite = true, targetKey = data.targetKey })
-            if ok and data.afterSave and type(data.afterSave) == "function" then
-                data.afterSave()
-            end
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-end
-
-if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM"] then
-    _G.StaticPopupDialogs["ASTRALRAIDLEADER_SWITCH_LAYOUT_CONFIRM"] = {
-        text = "Discard changes to current draft and switch to |cffffd100%s|r?",
-        button1 = "Discard and Switch",
-        button2 = "Cancel",
-        OnAccept = function(_, data)
-            if not data then return end
-            local layoutKey = data.layoutKey
-            if layoutKey == "" then
-                ARL.db.activeRaidLayoutKey = ""
-                raidEditorLoadedKey = nil
-                raidEditorHasDraft = false
-                RefreshRaidLayoutUI()
-                Print("Cleared selected raid layout.")
-                return
-            end
-            if not ARL.SetActiveRaidLayoutByQuery then return end
-            local ok, result = ARL.SetActiveRaidLayoutByQuery(layoutKey)
-            if not ok then
-                Print(result)
-                return
-            end
-            raidEditorLoadedKey = nil
-            raidEditorHasDraft = false
-            RefreshRaidLayoutUI()
-            Print(string.format(
-                "Switched to raid layout |cffffd100%s|r.",
-                ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
-            ))
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-end
-
-if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT"] then
-    _G.StaticPopupDialogs["ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT"] = {
-        text = "Discard the current draft and reload |cffffd100%s|r from saved layouts?",
-        button1 = "Reset Draft",
-        button2 = "Cancel",
-        OnAccept = function(_, data)
-            if not data or not data.profile then return end
-            LoadEditorFromProfile(data.profile)
-            RefreshRaidEditorBoard()
-            Print("Draft reset to the saved raid layout.")
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-end
-
-loadSelectedToEditorButton:SetScript("OnClick", function()
-    if not ARL.GetActiveRaidLayoutProfile then
-        Print("Raid layout selection is not available yet. Try again in a moment.")
-        return
-    end
-    local active = ARL.GetActiveRaidLayoutProfile()
-    if not active then
-        Print("Select a saved raid layout to load into the editor.")
-        return
-    end
-    local label = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(active)
-        or (active.name or "Unknown")
-
-    if raidEditorHasDraft and _G.StaticPopup_Show then
-        _G.StaticPopup_Show(
-            "ASTRALRAIDLEADER_RESET_LAYOUT_DRAFT",
-            label,
-            nil,
-            { profile = active }
-        )
-        return
-    end
-
-    LoadEditorFromProfile(active)
-    RefreshRaidEditorBoard()
-    Print("Loaded the saved raid layout into the draft editor.")
-end)
-
-editorAddPlayerButton:SetScript("OnClick", function()
-    local playerName = Normalize(editorPlayerEdit:GetText())
-    if playerName == "" then
-        Print("Enter a player name first.")
-        return
-    end
-    local groupIndex = GetEditorTargetGroup()
-    if #raidEditorState.groups[groupIndex] >= 5 then
-        Print("Target group is full (5 players max).")
-        return
-    end
-    RemoveEditorPlayer(playerName)
-    raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
-    editorPlayerEdit:SetText("")
-    RefreshRaidEditorBoard()
-end)
-
-loadToEditorButton:SetScript("OnClick", function()
-    local ok, err = LoadEditorFromImportText(raidImportEdit:GetText())
-    if not ok then
-        Print(err)
-        return
-    end
-    RefreshRaidEditorBoard()
-    if currentMainTabIndex == 4 then
-        SelectSubTab(1)
-    end
-    Print("Loaded import text into the visual editor.")
-end)
-
-newEmptyRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot create a new raid layout while in combat.")
-        return
-    end
-    if not ARL.BuildNewRaidLayoutImportText then
-        Print("Raid layout template tools are not available yet. Try again in a moment.")
-        return
-    end
-    local ok, result = ARL.BuildNewRaidLayoutImportText(false)
-    if not ok then
-        Print(result)
-        return
-    end
-    local loaded, err = LoadEditorFromImportText(result)
-    if not loaded then
-        Print(err)
-        return
-    end
-    RefreshRaidEditorBoard()
-    Print("Created a new empty raid layout in the visual editor.")
-end)
-
-newFromRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot create a raid layout from roster while in combat.")
-        return
-    end
-
-    local loaded, err = LoadEditorFromCurrentRaid()
-    if not loaded then
-        Print(err)
-        return
-    end
-
-    RefreshRaidEditorBoard()
-    Print("Created a raid-seeded layout with current subgroup assignments.")
-end)
-
-reorganizeRaidLayoutButton:SetScript("OnClick", function()
-    ReorganizeRaidEditorGroups()
-    RefreshRaidEditorBoard()
-    Print("Reorganized the draft into sequential five-player groups.")
-end)
-
-saveNewRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot save raid layouts while in combat.")
-        return
-    end
-    SaveEditedRaidLayout({ overwrite = false })
-end)
-
-overwriteRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot overwrite raid layouts while in combat.")
-        return
-    end
-    if not ARL.GetActiveRaidLayoutProfile then
-        Print("Raid layout selection is not available yet. Try again in a moment.")
-        return
-    end
-
-    local active = ARL.GetActiveRaidLayoutProfile()
-    if not active then
-        Print("Select a saved raid layout to overwrite.")
-        return
-    end
-
-    local label = ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(active) or (active.name or "Unknown")
-    if _G.StaticPopup_Show then
-        _G.StaticPopup_Show(
-            "ASTRALRAIDLEADER_OVERWRITE_LAYOUT",
-            label,
-            nil,
-            { targetKey = active.key }
-        )
-    else
-        Print("Overwrite confirmation dialog is unavailable in this client.")
-    end
-end)
-
-importRaidLayoutsButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot import raid layouts while in combat.")
-        return
-    end
-    if not ARL.ImportRaidLayouts then
-        Print("Raid layout import is not available yet. Try again in a moment.")
-        return
-    end
-
-    local ok, result = ARL.ImportRaidLayouts(raidImportEdit:GetText())
-    if not ok then
-        Print(result)
-        return
-    end
-
-    RefreshRaidLayoutUI()
-    Print(string.format(
-        "Imported %d raid layout(s): %d added, %d updated.",
-        result.imported or 0,
-        result.added or 0,
-        result.updated or 0
-    ))
-end)
-
-clearRaidImportButton:SetScript("OnClick", function()
-    SetRaidLayoutImportText("")
-end)
-
-editorPlayerEdit:SetScript("OnEnterPressed", function()
-    editorAddPlayerButton:Click()
-end)
-editorEncounterEdit:SetScript("OnEscapePressed", function(self)
-    self:ClearFocus()
-end)
-editorDifficultyEdit:SetScript("OnEscapePressed", function(self)
-    self:ClearFocus()
-end)
-editorNameEdit:SetScript("OnEscapePressed", function(self)
-    self:ClearFocus()
-end)
-
-applyRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot apply a raid layout while in combat.")
-        return
-    end
-    if not ARL.ApplyRaidLayoutByQuery then
-        Print("Raid layout apply is not available yet. Try again in a moment.")
-        return
-    end
-    local ok, result = ARL.ApplyRaidLayoutByQuery("")
-    if not ok then
-        Print(result)
-        return
-    end
-    if result then
-        RefreshRaidLayoutUI()
-    end
-end)
-
-deleteRaidLayoutButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot delete a raid layout while in combat.")
-        return
-    end
-    if not ARL.DeleteRaidLayoutByQuery then
-        Print("Raid layout deletion is not available yet. Try again in a moment.")
-        return
-    end
-    local ok, result = ARL.DeleteRaidLayoutByQuery("")
-    if not ok then
-        Print(result)
-        return
-    end
-    RefreshRaidLayoutUI()
-    Print(string.format(
-        "Deleted raid layout |cffffd100%s|r.",
-        ARL.GetRaidLayoutLabel and ARL.GetRaidLayoutLabel(result) or (result.name or "Unknown")
-    ))
-end)
-
-clearRaidLayoutsButton:SetScript("OnClick", function()
-    if InCombatLockdown() then
-        Print("Cannot clear raid layouts while in combat.")
-        return
-    end
-    if not ARL.db then return end
-    ARL.db.raidLayouts = {}
-    ARL.db.activeRaidLayoutKey = ""
-    RefreshRaidLayoutUI()
-    Print("Cleared all saved raid layouts.")
-end)
-
--- ============================================================
--- Tab 6 - Raid Groups: checkbox handlers (merged from panel 7)
--- ============================================================
-
-raidGroupShowMissingNamesCB:SetScript("OnClick", function(self)
-    if updating or not ARL.db then return end
-    ARL.db.raidGroupShowMissingNames = self:GetChecked()
-        and true or false
-    Print(string.format(
-        "Show missing player names |cff%s%s|r.",
-        ARL.db.raidGroupShowMissingNames
-            and "00ff00" or "ff0000",
-        ARL.db.raidGroupShowMissingNames
-            and "enabled" or "disabled"))
-end)
-
-raidGroupAutoApplyOnJoinListCB:SetScript("OnClick",
-    function(self)
-        if updating or not ARL.db then return end
-        ARL.db.raidGroupAutoApplyOnJoin =
-            self:GetChecked() and true or false
-        Print(string.format(
-            "Auto-apply on join |cff%s%s|r.",
-            ARL.db.raidGroupAutoApplyOnJoin
-                and "00ff00" or "ff0000",
-            ARL.db.raidGroupAutoApplyOnJoin
-                and "enabled" or "disabled"))
-    end)
-
-raidGroupInviteMissingPlayersCB:SetScript("OnClick",
-    function(self)
-        if updating or not ARL.db then return end
-        ARL.db.raidGroupInviteMissingPlayers =
-            self:GetChecked() and true or false
-        Print(string.format(
-            "Invite missing listed players on apply"
-            .. " |cff%s%s|r.",
-            ARL.db.raidGroupInviteMissingPlayers
-                and "00ff00" or "ff0000",
-            ARL.db.raidGroupInviteMissingPlayers
-                and "enabled" or "disabled"))
-    end)
+    raidEditorState = raidEditorState,
+    setRaidEditorLoadedKey = function(value) raidEditorLoadedKey = value end,
+    getRaidEditorHasDraft = function() return raidEditorHasDraft end,
+    setRaidEditorHasDraft = function(value) raidEditorHasDraft = value end,
+    getCurrentMainTabIndex = function() return currentMainTabIndex end,
+    isUpdating = function() return updating end,
+})
 
 -- ============================================================
 -- ShowOptions
