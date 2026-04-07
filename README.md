@@ -24,6 +24,24 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
 - **Persistent settings** – your list and preferences are saved between sessions via `SavedVariables`.
 
+## Development file layout
+
+The options UI is now modular. `AstralRaidLeader_Options.lua` is the bootstrap/wiring layer, and panel builders live in
+separate modules:
+
+- `AstralRaidLeader_Options_General.lua`
+- `AstralRaidLeader_Options_Leaders.lua`
+- `AstralRaidLeader_Options_GuildRanks.lua`
+- `AstralRaidLeader_Options_Consumables.lua`
+- `AstralRaidLeader_Options_DeathsPanel.lua`
+- `AstralRaidLeader_Options_RaidGroupsLayouts.lua`
+- `AstralRaidLeader_Options_RaidGroupsImport.lua`
+- `AstralRaidLeader_Options_RaidGroupsSettings.lua`
+- `AstralRaidLeader_Options_RaidGroupsLogic.lua`
+
+`AstralRaidLeader.toc` loads these module files before `AstralRaidLeader_Options.lua` so builder/logic functions are
+available during options initialization.
+
 ## Installation
 
 1. Download the latest release.

@@ -11,7 +11,6 @@ read_globals = {
     -- Group and unit APIs
     "GetNumGroupMembers",
     "GetNumSubgroupMembers",
-    "GetRaidRosterInfo",
     "IsInGroup",
     "IsInRaid",
     "UnitExists",
@@ -24,7 +23,6 @@ read_globals = {
     "GetNumGuildMembers",
     "GuildControlGetNumRanks",
     "GuildControlGetRankName",
-    "GuildRoster",
     "IsInGuild",
 
     -- Aura and combat APIs
