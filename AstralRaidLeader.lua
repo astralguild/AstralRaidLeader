@@ -1809,6 +1809,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         if type(eventData) ~= "table" then return nil, nil, nil end
 
         local mechanic = eventData.spellName
+        if mechanic == "..." or mechanic == "…" then
+            mechanic = nil
+        end
         if not mechanic or mechanic == "" then
             local eventType = eventData.event
             if eventType == "SWING_DAMAGE" then

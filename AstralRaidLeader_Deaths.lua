@@ -314,6 +314,14 @@ local function SafeWidth(value)
     return ok and plain or 0
 end
 
+local function IsMissingMechanicName(value)
+    if type(value) ~= "string" then
+        return not value
+    end
+    local trimmed = value:gsub("^%s+", ""):gsub("%s+$", "")
+    return trimmed == "" or trimmed == "..." or trimmed == "…"
+end
+
 local function BuildDeathLine(i, entry)
     local prefix = string.format(
         "%2d. %s%s%s  died to",
@@ -323,7 +331,7 @@ local function BuildDeathLine(i, entry)
 
     local spellId = entry.spellId
     local mechanicName = entry.mechanic
-    if (not mechanicName or mechanicName == "" or mechanicName == "...")
+    if IsMissingMechanicName(mechanicName)
         and spellId and spellId > 0
     then
         local resolvedName = ResolveSpellNameAndIcon(spellId)
@@ -334,7 +342,7 @@ local function BuildDeathLine(i, entry)
         end
     end
 
-    if not mechanicName or mechanicName == "" or mechanicName == "..." then
+    if IsMissingMechanicName(mechanicName) then
         mechanicName = "Unknown Spell"
     end
 
@@ -370,23 +378,36 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
     row.spellButton:EnableMouse(hasSpellTooltip)
 
-    local desiredSpellW = SafeWidth(row.spellButton.text:GetStringWidth()) + 2
     local prefixW = SafeWidth(row.prefixText:GetStringWidth())
+    local suffixW = SafeWidth(row.suffixText:GetStringWidth()) + 2
+
     local rowW = SafeWidth(row:GetWidth())
     if rowW <= 0 then
-        rowW = FRAME_W - 170
+        local contentW = SafeWidth(content:GetWidth())
+        if contentW > 0 then
+            rowW = contentW - 8
+        else
+            rowW = FRAME_W - 72
+        end
     end
-    local minSuffixW = 120
-    local availableSpellW = math.max(24, rowW - prefixW - minSuffixW - 14)
-    local spellW = math.max(24, math.min(desiredSpellW, availableSpellW))
+
+    local minSuffixW = 84
+    local maxSuffixW = 220
+    suffixW = math.max(minSuffixW, math.min(suffixW, maxSuffixW))
+
+    local minSpellW = 80
+    local availableSpellW = rowW - prefixW - suffixW - 14
+    if availableSpellW < minSpellW then
+        suffixW = math.max(minSuffixW, suffixW - (minSpellW - availableSpellW))
+    end
+
+    row.suffixText:ClearAllPoints()
+    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.suffixText:SetWidth(suffixW)
 
     row.spellButton:ClearAllPoints()
     row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
-    row.spellButton:SetWidth(spellW)
-
-    row.suffixText:ClearAllPoints()
-    row.suffixText:SetPoint("LEFT", row.spellButton, "RIGHT", 6, 0)
-    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.spellButton:SetPoint("RIGHT", row.suffixText, "LEFT", -6, 0)
 end
 
 local function RefreshRecap()
