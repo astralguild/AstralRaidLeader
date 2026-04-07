@@ -14,9 +14,17 @@ local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 local UnitInRaid = _G.UnitInRaid
 local UnitGroupRolesAssigned = _G.UnitGroupRolesAssigned
 local GetInspectSpecialization = _G.GetInspectSpecialization
+local GetSpecialization = _G.GetSpecialization
+local GetSpecializationInfo = _G.GetSpecializationInfo
 local GetSpecializationInfoByID = _G.GetSpecializationInfoByID
 local UnitClass = _G.UnitClass
 local RAID_CLASS_COLORS = _G.RAID_CLASS_COLORS
+local ROLE_ICON_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
+local ROLE_ICON_TEX_COORDS = {
+    TANK = { 0 / 64, 19 / 64, 22 / 64, 41 / 64 },
+    HEALER = { 20 / 64, 39 / 64, 1 / 64, 20 / 64 },
+    DAMAGER = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 },
+}
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
@@ -1334,12 +1342,19 @@ local function BuildRosterColorLookup()
     local function ResolveRole(unit)
         local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
         if assigned ~= "NONE" then return assigned end
+        if unit == "player" and GetSpecialization and GetSpecializationInfo then
+            local specIndex = GetSpecialization()
+            if specIndex and specIndex > 0 then
+                local _, _, _, _, role = GetSpecializationInfo(specIndex)
+                if role and role ~= "" then return role end
+            end
+        end
         -- Fallback: derive role from the unit's current specialization.
         -- GetInspectSpecialization returns cached spec data for group members
         -- without requiring an explicit NotifyInspect call in modern clients.
         local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
         if specID and specID > 0 and GetSpecializationInfoByID then
-            local _, _, _, _, _, _, role = GetSpecializationInfoByID(specID)
+            local _, _, _, _, role = GetSpecializationInfoByID(specID)
             if role and role ~= "" then return role end
         end
         return "NONE"
@@ -1420,16 +1435,10 @@ local function RefreshRaidEditorBoard()
                         else
                             btn.Text:SetTextColor(0.90, 0.92, 0.96)
                         end
-                        local atlas
-                        if info.role == "TANK" then
-                            atlas = "roleicon-tank"
-                        elseif info.role == "HEALER" then
-                            atlas = "roleicon-healer"
-                        elseif info.role == "DAMAGER" then
-                            atlas = "roleicon-dps"
-                        end
-                        if btn.RoleIcon and atlas then
-                            btn.RoleIcon:SetAtlas(atlas, false)
+                        local coords = ROLE_ICON_TEX_COORDS[info.role or ""]
+                        if btn.RoleIcon and coords then
+                            btn.RoleIcon:SetTexture(ROLE_ICON_TEXTURE)
+                            btn.RoleIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
                             btn.RoleIcon:Show()
                         elseif btn.RoleIcon then
                             btn.RoleIcon:Hide()
