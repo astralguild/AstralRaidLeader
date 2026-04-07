@@ -4,7 +4,6 @@
 local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
-local ChatFontNormal = _G.ChatFontNormal
 local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
 local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
 local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
@@ -13,6 +12,11 @@ local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
 local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 local UnitInRaid = _G.UnitInRaid
+local UnitGroupRolesAssigned = _G.UnitGroupRolesAssigned
+local GetInspectSpecialization = _G.GetInspectSpecialization
+local GetSpecializationInfoByID = _G.GetSpecializationInfoByID
+local UnitClass = _G.UnitClass
+local RAID_CLASS_COLORS = _G.RAID_CLASS_COLORS
 
 local function Print(msg)
     print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))

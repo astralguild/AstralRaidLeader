@@ -24,7 +24,9 @@ function ARL.OptionsBuilders.BuildRaidGroupsImportPanel(deps)
     raidImportHelp:SetWidth(520)
     raidImportHelp:SetJustifyH("LEFT")
     raidImportHelp:SetText(
-        "Paste a raid layout note here, then import it directly or load the first parsed layout into the visual editor.")
+        "Paste a raid layout note here, then import it directly"
+            .. " or load the first parsed layout into the visual editor."
+    )
 
     local raidImportInset = CreateFrame("Frame", nil, panel, BackdropTemplateMixin and "BackdropTemplate" or nil)
     raidImportInset:SetPoint("TOPLEFT", 8, -50)

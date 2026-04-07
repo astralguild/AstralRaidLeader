@@ -269,7 +269,12 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     saveNewRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
 
     local function CreateEditorGroupBox(groupIndex, x, y)
-        local groupFrame = CreateFrame("Frame", nil, raidEditorSection, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        local groupFrame = CreateFrame(
+            "Frame",
+            nil,
+            raidEditorSection,
+            BackdropTemplateMixin and "BackdropTemplate" or nil
+        )
         groupFrame:SetPoint("TOPLEFT", x, y)
         groupFrame:SetSize(148, 118)
         SkinPanel(groupFrame, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
