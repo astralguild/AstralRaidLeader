@@ -1851,6 +1851,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             or eventData.deathTimeOffset
             or eventData.deathTimeOffsetSeconds
             or eventData.timeSinceEncounterStart
+            or eventData.timeSinceCombatStart
+            or eventData.elapsedTime
+            or eventData.secondsFromStart
+            or eventData.timeOfDeath
+            or eventData.timeOfDeathSeconds
+            or eventData.deathTime
             or eventData.deathTimeSeconds
             or eventData.timestamp
             or eventData.time
@@ -1984,6 +1990,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 entry and entry.timeOffset,
                 entry and entry.deathTimeOffset,
                 entry and entry.deathTimeOffsetSeconds,
+                entry and entry.timeSinceEncounterStart,
+                entry and entry.timeSinceCombatStart,
+                entry and entry.elapsedSeconds,
+                entry and entry.secondsFromStart,
+                entry and entry.timeOfDeath,
+                entry and entry.timeOfDeathSeconds,
                 entry and entry.deathTime,
                 recapTimeOffset,
                 -- Last-resort fields for clients that only expose generic time values.
@@ -2102,6 +2114,31 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             or session.startTime
             or session.combatStartTime
         )
+        local sessionEndTime = SafeNumber(
+            session.endTimeSeconds
+            or session.combatEndTimeSeconds
+            or session.endTime
+            or session.combatEndTime
+        )
+
+        if (not sessionStartTime or sessionStartTime <= 0)
+            and sessionEndTime and sessionEndTime > 0
+            and encounterDuration and encounterDuration > 0
+        then
+            local candidates = {
+                sessionEndTime - encounterDuration,
+                (sessionEndTime / 1000) - encounterDuration,
+                sessionEndTime - (encounterDuration * 1000),
+                (sessionEndTime / 1000) - (encounterDuration / 1000),
+            }
+            for _, candidate in ipairs(candidates) do
+                local plain = SafeNumber(candidate)
+                if plain and plain > 0 then
+                    sessionStartTime = plain
+                    break
+                end
+            end
+        end
 
         -- Older/alternate layouts.
         local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
