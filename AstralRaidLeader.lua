@@ -1779,6 +1779,22 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return nil
     end
 
+    local function SafeNonNegativeNumber(...)
+        for i = 1, select("#", ...) do
+            local parsed = SafeNumber(select(i, ...))
+            if parsed ~= nil then
+                local okIsNegative, isNegative = pcall(function()
+                    return parsed < 0
+                end)
+                if okIsNegative and isNegative then
+                    return 0
+                end
+                return parsed
+            end
+        end
+        return nil
+    end
+
     local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
 
     local sessionId = nil
@@ -1797,16 +1813,16 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local function ResolveRecapCause(entry)
         local recapID = SafeNumber(entry and entry.deathRecapID) or 0
-        if recapID <= 0 then return nil, nil, nil end
+        if recapID <= 0 then return nil, nil, nil, nil, nil, nil end
         if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
-            return nil, nil, nil
+            return nil, nil, nil, nil, nil, nil
         end
 
         local ok, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
-        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil end
+        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local eventData = recapEvents[1]
-        if type(eventData) ~= "table" then return nil, nil, nil end
+        if type(eventData) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local mechanic = eventData.spellName
         if mechanic == "..." or mechanic == "…" then
@@ -1840,7 +1856,39 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             or eventData.time
         )
 
-        return mechanic, source, spellId, recapTimeOffset
+        local recapOverkill = SafeNonNegativeNumber(
+            eventData.overkill,
+            eventData.overKill,
+            eventData.overkillAmount,
+            eventData.killingBlowOverkill,
+            eventData.excessDamage
+        )
+        local recapAmount = SafeNonNegativeNumber(
+            eventData.amount,
+            eventData.damage,
+            eventData.damageAmount,
+            eventData.hitAmount,
+            eventData.killingBlowAmount,
+            eventData.value,
+            eventData.rawDamage
+        )
+
+        if recapOverkill == nil then
+            local healthAfter = SafeNumber(
+                eventData.remainingHealth
+                or eventData.finalHealth
+                or eventData.healthAfter
+                or eventData.destHealth
+            )
+            local okIsNegative, isNegative = pcall(function()
+                return healthAfter and healthAfter < 0
+            end)
+            if okIsNegative and isNegative then
+                recapOverkill = -healthAfter
+            end
+        end
+
+        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount
     end
 
     local function ParseDeathEntries(container, encounterDuration, sessionStartTime)
@@ -1971,7 +2019,24 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.spellID or entry.spellId or entry.abilityId
                     or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId
                 )
-                local recapMechanic, recapSource, recapSpellId, recapTimeOffset = ResolveRecapCause(entry)
+                local overkill = SafeNonNegativeNumber(
+                    entry.overkill,
+                    entry.overKill,
+                    entry.overkillAmount,
+                    entry.killingBlowOverkill,
+                    entry.excessDamage
+                )
+                local hitAmount = SafeNonNegativeNumber(
+                    entry.amount,
+                    entry.damage,
+                    entry.damageAmount,
+                    entry.hitAmount,
+                    entry.killingBlowAmount,
+                    entry.finalAmount,
+                    entry.value
+                )
+                local recapMechanic, recapSource, recapSpellId, recapTimeOffset,
+                    recapOverkill, recapAmount = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
@@ -1980,6 +2045,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
                 if recapSpellId and recapSpellId > 0 then
                     spellId = recapSpellId
+                end
+                if recapOverkill and recapOverkill > 0 then
+                    overkill = recapOverkill
+                end
+                if recapAmount and recapAmount > 0 then
+                    hitAmount = recapAmount
                 end
                 local timeOffset = ResolveEncounterTimeOffset(entry, recapTimeOffset)
                 local timeStr = "?:??"
@@ -1991,6 +2062,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     mechanic   = mechanic,
                     source     = source,
                     spellId    = spellId,
+                    overkill   = overkill,
+                    hitAmount  = hitAmount,
                     timeOffset = timeOffset,
                     timeStr    = timeStr,
                 }
