@@ -18,6 +18,7 @@ local InviteUnit = (_G.C_PartyInfo and _G.C_PartyInfo.InviteUnit) or _G.InviteUn
 local IsGuildGroup = _G.IsGuildGroup
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
+local UnitInRaid = _G.UnitInRaid
 
 -- ============================================================
 -- Defaults
@@ -513,12 +514,16 @@ local function BuildCurrentRaidInvitelist()
     local invitelist = {}
     local seen = {}
     for raidIndex = 1, MAX_RAID_MEMBERS do
-        local name = GetRaidRosterInfo(raidIndex)
-        if name and name ~= "" then
-            local key = name:lower()
-            if not seen[key] then
-                seen[key] = true
-                invitelist[#invitelist + 1] = name
+        local unit = "raid" .. raidIndex
+        if UnitExists(unit) then
+            local name, realm = UnitName(unit)
+            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
+            if fullName and fullName ~= "" then
+                local key = fullName:lower()
+                if not seen[key] then
+                    seen[key] = true
+                    invitelist[#invitelist + 1] = fullName
+                end
             end
         end
     end
@@ -769,22 +774,28 @@ local function GetRaidRosterSnapshot()
     }
 
     for raidIndex = 1, MAX_RAID_MEMBERS do
-        local name, _, subgroup = GetRaidRosterInfo(raidIndex)
-        if name and name ~= "" then
-            local entry = {
-                index = raidIndex,
-                name = name,
-                subgroup = subgroup or 1,
-            }
-            snapshot.entries[#snapshot.entries + 1] = entry
-            snapshot.fullMap[name:lower()] = entry
+        local unit = "raid" .. raidIndex
+        if UnitExists(unit) then
+            local name, realm = UnitName(unit)
+            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
+            if fullName and fullName ~= "" then
+                local rosterIndex = UnitInRaid and UnitInRaid(unit) or raidIndex
+                local subgroup = math.floor(((tonumber(rosterIndex) or raidIndex) - 1) / 5) + 1
+                local entry = {
+                    index = tonumber(rosterIndex) or raidIndex,
+                    name = fullName,
+                    subgroup = subgroup or 1,
+                }
+                snapshot.entries[#snapshot.entries + 1] = entry
+                snapshot.fullMap[fullName:lower()] = entry
 
-            local shortKey = GetShortName(name):lower()
-            if shortKey ~= "" then
-                if snapshot.shortMap[shortKey] and snapshot.shortMap[shortKey] ~= entry then
-                    snapshot.shortMap[shortKey] = false
-                else
-                    snapshot.shortMap[shortKey] = entry
+                local shortKey = GetShortName(fullName):lower()
+                if shortKey ~= "" then
+                    if snapshot.shortMap[shortKey] and snapshot.shortMap[shortKey] ~= entry then
+                        snapshot.shortMap[shortKey] = false
+                    else
+                        snapshot.shortMap[shortKey] = entry
+                    end
                 end
             end
         end

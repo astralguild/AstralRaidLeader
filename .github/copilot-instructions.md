@@ -9,9 +9,18 @@ AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It ma
 | File | Purpose |
 |---|---|
 | `AstralRaidLeader.lua` | Core logic: event handling, auto-promote, guild rank resolution, consumable audit, death tracking, slash commands |
-| `AstralRaidLeader_Options.lua` | In-game settings window (860×700 custom frame) |
+| `AstralRaidLeader_Options.lua` | Options bootstrap/wiring for builder modules (860×700 custom frame) |
+| `AstralRaidLeader_Options_General.lua` | Builder for General options panel |
+| `AstralRaidLeader_Options_Leaders.lua` | Builder for Leaders panel |
+| `AstralRaidLeader_Options_GuildRanks.lua` | Builder for Guild Ranks panel |
+| `AstralRaidLeader_Options_Consumables.lua` | Builder for Consumables panel |
+| `AstralRaidLeader_Options_DeathsPanel.lua` | Builder for Deaths panel |
+| `AstralRaidLeader_Options_RaidGroupsLayouts.lua` | Builder for Raid Groups Layouts panel |
+| `AstralRaidLeader_Options_RaidGroupsImport.lua` | Builder for Raid Groups Import panel |
+| `AstralRaidLeader_Options_RaidGroupsSettings.lua` | Builder for Raid Groups Settings panel |
+| `AstralRaidLeader_Options_RaidGroupsLogic.lua` | Binder for Raid Groups handlers, popups, and checkbox wiring |
 | `AstralRaidLeader_Deaths.lua` | Death recap window (520×430 custom frame) |
-| `AstralRaidLeader.toc` | Addon manifest; load order is `.lua` → `_Options.lua` → `_Deaths.lua` |
+| `AstralRaidLeader.toc` | Addon manifest; load order is core `.lua` → options modules → `_Options.lua` → `_Deaths.lua` |
 
 The addon namespace is exposed as `_G["AstralRaidLeader"]` and referenced as `ARL` in every file.
 

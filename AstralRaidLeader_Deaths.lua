@@ -406,6 +406,14 @@ local function IsMissingMechanicName(value)
     return trimmed == "" or trimmed == "..." or trimmed == "…"
 end
 
+local function IsMissingMechanicName(value)
+    if type(value) ~= "string" then
+        return not value
+    end
+    local trimmed = value:gsub("^%s+", ""):gsub("%s+$", "")
+    return trimmed == "" or trimmed == "..." or trimmed == "…"
+end
+
 local function BuildDeathLine(i, entry)
     local prefix = string.format(
         "%2d. %s%s%s  died to",
