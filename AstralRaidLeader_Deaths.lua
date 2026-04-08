@@ -173,20 +173,45 @@ summaryText:SetText("")
 
 -- Scroll frame for the death list
 -- Right inset is -30 to leave room for the scroll bar track inside the panel.
-local scrollFrame = CreateFrame("ScrollFrame", "AstralRaidLeaderDeathScroll", frame, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT",  contentPanel, "TOPLEFT", 10, -56)
-scrollFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -30, 10)
+local SCROLL_TOP_OFFSET = 56
+local SCROLL_BOTTOM_OFFSET = 10
+local SCROLL_RIGHT_INSET = 34
+local SCROLLBAR_RIGHT_INSET = 8
+local SCROLLBAR_TOP_INSET = 8
+local SCROLLBAR_BOTTOM_INSET = 8
+
+local scrollFrame = CreateFrame(
+    "ScrollFrame",
+    "AstralRaidLeaderDeathScroll",
+    contentPanel,
+    "UIPanelScrollFrameTemplate"
+)
+scrollFrame:SetPoint("TOPLEFT",  contentPanel, "TOPLEFT", 10, -SCROLL_TOP_OFFSET)
+scrollFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -SCROLL_RIGHT_INSET, SCROLL_BOTTOM_OFFSET)
 
 -- Reanchor the template scrollbar so it sits inside contentPanel rather than
 -- spilling outside (the template default is +24px right of the scroll frame).
 local _sb = _G["AstralRaidLeaderDeathScrollScrollBar"]
 if _sb then
     _sb:ClearAllPoints()
-    _sb:SetPoint("TOPRIGHT",    contentPanel, "TOPRIGHT",    -4, -56)
-    _sb:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -4,  10)
+    _sb:SetWidth(12)
+    _sb:SetPoint(
+        "TOPRIGHT",
+        contentPanel,
+        "TOPRIGHT",
+        -SCROLLBAR_RIGHT_INSET,
+        -(SCROLL_TOP_OFFSET + SCROLLBAR_TOP_INSET)
+    )
+    _sb:SetPoint(
+        "BOTTOMRIGHT",
+        contentPanel,
+        "BOTTOMRIGHT",
+        -SCROLLBAR_RIGHT_INSET,
+        SCROLL_BOTTOM_OFFSET + SCROLLBAR_BOTTOM_INSET
+    )
 end
 
-local listInset = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+local listInset = CreateFrame("Frame", nil, contentPanel, BackdropTemplateMixin and "BackdropTemplate" or nil)
 listInset:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", -4, 4)
 listInset:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 4, -4)
 SkinPanel(listInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
@@ -208,7 +233,58 @@ listText:SetText("")
 local deathRows = {}
 local DEATH_ROW_HEIGHT = 18
 
-local function ShowSpellTooltip(owner, spellId)
+local function FormatExactAmount(value)
+    if type(value) ~= "number" then
+        return nil
+    end
+
+    value = math.floor(value + 0.5)
+    if value <= 0 then
+        return nil
+    end
+
+    local formatted = tostring(value)
+    while true do
+        local replaced, count = formatted:gsub("^(%d+)(%d%d%d)", "%1,%2")
+        formatted = replaced
+        if count == 0 then
+            break
+        end
+    end
+
+    return formatted
+end
+
+local function FormatCompactAmount(value)
+    if type(value) ~= "number" then
+        return nil
+    end
+
+    value = math.floor(value + 0.5)
+    if value <= 0 then
+        return nil
+    end
+
+    if value >= 1000000 then
+        local millions = value / 1000000
+        if millions >= 10 then
+            return string.format("%.0fM", millions)
+        end
+        return string.format("%.1fM", millions)
+    end
+
+    if value >= 1000 then
+        local thousands = value / 1000
+        if thousands >= 10 then
+            return string.format("%.0fk", thousands)
+        end
+        return string.format("%.1fk", thousands)
+    end
+
+    return tostring(value)
+end
+
+local function ShowSpellTooltip(owner, spellId, entry)
     if not GameTooltip or not spellId or spellId <= 0 then
         return
     end
@@ -224,8 +300,20 @@ local function ShowSpellTooltip(owner, spellId)
         GameTooltip:ClearLines()
         GameTooltip:AddLine(spellName or "Unknown Spell", 1.0, 1.0, 1.0)
         GameTooltip:AddLine("Spell ID: " .. spellId, 0.82, 0.86, 0.93)
-        GameTooltip:Show()
     end
+
+    if type(entry) == "table" then
+        local hitAmount = FormatExactAmount(entry.hitAmount)
+        local overkill = FormatExactAmount(entry.overkill)
+        if hitAmount then
+            GameTooltip:AddLine("Killing blow: " .. hitAmount, 0.90, 0.92, 0.96)
+        end
+        if overkill then
+            GameTooltip:AddLine("Overkill: " .. overkill, 0.96, 0.82, 0.22)
+        end
+    end
+
+    GameTooltip:Show()
 end
 
 local function HideAllDeathRows()
@@ -258,18 +346,20 @@ local function AcquireDeathRow(index)
     spellButton:SetHeight(DEATH_ROW_HEIGHT)
     spellButton:EnableMouse(true)
 
-    local spellText = spellButton:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    spellText:SetPoint("LEFT", spellButton, "LEFT", 0, 0)
-    spellText:SetPoint("RIGHT", spellButton, "RIGHT", 0, 0)
+    local spellText = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    spellText:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
     spellText:SetJustifyH("LEFT")
     spellText:SetJustifyV("MIDDLE")
     spellText:SetWordWrap(false)
     spellText:SetTextColor(0.90, 0.92, 0.96)
-    spellButton.text = spellText
+    row.spellText = spellText
+
+    spellButton:SetPoint("TOPLEFT", spellText, "TOPLEFT", 0, 0)
+    spellButton:SetPoint("BOTTOMRIGHT", spellText, "BOTTOMRIGHT", 0, 0)
     row.spellButton = spellButton
 
     local suffix = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    suffix:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    suffix:SetPoint("LEFT", spellText, "RIGHT", 6, 0)
     suffix:SetJustifyH("LEFT")
     suffix:SetJustifyV("MIDDLE")
     suffix:SetWordWrap(false)
@@ -277,7 +367,7 @@ local function AcquireDeathRow(index)
     row.suffixText = suffix
 
     spellButton:SetScript("OnEnter", function(self)
-        ShowSpellTooltip(self, self.spellId)
+        ShowSpellTooltip(self, self.spellId, self.entry)
     end)
 
     spellButton:SetScript("OnLeave", function()
@@ -307,12 +397,6 @@ local COLOR_MECHANIC = "|cffff4444"   -- red
 local COLOR_SOURCE   = "|cffff8000"   -- orange
 local COLOR_TIME     = "|cff888888"   -- grey
 local COLOR_RESET    = "|r"
-
-local function SafeWidth(value)
-    if type(value) ~= "number" then return 0 end
-    local ok, plain = pcall(function() return value + 0 end)
-    return ok and plain or 0
-end
 
 local function IsMissingMechanicName(value)
     if type(value) ~= "string" then
@@ -358,8 +442,18 @@ local function BuildDeathLine(i, entry)
         end
     end
 
+    local overkillText = FormatCompactAmount(entry.overkill)
+    if overkillText then
+        spellText = string.format(
+            "%s |cff888888(-%s)%s",
+            spellText,
+            overkillText,
+            COLOR_RESET
+        )
+    end
+
     local suffix = string.format(
-        "(from %s%s%s)  %sat %s%s",
+        "(from %s%s%s) %sat %s%s",
         COLOR_SOURCE, entry.source, COLOR_RESET,
         COLOR_TIME,   entry.timeStr, COLOR_RESET
     )
@@ -371,43 +465,13 @@ local function PopulateDeathRow(row, i, entry)
     local prefix, spellText, suffix = BuildDeathLine(i, entry)
 
     row.prefixText:SetText(prefix)
+    row.spellText:SetText(spellText)
     row.suffixText:SetText(suffix)
-    row.spellButton.text:SetText(spellText)
 
     local hasSpellTooltip = entry.spellId and entry.spellId > 0
     row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
+    row.spellButton.entry = entry
     row.spellButton:EnableMouse(hasSpellTooltip)
-
-    local prefixW = SafeWidth(row.prefixText:GetStringWidth())
-    local suffixW = SafeWidth(row.suffixText:GetStringWidth()) + 2
-
-    local rowW = SafeWidth(row:GetWidth())
-    if rowW <= 0 then
-        local contentW = SafeWidth(content:GetWidth())
-        if contentW > 0 then
-            rowW = contentW - 8
-        else
-            rowW = FRAME_W - 72
-        end
-    end
-
-    local minSuffixW = 84
-    local maxSuffixW = 220
-    suffixW = math.max(minSuffixW, math.min(suffixW, maxSuffixW))
-
-    local minSpellW = 80
-    local availableSpellW = rowW - prefixW - suffixW - 14
-    if availableSpellW < minSpellW then
-        suffixW = math.max(minSuffixW, suffixW - (minSpellW - availableSpellW))
-    end
-
-    row.suffixText:ClearAllPoints()
-    row.suffixText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    row.suffixText:SetWidth(suffixW)
-
-    row.spellButton:ClearAllPoints()
-    row.spellButton:SetPoint("LEFT", row.prefixText, "RIGHT", 4, 0)
-    row.spellButton:SetPoint("RIGHT", row.suffixText, "LEFT", -6, 0)
 end
 
 local function RefreshRecap()

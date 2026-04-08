@@ -1756,8 +1756,8 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local WIPE_FINALIZE_MAX_RETRIES = 8
-local WIPE_FINALIZE_RETRY_DELAY = 0.5
+local WIPE_FINALIZE_MAX_RETRIES = 12
+local WIPE_FINALIZE_RETRY_DELAY = 0.75
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
@@ -1790,6 +1790,22 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return nil
     end
 
+    local function SafeNonNegativeNumber(...)
+        for i = 1, select("#", ...) do
+            local parsed = SafeNumber(select(i, ...))
+            if parsed ~= nil then
+                local okIsNegative, isNegative = pcall(function()
+                    return parsed < 0
+                end)
+                if okIsNegative and isNegative then
+                    return 0
+                end
+                return parsed
+            end
+        end
+        return nil
+    end
+
     local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
 
     local sessionId = nil
@@ -1808,16 +1824,16 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local function ResolveRecapCause(entry)
         local recapID = SafeNumber(entry and entry.deathRecapID) or 0
-        if recapID <= 0 then return nil, nil, nil end
+        if recapID <= 0 then return nil, nil, nil, nil, nil, nil end
         if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
-            return nil, nil, nil
+            return nil, nil, nil, nil, nil, nil
         end
 
         local ok, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
-        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil end
+        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local eventData = recapEvents[1]
-        if type(eventData) ~= "table" then return nil, nil, nil end
+        if type(eventData) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local mechanic = eventData.spellName
         if mechanic == "..." or mechanic == "…" then
@@ -1846,12 +1862,50 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             or eventData.deathTimeOffset
             or eventData.deathTimeOffsetSeconds
             or eventData.timeSinceEncounterStart
+            or eventData.timeSinceCombatStart
+            or eventData.elapsedTime
+            or eventData.secondsFromStart
+            or eventData.timeOfDeath
+            or eventData.timeOfDeathSeconds
+            or eventData.deathTime
             or eventData.deathTimeSeconds
             or eventData.timestamp
             or eventData.time
         )
 
-        return mechanic, source, spellId, recapTimeOffset
+        local recapOverkill = SafeNonNegativeNumber(
+            eventData.overkill,
+            eventData.overKill,
+            eventData.overkillAmount,
+            eventData.killingBlowOverkill,
+            eventData.excessDamage
+        )
+        local recapAmount = SafeNonNegativeNumber(
+            eventData.amount,
+            eventData.damage,
+            eventData.damageAmount,
+            eventData.hitAmount,
+            eventData.killingBlowAmount,
+            eventData.value,
+            eventData.rawDamage
+        )
+
+        if recapOverkill == nil then
+            local healthAfter = SafeNumber(
+                eventData.remainingHealth
+                or eventData.finalHealth
+                or eventData.healthAfter
+                or eventData.destHealth
+            )
+            local okIsNegative, isNegative = pcall(function()
+                return healthAfter and healthAfter < 0
+            end)
+            if okIsNegative and isNegative then
+                recapOverkill = -healthAfter
+            end
+        end
+
+        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount
     end
 
     local function ParseDeathEntries(container, encounterDuration, sessionStartTime)
@@ -1947,6 +2001,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 entry and entry.timeOffset,
                 entry and entry.deathTimeOffset,
                 entry and entry.deathTimeOffsetSeconds,
+                entry and entry.timeSinceEncounterStart,
+                entry and entry.timeSinceCombatStart,
+                entry and entry.elapsedSeconds,
+                entry and entry.secondsFromStart,
+                entry and entry.timeOfDeath,
+                entry and entry.timeOfDeathSeconds,
                 entry and entry.deathTime,
                 recapTimeOffset,
                 -- Last-resort fields for clients that only expose generic time values.
@@ -1982,7 +2042,24 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.spellID or entry.spellId or entry.abilityId
                     or entry.mechanicSpellID or entry.causeSpellID or entry.causeSpellId
                 )
-                local recapMechanic, recapSource, recapSpellId, recapTimeOffset = ResolveRecapCause(entry)
+                local overkill = SafeNonNegativeNumber(
+                    entry.overkill,
+                    entry.overKill,
+                    entry.overkillAmount,
+                    entry.killingBlowOverkill,
+                    entry.excessDamage
+                )
+                local hitAmount = SafeNonNegativeNumber(
+                    entry.amount,
+                    entry.damage,
+                    entry.damageAmount,
+                    entry.hitAmount,
+                    entry.killingBlowAmount,
+                    entry.finalAmount,
+                    entry.value
+                )
+                local recapMechanic, recapSource, recapSpellId, recapTimeOffset,
+                    recapOverkill, recapAmount = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
@@ -1991,6 +2068,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
                 if recapSpellId and recapSpellId > 0 then
                     spellId = recapSpellId
+                end
+                if recapOverkill and recapOverkill > 0 then
+                    overkill = recapOverkill
+                end
+                if recapAmount and recapAmount > 0 then
+                    hitAmount = recapAmount
                 end
                 local timeOffset = ResolveEncounterTimeOffset(entry, recapTimeOffset)
                 local timeStr = "?:??"
@@ -2002,6 +2085,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     mechanic   = mechanic,
                     source     = source,
                     spellId    = spellId,
+                    overkill   = overkill,
+                    hitAmount  = hitAmount,
                     timeOffset = timeOffset,
                     timeStr    = timeStr,
                 }
@@ -2040,6 +2125,31 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             or session.startTime
             or session.combatStartTime
         )
+        local sessionEndTime = SafeNumber(
+            session.endTimeSeconds
+            or session.combatEndTimeSeconds
+            or session.endTime
+            or session.combatEndTime
+        )
+
+        if (not sessionStartTime or sessionStartTime <= 0)
+            and sessionEndTime and sessionEndTime > 0
+            and encounterDuration and encounterDuration > 0
+        then
+            local candidates = {
+                sessionEndTime - encounterDuration,
+                (sessionEndTime / 1000) - encounterDuration,
+                sessionEndTime - (encounterDuration * 1000),
+                (sessionEndTime / 1000) - (encounterDuration / 1000),
+            }
+            for _, candidate in ipairs(candidates) do
+                local plain = SafeNumber(candidate)
+                if plain and plain > 0 then
+                    sessionStartTime = plain
+                    break
+                end
+            end
+        end
 
         -- Older/alternate layouts.
         local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
@@ -2104,11 +2214,63 @@ local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, au
     end
 end
 
+local function HasReliableDeathTiming(deaths)
+    if type(deaths) ~= "table" then return false end
+    for _, entry in ipairs(deaths) do
+        local offset = entry and entry.timeOffset
+        if type(offset) == "number" then
+            local ok, valid = pcall(function()
+                return offset > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function HasDamageDetailValues(deaths)
+    if type(deaths) ~= "table" then return false end
+    for _, entry in ipairs(deaths) do
+        local hitAmount = entry and entry.hitAmount
+        if type(hitAmount) == "number" then
+            local ok, valid = pcall(function()
+                return hitAmount > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+
+        local overkill = entry and entry.overkill
+        if type(overkill) == "number" then
+            local ok, valid = pcall(function()
+                return overkill > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt)
     if not ARL.db or not ARL.db.deathTrackingEnabled then return end
 
     local meterDeaths = BuildDeathsFromDamageMeter(encounterID)
     if #meterDeaths > 0 then
+        local hasTiming = HasReliableDeathTiming(meterDeaths)
+        local hasDamageDetails = HasDamageDetailValues(meterDeaths)
+        local isLikelyPartial = (not hasTiming) and (not hasDamageDetails)
+        if isLikelyPartial and attempt < WIPE_FINALIZE_MAX_RETRIES then
+            _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
+                FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt + 1)
+            end)
+            return
+        end
+
         PersistEncounterRecap(encounterName, meterDeaths, encounterOutcome, autoOpen)
         return
     end
