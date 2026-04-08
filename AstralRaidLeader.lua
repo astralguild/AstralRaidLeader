@@ -1745,8 +1745,8 @@ end)
 -- ============================================================
 
 -- Per-session state (not persisted).
-local WIPE_FINALIZE_MAX_RETRIES = 8
-local WIPE_FINALIZE_RETRY_DELAY = 0.5
+local WIPE_FINALIZE_MAX_RETRIES = 12
+local WIPE_FINALIZE_RETRY_DELAY = 0.75
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
@@ -2166,11 +2166,63 @@ local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, au
     end
 end
 
+local function HasReliableDeathTiming(deaths)
+    if type(deaths) ~= "table" then return false end
+    for _, entry in ipairs(deaths) do
+        local offset = entry and entry.timeOffset
+        if type(offset) == "number" then
+            local ok, valid = pcall(function()
+                return offset > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function HasDamageDetailValues(deaths)
+    if type(deaths) ~= "table" then return false end
+    for _, entry in ipairs(deaths) do
+        local hitAmount = entry and entry.hitAmount
+        if type(hitAmount) == "number" then
+            local ok, valid = pcall(function()
+                return hitAmount > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+
+        local overkill = entry and entry.overkill
+        if type(overkill) == "number" then
+            local ok, valid = pcall(function()
+                return overkill > 0
+            end)
+            if ok and valid then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt)
     if not ARL.db or not ARL.db.deathTrackingEnabled then return end
 
     local meterDeaths = BuildDeathsFromDamageMeter(encounterID)
     if #meterDeaths > 0 then
+        local hasTiming = HasReliableDeathTiming(meterDeaths)
+        local hasDamageDetails = HasDamageDetailValues(meterDeaths)
+        local isLikelyPartial = (not hasTiming) and (not hasDamageDetails)
+        if isLikelyPartial and attempt < WIPE_FINALIZE_MAX_RETRIES then
+            _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
+                FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt + 1)
+            end)
+            return
+        end
+
         PersistEncounterRecap(encounterName, meterDeaths, encounterOutcome, autoOpen)
         return
     end

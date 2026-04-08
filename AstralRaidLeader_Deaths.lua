@@ -177,8 +177,8 @@ local SCROLL_TOP_OFFSET = 56
 local SCROLL_BOTTOM_OFFSET = 10
 local SCROLL_RIGHT_INSET = 34
 local SCROLLBAR_RIGHT_INSET = 8
-local SCROLLBAR_TOP_INSET = 3
-local SCROLLBAR_BOTTOM_INSET = 3
+local SCROLLBAR_TOP_INSET = 8
+local SCROLLBAR_BOTTOM_INSET = 8
 
 local scrollFrame = CreateFrame(
     "ScrollFrame",
