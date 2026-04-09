@@ -12,9 +12,13 @@ local ARL = {}
 _G[ADDON_NAME] = ARL
 local UnitIsGroupAssistant = _G.UnitIsGroupAssistant
 local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
+local MAX_PARTY_MEMBERS = _G.MAX_PARTY_MEMBERS or 4
 local C_Timer = _G.C_Timer
+local GetRaidRosterInfo = _G.GetRaidRosterInfo
 local SetRaidSubgroup = _G.SetRaidSubgroup
 local InviteUnit = (_G.C_PartyInfo and _G.C_PartyInfo.InviteUnit) or _G.InviteUnit
+local CanInvite = _G.C_PartyInfo and _G.C_PartyInfo.CanInvite
+local ENABLE_RAID_LAYOUT_MISSING_INVITES = true
 local IsGuildGroup = _G.IsGuildGroup
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
@@ -608,18 +612,20 @@ local function ParseRaidLayoutImport(text)
         end
 
         if encounterID and encounterID > 0 and encounterName ~= "" then
-            local profile = {
+            local rawProfile = {
                 encounterID = encounterID,
                 difficulty = difficulty ~= "" and difficulty or "Unknown",
                 name = encounterName,
                 invitelist = inviteList,
             }
-            profile.key = GetRaidLayoutKey(profile)
+            local profile = BuildRaidLayoutProfile(rawProfile)
 
-            if not byKey[profile.key] then
-                orderedKeys[#orderedKeys + 1] = profile.key
+            if profile then
+                if not byKey[profile.key] then
+                    orderedKeys[#orderedKeys + 1] = profile.key
+                end
+                byKey[profile.key] = profile
             end
-            byKey[profile.key] = profile
         end
     end
 
@@ -780,7 +786,11 @@ local function GetRaidRosterSnapshot()
             local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
             if fullName and fullName ~= "" then
                 local rosterIndex = UnitInRaid and UnitInRaid(unit) or raidIndex
-                local subgroup = math.floor(((tonumber(rosterIndex) or raidIndex) - 1) / 5) + 1
+                local subgroup = 1
+                if GetRaidRosterInfo and rosterIndex then
+                    local _, _, actualSubgroup = GetRaidRosterInfo(rosterIndex)
+                    subgroup = tonumber(actualSubgroup) or subgroup
+                end
                 local entry = {
                     index = tonumber(rosterIndex) or raidIndex,
                     name = fullName,
@@ -973,24 +983,97 @@ local function StopRaidLayoutApply(message)
     end
 end
 
-local function InviteMissingRaidLayoutPlayers(missingNames)
-    if not ARL.db or not ARL.db.raidGroupInviteMissingPlayers then
-        return 0
-    end
-    if not InviteUnit or type(missingNames) ~= "table" then
-        return 0
+-- Max raid sizes per normalized difficulty token.
+local DIFFICULTY_MAX_PLAYERS = {
+    mythic = 20,
+    heroic = 30,
+    normal = 30,
+    lfr    = 25,
+}
+
+-- Returns true when the current group cannot accept more invites.
+-- Pass expectedMaxSize (from the layout profile difficulty) for reliable detection
+-- outside instances where GetRaidDifficultyID / GetInstanceInfo may be unreliable.
+local function IsGroupAtInviteCapacity(expectedMaxSize)
+    local memberCount = tonumber(GetNumGroupMembers and GetNumGroupMembers()) or 0
+    if IsInRaid() then
+        local maxAllowed = expectedMaxSize or MAX_RAID_MEMBERS
+
+        -- Also cross-check with instance info when inside the instance.
+        if _G.GetInstanceInfo then
+            local _, _, _, _, maxPlayers = _G.GetInstanceInfo()
+            local parsedMax = tonumber(maxPlayers)
+            if parsedMax and parsedMax > 0 then
+                maxAllowed = math.min(maxAllowed, parsedMax)
+            end
+        end
+        return memberCount >= maxAllowed
     end
 
+    local partyMembers = tonumber(_G.GetNumSubgroupMembers and _G.GetNumSubgroupMembers()) or 0
+    return partyMembers >= MAX_PARTY_MEMBERS
+end
+
+-- Returns a set of short names (lowercased, realm stripped) for everyone currently in the raid.
+local function GetCurrentRaidShortNameSet()
+    local set = {}
+    for raidIndex = 1, MAX_RAID_MEMBERS do
+        local unit = "raid" .. raidIndex
+        if UnitExists(unit) then
+            local name = UnitName(unit)
+            if name and name ~= "" then
+                set[GetShortName(name):lower()] = true
+            end
+        end
+    end
+    return set
+end
+
+local function InviteMissingRaidLayoutPlayers(missingNames, expectedMaxSize)
+    if not ENABLE_RAID_LAYOUT_MISSING_INVITES then
+        return 0, 0
+    end
+    if ARL._allowRaidLayoutInvites ~= true then
+        return 0, 0
+    end
+    if not ARL.db or not ARL.db.raidGroupInviteMissingPlayers then
+        return 0, 0
+    end
+    if not InviteUnit or type(missingNames) ~= "table" then
+        return 0, 0
+    end
+    if CanInvite and not CanInvite() then
+        return 0, #missingNames
+    end
+    -- Bail out immediately if the group is already at capacity before the first invite attempt.
+    if IsGroupAtInviteCapacity(expectedMaxSize) then
+        return 0, #missingNames
+    end
+
+    -- Build a live short-name set so we never invite someone already in the raid
+    -- (name-matching failures can cause them to appear in the missing list even
+    -- when they are physically present in the group).
+    local inRaidAlready = GetCurrentRaidShortNameSet()
+
     local invitedCount = 0
+    local skippedCount = 0
     for _, missingName in ipairs(missingNames) do
         local cleanName = Trim(missingName)
         if cleanName ~= "" then
-            InviteUnit(cleanName)
-            invitedCount = invitedCount + 1
+            local shortKey = GetShortName(cleanName):lower()
+            if inRaidAlready[shortKey] then
+                -- Already in raid under a different name format; skip silently.
+                skippedCount = skippedCount + 1
+            elseif IsGroupAtInviteCapacity(expectedMaxSize) then
+                skippedCount = skippedCount + 1
+            else
+                InviteUnit(cleanName)
+                invitedCount = invitedCount + 1
+            end
         end
     end
 
-    return invitedCount
+    return invitedCount, skippedCount
 end
 
 local function ScheduleRaidLayoutApplyRetry(state, delaySeconds)
@@ -1016,7 +1099,16 @@ end
 
 local function ContinueRaidLayoutApply()
     local state = ARL.raidLayoutApplyState
-    if not state or state.waiting then return end
+    if not state then return end
+
+    if state.waiting then
+        local nowWaiting = GetTime()
+        if state.retryAt and nowWaiting >= state.retryAt then
+            state.waiting = false
+        else
+            return
+        end
+    end
 
     local now = GetTime()
     if state.retryAt and now < state.retryAt then
@@ -1044,9 +1136,16 @@ local function ContinueRaidLayoutApply()
 
     local snapshot = GetRaidRosterSnapshot()
     local occupancy = {}
+    local entriesBySubgroup = {}
     local pending = {}
     for _, entry in ipairs(snapshot.entries) do
         occupancy[entry.subgroup] = (occupancy[entry.subgroup] or 0) + 1
+        local members = entriesBySubgroup[entry.subgroup]
+        if not members then
+            members = {}
+            entriesBySubgroup[entry.subgroup] = members
+        end
+        members[#members + 1] = entry
     end
 
     for _, entry in ipairs(snapshot.entries) do
@@ -1064,15 +1163,27 @@ local function ContinueRaidLayoutApply()
     if #pending == 0 then
         local missingSuffix = ""
         if #state.missing > 0 then
-            if (state.invitedMissingCount or 0) > 0 then
+            local invitedCount = state.invitedMissingCount or 0
+            local skippedCount = state.skippedInviteCount or 0
+            if invitedCount > 0 or skippedCount > 0 then
+                local detail = ""
                 if ARL.db and ARL.db.raidGroupShowMissingNames then
+                    detail = ": " .. table.concat(state.missing, ", ")
+                end
+                if skippedCount > 0 then
                     missingSuffix = string.format(
-                        " %d listed member(s) were invited but are not yet in the raid: %s",
-                        #state.missing, table.concat(state.missing, ", "))
+                        " %d listed member(s) are not yet in the raid (%d invited, %d invite(s) skipped"
+                            .. " because your group is full)%s",
+                        #state.missing,
+                        invitedCount,
+                        skippedCount,
+                        detail
+                    )
                 else
                     missingSuffix = string.format(
-                        " %d listed member(s) were invited but are not yet in the raid.",
-                        #state.missing
+                        " %d listed member(s) were invited but are not yet in the raid%s",
+                        #state.missing,
+                        detail
                     )
                 end
             elseif ARL.db and ARL.db.raidGroupShowMissingNames then
@@ -1094,18 +1205,25 @@ local function ContinueRaidLayoutApply()
     end
 
     local pendingSignatureParts = {}
+    local pendingTokenSet = {}
     for _, move in ipairs(pending) do
-        pendingSignatureParts[#pendingSignatureParts + 1] = string.format("%s>%d", move.name, move.desiredGroup)
+        local token = string.format("%s>%d", move.name, move.desiredGroup)
+        pendingSignatureParts[#pendingSignatureParts + 1] = token
+        pendingTokenSet[token] = true
     end
     local pendingSignature = table.concat(pendingSignatureParts, "|")
     if state.lastPendingSignature == pendingSignature then
-        state.noProgressCount = (state.noProgressCount or 0) + 1
+        if state.lastIssuedMove and pendingTokenSet[state.lastIssuedMove] then
+            state.noProgressCount = (state.noProgressCount or 0) + 1
+        else
+            state.noProgressCount = 0
+        end
     else
         state.lastPendingSignature = pendingSignature
         state.noProgressCount = 0
     end
 
-    if (state.noProgressCount or 0) >= 4 then
+    if (state.noProgressCount or 0) >= 30 then
         StopRaidLayoutApply(
             "Raid layout apply stopped because raid subgroup changes are being "
                 .. "throttled. Wait a moment, then apply again."
@@ -1128,13 +1246,40 @@ local function ContinueRaidLayoutApply()
             state.combatPaused = false
             state.lastIssuedMove = string.format("%s>%d", move.name, move.desiredGroup)
             SetRaidSubgroup(move.index, move.desiredGroup)
-            ScheduleRaidLayoutApplyRetry(state, 1.0)
+            ScheduleRaidLayoutApplyRetry(state, 1.5)
             return
         end
     end
 
+    local bufferGroup = nil
+    for subgroup = 1, 8 do
+        if (occupancy[subgroup] or 0) < 5 then
+            bufferGroup = subgroup
+            break
+        end
+    end
+
+    if bufferGroup then
+        for _, move in ipairs(pending) do
+            local blockers = entriesBySubgroup[move.desiredGroup]
+            if blockers then
+                for _, blocker in ipairs(blockers) do
+                    local blockerDesired = state.targetByName[blocker.name:lower()]
+                    if blockerDesired and blockerDesired ~= blocker.subgroup and blocker.subgroup ~= bufferGroup then
+                        state.combatPaused = false
+                        state.lastIssuedMove = string.format("%s>%d", blocker.name, bufferGroup)
+                        SetRaidSubgroup(blocker.index, bufferGroup)
+                        ScheduleRaidLayoutApplyRetry(state, 1.5)
+                        return
+                    end
+                end
+            end
+        end
+    end
+
     StopRaidLayoutApply(string.format(
-        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full.",
+        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
+            .. " and no buffer move was available.",
         GetRaidLayoutLabel(state.profile)
     ))
 end
@@ -1173,14 +1318,31 @@ local function ApplyRaidLayoutProfile(profile, options)
     end
 
     options = type(options) == "table" and options or nil
-    local shouldInviteMissing = options and options.inviteMissing
-    if shouldInviteMissing == nil then
-        shouldInviteMissing = ARL.db and ARL.db.raidGroupInviteMissingPlayers or false
+    local dbInviteEnabled = ARL.db and ARL.db.raidGroupInviteMissingPlayers == true
+    local optionInviteValue = options and options.inviteMissing
+    local shouldInviteMissing
+    if optionInviteValue == nil then
+        shouldInviteMissing = dbInviteEnabled
+    else
+        shouldInviteMissing = optionInviteValue == true
     end
+    ARL._allowRaidLayoutInvites = shouldInviteMissing and dbInviteEnabled
+
     local invitedMissingCount = 0
-    if shouldInviteMissing and #targetState.missing > 0 then
-        invitedMissingCount = InviteMissingRaidLayoutPlayers(targetState.missing)
+    local skippedInviteCount = 0
+    if ARL._allowRaidLayoutInvites and #targetState.missing > 0 then
+        -- Derive the expected max size directly from the layout's difficulty field so the
+        -- capacity check is reliable even when GetRaidDifficultyID / GetInstanceInfo returns
+        -- stale or zero values (e.g. outside the instance or after a reload).
+        local diffToken = NormalizeDifficultyToken(profile.difficulty)
+        local expectedMaxSize = DIFFICULTY_MAX_PLAYERS[diffToken] or MAX_RAID_MEMBERS
+        invitedMissingCount, skippedInviteCount = InviteMissingRaidLayoutPlayers(targetState.missing, expectedMaxSize)
+        if skippedInviteCount > 0 then
+            Print("Skipped " .. tostring(skippedInviteCount)
+                .. " missing-player invite(s) because your current group is full.")
+        end
     end
+    ARL._allowRaidLayoutInvites = false
 
     ARL.db.activeRaidLayoutKey = profile.key
     ARL.raidLayoutApplyState = {
@@ -1190,6 +1352,7 @@ local function ApplyRaidLayoutProfile(profile, options)
         importedCount = targetState.importedCount,
         missing = targetState.missing,
         invitedMissingCount = invitedMissingCount,
+        skippedInviteCount = skippedInviteCount,
         overflowCount = targetState.overflowCount,
         waiting = false,
         combatPaused = false,
@@ -1735,8 +1898,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             trigger = "new_member"
         end
         lastGroupMemberCount = currentCount
-        if ARL.raidLayoutApplyState and not ARL.raidLayoutApplyState.waiting then
-            ARL:ContinueRaidLayoutApply()
+        if ARL.raidLayoutApplyState then
+            local state = ARL.raidLayoutApplyState
+            if state.waiting and state.retryAt and GetTime() >= state.retryAt then
+                state.waiting = false
+            end
+            if not state.waiting then
+                ARL:ContinueRaidLayoutApply()
+            end
         end
         if trigger == "new_member"
             and ARL.db
