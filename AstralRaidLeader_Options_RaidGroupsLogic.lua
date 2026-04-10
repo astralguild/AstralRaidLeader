@@ -18,6 +18,7 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
     local LoadEditorFromImportText = deps.LoadEditorFromImportText
     local LoadEditorFromCurrentRaid = deps.LoadEditorFromCurrentRaid
     local ReorganizeRaidEditorGroups = deps.ReorganizeRaidEditorGroups
+    local SplitRaidEditorGroups = deps.SplitRaidEditorGroups
     local GetEditorTargetGroup = deps.GetEditorTargetGroup
     local RemoveEditorPlayer = deps.RemoveEditorPlayer
     local SelectSubTab = deps.SelectSubTab
@@ -36,6 +37,7 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
     local newEmptyRaidLayoutButton = deps.newEmptyRaidLayoutButton
     local newFromRaidLayoutButton = deps.newFromRaidLayoutButton
     local reorganizeRaidLayoutButton = deps.reorganizeRaidLayoutButton
+    local splitRaidLayoutButton = deps.splitRaidLayoutButton
     local saveNewRaidLayoutButton = deps.saveNewRaidLayoutButton
     local overwriteRaidLayoutButton = deps.overwriteRaidLayoutButton
 
@@ -255,6 +257,27 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
         ReorganizeRaidEditorGroups()
         RefreshRaidEditorBoard()
         Print("Reorganized the draft into sequential five-player groups.")
+    end)
+
+    splitRaidLayoutButton:SetScript("OnClick", function()
+        local summary = SplitRaidEditorGroups and SplitRaidEditorGroups()
+        RefreshRaidEditorBoard()
+        if summary and summary.total and summary.total > 0 then
+            local unknownSuffix = ""
+            if (summary.unknown or 0) > 0 then
+                unknownSuffix = string.format(" (%d unknown role)", summary.unknown or 0)
+            end
+            Print(string.format(
+                "Split draft: %d tank(s), %d healer(s), %d melee, %d ranged%s.",
+                summary.tanks or 0,
+                summary.healers or 0,
+                summary.melee or 0,
+                summary.ranged or 0,
+                unknownSuffix
+            ))
+        else
+            Print("Split the draft by role across odd/even groups.")
+        end
     end)
 
     saveNewRaidLayoutButton:SetScript("OnClick", function()

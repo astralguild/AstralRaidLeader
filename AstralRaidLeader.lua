@@ -992,22 +992,12 @@ local DIFFICULTY_MAX_PLAYERS = {
 }
 
 -- Returns true when the current group cannot accept more invites.
--- Pass expectedMaxSize (from the layout profile difficulty) for reliable detection
--- outside instances where GetRaidDifficultyID / GetInstanceInfo may be unreliable.
 local function IsGroupAtInviteCapacity(expectedMaxSize)
+    -- Raid groups can always invite up to the hard 40-player cap.
+    -- expectedMaxSize is kept for call-site compatibility.
     local memberCount = tonumber(GetNumGroupMembers and GetNumGroupMembers()) or 0
     if IsInRaid() then
-        local maxAllowed = expectedMaxSize or MAX_RAID_MEMBERS
-
-        -- Also cross-check with instance info when inside the instance.
-        if _G.GetInstanceInfo then
-            local _, _, _, _, maxPlayers = _G.GetInstanceInfo()
-            local parsedMax = tonumber(maxPlayers)
-            if parsedMax and parsedMax > 0 then
-                maxAllowed = math.min(maxAllowed, parsedMax)
-            end
-        end
-        return memberCount >= maxAllowed
+        return memberCount >= MAX_RAID_MEMBERS
     end
 
     local partyMembers = tonumber(_G.GetNumSubgroupMembers and _G.GetNumSubgroupMembers()) or 0
@@ -1654,11 +1644,34 @@ end
 -- Return true when unit currently has a buff with the given spell ID.
 -- the deprecated multi-return UnitBuff signature removed in 11.0+.
 local function HasBuff(unit, spellId)
+    local function SafePlainNumber(value)
+        if type(value) == "number" then
+            local ok, plain = pcall(function() return value + 0 end)
+            if ok then return plain end
+            return nil
+        end
+        if type(value) == "string" then
+            local parsed = tonumber(value)
+            if type(parsed) == "number" then
+                return parsed
+            end
+        end
+        return nil
+    end
+
+    local targetSpellId = SafePlainNumber(spellId)
+    if not targetSpellId then
+        return false
+    end
+
     local i = 1
     while i <= 64 do
         local buffData = C_UnitAuras.GetBuffDataByIndex(unit, i)
         if not buffData then break end
-        if buffData.spellId == spellId then return true end
+        local auraSpellId = SafePlainNumber(buffData.spellId)
+        if auraSpellId and auraSpellId == targetSpellId then
+            return true
+        end
         i = i + 1
     end
     return false
