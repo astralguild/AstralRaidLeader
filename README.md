@@ -86,6 +86,7 @@ All commands use the `/arl` (or `/astralraidleader`) prefix.
 | `/arl moverank <rank> <pos>` | Move a guild rank to a specific position in the list |
 | `/arl raidgroups status` | Show the active imported raid-group layout |
 | `/arl raidgroups list` | List all saved imported raid-group layouts |
+| `/arl raidgroup <subcommand>` | Alias for `/arl raidgroups <subcommand>` |
 | `/arl raidgroups select <id\|name>` | Select a saved raid-group layout |
 | `/arl raidgroups apply [id\|name]` | Apply the active or named raid-group layout to the current raid |
 | `/arl raidgroups delete <id\|name>` | Delete one saved raid-group layout |
