@@ -697,6 +697,7 @@ raidGroupsLayoutsUI = RequireBuilderFields("Raid Groups layouts", raidGroupsLayo
     "newEmptyRaidLayoutButton",
     "newFromRaidLayoutButton",
     "reorganizeRaidLayoutButton",
+    "splitRaidLayoutButton",
     "saveNewRaidLayoutButton",
     "overwriteRaidLayoutButton",
 })
@@ -724,6 +725,7 @@ local editorAddPlayerButton = raidGroupsLayoutsUI.editorAddPlayerButton
 local newEmptyRaidLayoutButton = raidGroupsLayoutsUI.newEmptyRaidLayoutButton
 local newFromRaidLayoutButton = raidGroupsLayoutsUI.newFromRaidLayoutButton
 local reorganizeRaidLayoutButton = raidGroupsLayoutsUI.reorganizeRaidLayoutButton
+local splitRaidLayoutButton = raidGroupsLayoutsUI.splitRaidLayoutButton
 local saveNewRaidLayoutButton = raidGroupsLayoutsUI.saveNewRaidLayoutButton
 local overwriteRaidLayoutButton = raidGroupsLayoutsUI.overwriteRaidLayoutButton
 
@@ -810,7 +812,8 @@ for _, btn in ipairs({
     loadSelectedToEditorButton,
     raidGroupsUI.editorGroupPrevButton, raidGroupsUI.editorGroupNextButton,
     editorAddPlayerButton,
-    newEmptyRaidLayoutButton, newFromRaidLayoutButton, reorganizeRaidLayoutButton,
+    newEmptyRaidLayoutButton, newFromRaidLayoutButton,
+    reorganizeRaidLayoutButton, splitRaidLayoutButton,
     saveNewRaidLayoutButton, overwriteRaidLayoutButton,
 }) do
     SkinActionButton(btn)
@@ -836,7 +839,7 @@ AttachButtonTooltip(
 )
 AttachButtonTooltip(
     clearRaidLayoutsButton,
-    "Clear Saved Layouts",
+    "Delete All Layouts",
     "Deletes every saved raid layout and clears the current selection."
 )
 AttachButtonTooltip(
@@ -890,6 +893,12 @@ AttachButtonTooltip(
     reorganizeRaidLayoutButton,
     "Reorganize",
     "Compacts the draft into sequential five-player groups while keeping the current top-to-bottom order."
+)
+AttachButtonTooltip(
+    splitRaidLayoutButton,
+    "Split Raid",
+    "Builds a role split: one tank in groups 1/2, healers balanced into groups 1/2,"
+        .. " and melee/ranged spread across odd/even groups."
 )
 AttachButtonTooltip(
     saveNewRaidLayoutButton,
@@ -1271,6 +1280,353 @@ local function ReorganizeRaidEditorGroups()
     SetEditorTargetGroup(1)
 end
 
+local RANGED_SPEC_IDS = {
+    [62] = true, [63] = true, [64] = true,
+    [102] = true,
+    [258] = true,
+    [262] = true,
+    [253] = true, [254] = true,
+    [1467] = true, [1473] = true,
+    [265] = true, [266] = true, [267] = true,
+}
+
+local MELEE_SPEC_IDS = {
+    [70] = true,
+    [71] = true, [72] = true,
+    [251] = true, [252] = true,
+    [577] = true,
+    [103] = true,
+    [255] = true,
+    [268] = true, [269] = true,
+    [263] = true,
+    [259] = true, [260] = true, [261] = true,
+}
+
+local RANGED_ONLY_CLASSES = {
+    MAGE = true,
+    PRIEST = true,
+    WARLOCK = true,
+    EVOKER = true,
+}
+
+local MELEE_ONLY_CLASSES = {
+    WARRIOR = true,
+    DEATHKNIGHT = true,
+    ROGUE = true,
+    DEMONHUNTER = true,
+}
+
+local function ResolveUnitRole(unit)
+    local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
+    if assigned ~= "NONE" then
+        return assigned
+    end
+
+    if unit == "player" and GetSpecialization and GetSpecializationInfo then
+        local specIndex = GetSpecialization()
+        if specIndex and specIndex > 0 then
+            local _, _, _, _, role = GetSpecializationInfo(specIndex)
+            if role and role ~= "" then
+                return role
+            end
+        end
+    end
+
+    local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
+    if specID and specID > 0 and GetSpecializationInfoByID then
+        local _, _, _, _, role = GetSpecializationInfoByID(specID)
+        if role and role ~= "" then
+            return role
+        end
+    end
+
+    return "NONE"
+end
+
+local function ResolveUnitCombatType(unit, classToken, role)
+    if role == "TANK" or role == "HEALER" then
+        return nil
+    end
+
+    local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
+    if unit == "player" and GetSpecialization and GetSpecializationInfo then
+        local specIndex = GetSpecialization()
+        if specIndex and specIndex > 0 then
+            local specInfoID = select(1, GetSpecializationInfo(specIndex))
+            if specInfoID and specInfoID > 0 then
+                specID = specInfoID
+            end
+        end
+    end
+
+    if specID and specID > 0 then
+        if RANGED_SPEC_IDS[specID] then
+            return "ranged"
+        end
+        if MELEE_SPEC_IDS[specID] then
+            return "melee"
+        end
+    end
+
+    if classToken and RANGED_ONLY_CLASSES[classToken] then
+        return "ranged"
+    end
+    if classToken and MELEE_ONLY_CLASSES[classToken] then
+        return "melee"
+    end
+
+    if classToken == "HUNTER" or classToken == "DRUID" or classToken == "SHAMAN" then
+        return "ranged"
+    end
+
+    if classToken == "PALADIN" or classToken == "MONK" then
+        return "melee"
+    end
+
+    return nil
+end
+
+local function BuildRaidRosterRoleLookup()
+    local lookup = {}
+    local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
+    for raidIndex = 1, numMembers do
+        local unit = "raid" .. raidIndex
+        local name, realm = UnitName(unit)
+        if name then
+            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
+            local _, classToken = UnitClass(unit)
+            local role = ResolveUnitRole(unit)
+            local info = {
+                classToken = classToken,
+                role = role,
+                combatType = ResolveUnitCombatType(unit, classToken, role),
+            }
+            lookup[Normalize(fullName):lower()] = info
+            lookup[Normalize(name):lower()] = info
+            lookup[ShortName(fullName):lower()] = info
+        end
+    end
+    return lookup
+end
+
+local function SplitRaidEditorGroups()
+    local orderedNames = {}
+    for groupIndex = 1, 8 do
+        for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+            orderedNames[#orderedNames + 1] = playerName
+        end
+    end
+
+    local summary = {
+        total = #orderedNames,
+        tanks = 0,
+        healers = 0,
+        melee = 0,
+        ranged = 0,
+        unknown = 0,
+    }
+
+    if #orderedNames == 0 then
+        raidEditorDrag = nil
+        SetEditorTargetGroup(1)
+        return summary
+    end
+
+    local rosterLookup = BuildRaidRosterRoleLookup()
+    local tanks = {}
+    local healers = {}
+    local melee = {}
+    local ranged = {}
+    local unknown = {}
+
+    for _, playerName in ipairs(orderedNames) do
+        local cleanName = Normalize(playerName)
+        local lowerName = cleanName:lower()
+        local shortLower = ShortName(cleanName):lower()
+        local info = rosterLookup[lowerName] or rosterLookup[shortLower]
+        local role = info and info.role or "NONE"
+
+        if role == "TANK" then
+            tanks[#tanks + 1] = playerName
+        elseif role == "HEALER" then
+            healers[#healers + 1] = playerName
+        else
+            local combatType = info and info.combatType
+            if combatType == "melee" then
+                melee[#melee + 1] = playerName
+            elseif combatType == "ranged" then
+                ranged[#ranged + 1] = playerName
+            else
+                unknown[#unknown + 1] = playerName
+            end
+        end
+    end
+
+    summary.tanks = #tanks
+    summary.healers = #healers
+    summary.melee = #melee
+    summary.ranged = #ranged
+    summary.unknown = #unknown
+
+    local activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
+    local activeGroups = {}
+    for groupIndex = 1, activeGroupCount do
+        activeGroups[#activeGroups + 1] = groupIndex
+    end
+
+    local primaryGroups = { 1 }
+    if activeGroupCount >= 2 then
+        primaryGroups[#primaryGroups + 1] = 2
+    end
+
+    local dpsGroups = {}
+    for groupIndex = 3, activeGroupCount do
+        dpsGroups[#dpsGroups + 1] = groupIndex
+    end
+    if #dpsGroups == 0 then
+        for _, groupIndex in ipairs(primaryGroups) do
+            dpsGroups[#dpsGroups + 1] = groupIndex
+        end
+    end
+
+    local oddGroups = {}
+    local evenGroups = {}
+    for _, groupIndex in ipairs(dpsGroups) do
+        if (groupIndex % 2) == 1 then
+            oddGroups[#oddGroups + 1] = groupIndex
+        else
+            evenGroups[#evenGroups + 1] = groupIndex
+        end
+    end
+    if #oddGroups == 0 then
+        for _, groupIndex in ipairs(dpsGroups) do
+            oddGroups[#oddGroups + 1] = groupIndex
+        end
+    end
+    if #evenGroups == 0 then
+        for _, groupIndex in ipairs(dpsGroups) do
+            evenGroups[#evenGroups + 1] = groupIndex
+        end
+    end
+
+    for groupIndex = 1, 8 do
+        raidEditorState.groups[groupIndex] = {}
+    end
+
+    local function AddToGroup(groupIndex, playerName)
+        raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+    end
+
+    local function PickLeastFilled(candidates, requireOpenSlot)
+        local bestGroup
+        local bestCount
+        for _, groupIndex in ipairs(candidates) do
+            local count = #(raidEditorState.groups[groupIndex] or {})
+            if (not requireOpenSlot) or count < 5 then
+                if not bestGroup or count < bestCount then
+                    bestGroup = groupIndex
+                    bestCount = count
+                end
+            end
+        end
+        return bestGroup
+    end
+
+    local function AddToLeastFilled(candidates, playerName)
+        local groupIndex = PickLeastFilled(candidates, true)
+        if not groupIndex then
+            groupIndex = PickLeastFilled(activeGroups, true)
+        end
+        if not groupIndex then
+            groupIndex = PickLeastFilled(candidates, false)
+        end
+        if not groupIndex then
+            groupIndex = PickLeastFilled(activeGroups, false)
+        end
+        if not groupIndex then
+            groupIndex = 1
+        end
+        AddToGroup(groupIndex, playerName)
+        return groupIndex
+    end
+
+    if tanks[1] then
+        AddToGroup(1, tanks[1])
+    end
+    if tanks[2] and activeGroupCount >= 2 then
+        AddToGroup(2, tanks[2])
+    elseif tanks[2] then
+        AddToLeastFilled(primaryGroups, tanks[2])
+    end
+    for index = 3, #tanks do
+        AddToLeastFilled(primaryGroups, tanks[index])
+    end
+
+    for _, healerName in ipairs(healers) do
+        AddToLeastFilled(primaryGroups, healerName)
+    end
+
+    local dpsBalance = {
+        melee = { odd = 0, even = 0 },
+        ranged = { odd = 0, even = 0 },
+        total = { odd = 0, even = 0 },
+    }
+
+    local function AddDamager(playerName, kind)
+        local oddKindCount = dpsBalance[kind].odd
+        local evenKindCount = dpsBalance[kind].even
+
+        local side
+        if oddKindCount < evenKindCount then
+            side = "odd"
+        elseif evenKindCount < oddKindCount then
+            side = "even"
+        elseif dpsBalance.total.odd <= dpsBalance.total.even then
+            side = "odd"
+        else
+            side = "even"
+        end
+
+        local preferredGroups = side == "odd" and oddGroups or evenGroups
+        local fallbackGroups = side == "odd" and evenGroups or oddGroups
+        local targetGroup = PickLeastFilled(preferredGroups, true)
+            or PickLeastFilled(fallbackGroups, true)
+            or PickLeastFilled(dpsGroups, true)
+            or PickLeastFilled(activeGroups, true)
+            or PickLeastFilled(preferredGroups, false)
+            or PickLeastFilled(activeGroups, false)
+            or 1
+
+        AddToGroup(targetGroup, playerName)
+        dpsBalance[kind][side] = dpsBalance[kind][side] + 1
+        dpsBalance.total[side] = dpsBalance.total[side] + 1
+    end
+
+    local meleeIndex = 1
+    local rangedIndex = 1
+    while meleeIndex <= #melee or rangedIndex <= #ranged do
+        if meleeIndex <= #melee then
+            AddDamager(melee[meleeIndex], "melee")
+            meleeIndex = meleeIndex + 1
+        end
+        if rangedIndex <= #ranged then
+            AddDamager(ranged[rangedIndex], "ranged")
+            rangedIndex = rangedIndex + 1
+        end
+    end
+
+    for _, unknownName in ipairs(unknown) do
+        local assignedMelee = dpsBalance.melee.odd + dpsBalance.melee.even
+        local assignedRanged = dpsBalance.ranged.odd + dpsBalance.ranged.even
+        local kind = assignedMelee <= assignedRanged and "melee" or "ranged"
+        AddDamager(unknownName, kind)
+    end
+
+    raidEditorDrag = nil
+    SetEditorTargetGroup(1)
+    return summary
+end
+
 local function LoadEditorFromImportText(text)
     if not ARL.ParseRaidLayoutImport then
         return false, "Raid layout parser is not available yet."
@@ -1339,26 +1695,6 @@ end
 
 local function BuildRosterColorLookup()
     local lookup = {}
-    local function ResolveRole(unit)
-        local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
-        if assigned ~= "NONE" then return assigned end
-        if unit == "player" and GetSpecialization and GetSpecializationInfo then
-            local specIndex = GetSpecialization()
-            if specIndex and specIndex > 0 then
-                local _, _, _, _, role = GetSpecializationInfo(specIndex)
-                if role and role ~= "" then return role end
-            end
-        end
-        -- Fallback: derive role from the unit's current specialization.
-        -- GetInspectSpecialization returns cached spec data for group members
-        -- without requiring an explicit NotifyInspect call in modern clients.
-        local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
-        if specID and specID > 0 and GetSpecializationInfoByID then
-            local _, _, _, _, role = GetSpecializationInfoByID(specID)
-            if role and role ~= "" then return role end
-        end
-        return "NONE"
-    end
 
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
     for i = 1, numMembers do
@@ -1367,7 +1703,7 @@ local function BuildRosterColorLookup()
         if name then
             local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
             local _, classToken = UnitClass(unit)
-            local role = ResolveRole(unit)
+            local role = ResolveUnitRole(unit)
             local info = { classToken = classToken, role = role }
             lookup[fullName] = info
             lookup[name] = info
@@ -1377,7 +1713,7 @@ local function BuildRosterColorLookup()
     if selfName then
         local fullSelf = (selfRealm and selfRealm ~= "") and (selfName .. "-" .. selfRealm) or selfName
         local _, classToken = UnitClass("player")
-        local role = ResolveRole("player")
+        local role = ResolveUnitRole("player")
         local info = { classToken = classToken, role = role }
         lookup[fullSelf] = info
         lookup[selfName] = info
@@ -2227,6 +2563,7 @@ raidGroupsLogicBinder({
     LoadEditorFromImportText = LoadEditorFromImportText,
     LoadEditorFromCurrentRaid = LoadEditorFromCurrentRaid,
     ReorganizeRaidEditorGroups = ReorganizeRaidEditorGroups,
+    SplitRaidEditorGroups = SplitRaidEditorGroups,
     GetEditorTargetGroup = GetEditorTargetGroup,
     RemoveEditorPlayer = RemoveEditorPlayer,
     SelectSubTab = SelectSubTab,
@@ -2245,6 +2582,7 @@ raidGroupsLogicBinder({
     newEmptyRaidLayoutButton = newEmptyRaidLayoutButton,
     newFromRaidLayoutButton = newFromRaidLayoutButton,
     reorganizeRaidLayoutButton = reorganizeRaidLayoutButton,
+    splitRaidLayoutButton = splitRaidLayoutButton,
     saveNewRaidLayoutButton = saveNewRaidLayoutButton,
     overwriteRaidLayoutButton = overwriteRaidLayoutButton,
 

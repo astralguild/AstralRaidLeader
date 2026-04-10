@@ -80,7 +80,7 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     local clearRaidLayoutsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     clearRaidLayoutsButton:SetPoint("LEFT", deleteRaidLayoutButton, "RIGHT", 10, 0)
     clearRaidLayoutsButton:SetSize(124, 24)
-    clearRaidLayoutsButton:SetText("Clear Saved")
+    clearRaidLayoutsButton:SetText("Delete All")
 
     local raidGroupsUI = {}
 
@@ -240,6 +240,10 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     reorganizeRaidLayoutButton:SetSize(96, 24)
     reorganizeRaidLayoutButton:SetText("Reorganize")
 
+    local splitRaidLayoutButton = CreateFrame("Button", nil, raidEditorSection, "UIPanelButtonTemplate")
+    splitRaidLayoutButton:SetSize(88, 24)
+    splitRaidLayoutButton:SetText("Split Raid")
+
     local saveNewRaidLayoutButton = CreateFrame("Button", nil, raidEditorSection, "UIPanelButtonTemplate")
     saveNewRaidLayoutButton:SetPoint("TOPRIGHT", raidEditorSection, "TOPRIGHT", -110, -74)
     saveNewRaidLayoutButton:SetSize(98, 24)
@@ -265,8 +269,11 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     reorganizeRaidLayoutButton:ClearAllPoints()
     reorganizeRaidLayoutButton:SetPoint("LEFT", newFromRaidLayoutButton, "RIGHT", 10, 0)
 
+    splitRaidLayoutButton:ClearAllPoints()
+    splitRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
+
     saveNewRaidLayoutButton:ClearAllPoints()
-    saveNewRaidLayoutButton:SetPoint("LEFT", reorganizeRaidLayoutButton, "RIGHT", 10, 0)
+    saveNewRaidLayoutButton:SetPoint("LEFT", splitRaidLayoutButton, "RIGHT", 10, 0)
 
     local function CreateEditorGroupBox(groupIndex, x, y)
         local groupFrame = CreateFrame(
@@ -339,6 +346,7 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     ui.newEmptyRaidLayoutButton = newEmptyRaidLayoutButton
     ui.newFromRaidLayoutButton = newFromRaidLayoutButton
     ui.reorganizeRaidLayoutButton = reorganizeRaidLayoutButton
+    ui.splitRaidLayoutButton = splitRaidLayoutButton
     ui.saveNewRaidLayoutButton = saveNewRaidLayoutButton
     ui.overwriteRaidLayoutButton = overwriteRaidLayoutButton
 
