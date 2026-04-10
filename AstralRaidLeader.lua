@@ -992,9 +992,9 @@ local DIFFICULTY_MAX_PLAYERS = {
 }
 
 -- Returns true when the current group cannot accept more invites.
-local function IsGroupAtInviteCapacity(expectedMaxSize)
+local function IsGroupAtInviteCapacity(_expectedMaxSize)
     -- Raid groups can always invite up to the hard 40-player cap.
-    -- expectedMaxSize is kept for call-site compatibility.
+    -- _expectedMaxSize is kept for call-site compatibility.
     local memberCount = tonumber(GetNumGroupMembers and GetNumGroupMembers()) or 0
     if IsInRaid() then
         return memberCount >= MAX_RAID_MEMBERS
