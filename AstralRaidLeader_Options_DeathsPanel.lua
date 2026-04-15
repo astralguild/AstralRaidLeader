@@ -54,16 +54,31 @@ function ARL.OptionsBuilders.BuildDeathsPanel(deps)
     ui.deathGroupGuildPartyCB.Text:SetText("Guild Parties")
     ui.deathGroupGuildPartyCB.tooltipText = "Track death recap data in parties that Blizzard marks as guild groups."
 
+    local maxRecapsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    maxRecapsLabel:SetPoint("TOPLEFT", 8, -184)
+    maxRecapsLabel:SetText("Stored recap history size")
+
+    ui.maxRecapsStoredEdit = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    ui.maxRecapsStoredEdit:SetPoint("TOPLEFT", 8, -204)
+    ui.maxRecapsStoredEdit:SetSize(78, 24)
+    ui.maxRecapsStoredEdit:SetAutoFocus(false)
+    ui.maxRecapsStoredEdit:SetMaxLetters(3)
+
+    ui.applyMaxRecapsStoredButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    ui.applyMaxRecapsStoredButton:SetPoint("LEFT", ui.maxRecapsStoredEdit, "RIGHT", 10, 0)
+    ui.applyMaxRecapsStoredButton:SetSize(110, 24)
+    ui.applyMaxRecapsStoredButton:SetText("Apply")
+
     local recapInfoText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    recapInfoText:SetPoint("TOPLEFT", 8, -184)
+    recapInfoText:SetPoint("TOPLEFT", 8, -236)
     recapInfoText:SetWidth(520)
     recapInfoText:SetJustifyH("LEFT")
-    recapInfoText:SetText("Use /arl deaths to open the recap at any time.")
+    recapInfoText:SetText("Use /arl deaths or /arl deaths <index> to open stored recaps.")
 
     ui.openRecapButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    ui.openRecapButton:SetPoint("TOPLEFT", 8, -214)
+    ui.openRecapButton:SetPoint("TOPLEFT", 8, -266)
     ui.openRecapButton:SetSize(140, 24)
-    ui.openRecapButton:SetText("Open Last Recap")
+    ui.openRecapButton:SetText("Open Latest Recap")
 
     return ui
 end

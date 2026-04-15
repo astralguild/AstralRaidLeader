@@ -63,6 +63,9 @@ local DEFAULTS = {
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
     lastWipeEncounter      = "",    -- name of the encounter that wiped
     lastWipeDate           = "",    -- human-readable timestamp of the wipe
+    deathRecapHistory      = {},    -- newest-first recap history entries
+                                  -- {encounter,date,outcome,deaths}
+    maxDeathRecapsStored   = 20,    -- maximum recap history entries to keep
 }
 
 -- Built-in consumable categories - always checked, never stored in SavedVariables.
@@ -202,6 +205,37 @@ local function InitDB()
     end
     if type(ARL.db.deathGroupTypeFilter) ~= "table" then
         ARL.db.deathGroupTypeFilter = MigrateFilter(ARL.db.deathGroupTypeFilter)
+    end
+
+    if type(ARL.db.deathRecapHistory) ~= "table" then
+        ARL.db.deathRecapHistory = {}
+    end
+    if type(ARL.db.maxDeathRecapsStored) ~= "number"
+        or ARL.db.maxDeathRecapsStored < 1
+    then
+        ARL.db.maxDeathRecapsStored = DEFAULTS.maxDeathRecapsStored
+    end
+
+    -- One-time migration path for legacy installs that only stored the latest recap.
+    if #ARL.db.deathRecapHistory == 0
+        and (
+            (type(ARL.db.lastWipeEncounter) == "string" and ARL.db.lastWipeEncounter ~= "")
+            or (type(ARL.db.lastWipeDate) == "string" and ARL.db.lastWipeDate ~= "")
+            or (type(ARL.db.lastWipeDeaths) == "table" and #ARL.db.lastWipeDeaths > 0)
+        )
+    then
+        ARL.db.deathRecapHistory[1] = {
+            encounter = ARL.db.lastWipeEncounter or "",
+            date = ARL.db.lastWipeDate or "",
+            outcome = "wipe",
+            deaths = type(ARL.db.lastWipeDeaths) == "table" and ARL.db.lastWipeDeaths or {},
+        }
+    end
+
+    if #ARL.db.deathRecapHistory > ARL.db.maxDeathRecapsStored then
+        for i = #ARL.db.deathRecapHistory, ARL.db.maxDeathRecapsStored + 1, -1 do
+            ARL.db.deathRecapHistory[i] = nil
+        end
     end
 end
 
@@ -2379,16 +2413,43 @@ end
 
 local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, autoOpen)
     if not ARL.db then return end
-    ARL.db.lastWipeDeaths = deaths
-    ARL.db.lastWipeEncounter = encounterName
-    ARL.db.lastWipeDate = date("%Y-%m-%d %H:%M")
+    local recapDate = date("%Y-%m-%d %H:%M")
+    local recap = {
+        encounter = encounterName,
+        date = recapDate,
+        outcome = (encounterOutcome == "wipe") and "wipe" or "kill",
+        deaths = deaths,
+    }
 
-    local outcomeText = (encounterOutcome == "wipe") and "wipe" or "kill"
+    if type(ARL.db.deathRecapHistory) ~= "table" then
+        ARL.db.deathRecapHistory = {}
+    end
+    table.insert(ARL.db.deathRecapHistory, 1, recap)
+
+    local maxStored = tonumber(ARL.db.maxDeathRecapsStored) or DEFAULTS.maxDeathRecapsStored
+    if maxStored < 1 then
+        maxStored = DEFAULTS.maxDeathRecapsStored
+        ARL.db.maxDeathRecapsStored = maxStored
+    end
+    if #ARL.db.deathRecapHistory > maxStored then
+        for i = #ARL.db.deathRecapHistory, maxStored + 1, -1 do
+            ARL.db.deathRecapHistory[i] = nil
+        end
+    end
+
+    -- Keep legacy fields synchronized for backward compatibility.
+    ARL.db.lastWipeDeaths = recap.deaths
+    ARL.db.lastWipeEncounter = recap.encounter
+    ARL.db.lastWipeDate = recap.date
+
+    local outcomeText = recap.outcome
     Print(string.format(
-        "Encounter (%s) recorded on |cffffd100%s|r - %d death(s). Type |cffffff00/arl deaths|r to view the recap.",
+        "Encounter (%s) recorded on |cffffd100%s|r - %d death(s). "
+            .. "Stored %d recap(s). Type |cffffff00/arl deaths|r to view the latest.",
         outcomeText,
         ARL.db.lastWipeEncounter,
-        #deaths
+        #deaths,
+        #ARL.db.deathRecapHistory
     ))
 
     if autoOpen and ARL.ShowDeathRecap then
@@ -3058,10 +3119,11 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             Print("Settings UI is not available yet. Try again in a moment.")
         end
 
-    -- /arl deaths | /arl wipe  – show the last wipe death recap
+    -- /arl deaths [index] | /arl wipe  – show stored death recap(s)
     elseif cmd == "deaths" or cmd == "wipe" then
         if ARL.ShowDeathRecap then
-            ARL:ShowDeathRecap()
+            local requestedIndex = tonumber(Trim(arg))
+            ARL:ShowDeathRecap(requestedIndex)
         else
             Print("Death recap UI is not available yet. Try again in a moment.")
         end
@@ -3135,7 +3197,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             "  |cffffff00/arl grouptype [raid|party|guild_raid|guild_party] [on|off]|r "
             .. "– Toggle auto-promote per group type"
         )
-        Print("  |cffffff00/arl deaths|r             – Show the death recap from the last wipe")
+        Print("  |cffffff00/arl deaths [index]|r     – Show latest death recap or a specific stored recap")
         Print("  |cffffff00/arl deathtracking [on|off]|r – Toggle death tracking during encounters")
         Print(
             "  |cffffff00/arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]|r "

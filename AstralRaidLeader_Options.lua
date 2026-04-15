@@ -655,6 +655,8 @@ deathsUI = RequireBuilderFields("Deaths", deathsUI, {
     "deathGroupPartyCB",
     "deathGroupGuildRaidCB",
     "deathGroupGuildPartyCB",
+    "maxRecapsStoredEdit",
+    "applyMaxRecapsStoredButton",
     "openRecapButton",
 })
 if not deathsUI then return end
@@ -789,6 +791,7 @@ end
 
 for _, edit in ipairs({
     leadersUI.nameEdit, guildRanksUI.rankNameEdit, consumablesUI.catEdit, consumablesUI.spellIdEdit,
+    deathsUI.maxRecapsStoredEdit,
     editorEncounterEdit, editorDifficultyEdit,
     editorNameEdit, editorPlayerEdit,
 }) do
@@ -805,6 +808,7 @@ for _, btn in ipairs({
     consumablesUI.addConsumableButton, consumablesUI.removeSpellIdButton,
     consumablesUI.deleteCatButton, consumablesUI.clearConsumablesButton,
     consumablesUI.runAuditButton,
+    deathsUI.applyMaxRecapsStoredButton,
     deathsUI.openRecapButton,
     raidImportUI.importRaidLayoutsButton, raidImportUI.clearRaidImportButton,
     raidImportUI.loadToEditorButton, applyRaidLayoutButton,
@@ -2042,6 +2046,7 @@ local function RefreshUI()
     deathsUI.deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
     deathsUI.showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
     deathsUI.showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
+    deathsUI.maxRecapsStoredEdit:SetText(tostring(tonumber(ARL.db.maxDeathRecapsStored) or 20))
 
     local deathFilter = ARL.db.deathGroupTypeFilter or "raid"
     local dft = type(deathFilter) == "table" and deathFilter or {}
@@ -2510,6 +2515,48 @@ deathsUI.showRecapOnAnyEndCB:SetScript("OnClick", function(self)
     Print(string.format("Auto-open death recap on encounter kill |cff%s%s|r.",
         ARL.db.showRecapOnEncounterEnd and "00ff00" or "ff0000",
         ARL.db.showRecapOnEncounterEnd and "enabled" or "disabled"))
+end)
+
+local function ApplyMaxDeathRecapHistorySetting()
+    if not ARL.db then return end
+
+    local requested = tonumber(Normalize(deathsUI.maxRecapsStoredEdit:GetText() or ""))
+    if not requested then
+        Print("Enter a valid number between 1 and 200 for recap history size.")
+        deathsUI.maxRecapsStoredEdit:SetText(tostring(tonumber(ARL.db.maxDeathRecapsStored) or 20))
+        return
+    end
+
+    requested = math.floor(requested)
+    if requested < 1 then requested = 1 end
+    if requested > 200 then requested = 200 end
+
+    ARL.db.maxDeathRecapsStored = requested
+    if type(ARL.db.deathRecapHistory) ~= "table" then
+        ARL.db.deathRecapHistory = {}
+    end
+    if #ARL.db.deathRecapHistory > requested then
+        for i = #ARL.db.deathRecapHistory, requested + 1, -1 do
+            ARL.db.deathRecapHistory[i] = nil
+        end
+    end
+
+    deathsUI.maxRecapsStoredEdit:SetText(tostring(requested))
+    Print(string.format("Max stored death recaps set to |cffffff00%d|r.", requested))
+end
+
+deathsUI.applyMaxRecapsStoredButton:SetScript("OnClick", function()
+    if updating then return end
+    ApplyMaxDeathRecapHistorySetting()
+end)
+
+deathsUI.maxRecapsStoredEdit:SetScript("OnEnterPressed", function(self)
+    if updating then
+        self:ClearFocus()
+        return
+    end
+    ApplyMaxDeathRecapHistorySetting()
+    self:ClearFocus()
 end)
 
 local function SetDeathGroupTypeFilter(filter)

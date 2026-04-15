@@ -171,6 +171,12 @@ summaryText:SetJustifyH("LEFT")
 summaryText:SetTextColor(0.96, 0.82, 0.22)
 summaryText:SetText("")
 
+local recapIndexText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+recapIndexText:SetPoint("TOPRIGHT", contentPanel, "TOPRIGHT", -12, -30)
+recapIndexText:SetJustifyH("RIGHT")
+recapIndexText:SetTextColor(0.82, 0.86, 0.93)
+recapIndexText:SetText("")
+
 -- Scroll frame for the death list
 -- Right inset is -30 to leave room for the scroll bar track inside the panel.
 local SCROLL_TOP_OFFSET = 56
@@ -232,6 +238,7 @@ listText:SetText("")
 
 local deathRows = {}
 local DEATH_ROW_HEIGHT = 18
+local selectedRecapIndex = 1
 
 local function FormatExactAmount(value)
     if type(value) ~= "number" then
@@ -388,6 +395,18 @@ closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function() frame:Hide() end)
 SkinActionButton(closeButton)
 
+local newerRecapButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+newerRecapButton:SetPoint("BOTTOMLEFT", 12, 12)
+newerRecapButton:SetSize(110, 24)
+newerRecapButton:SetText("Newer")
+SkinActionButton(newerRecapButton)
+
+local olderRecapButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+olderRecapButton:SetPoint("LEFT", newerRecapButton, "RIGHT", 8, 0)
+olderRecapButton:SetSize(110, 24)
+olderRecapButton:SetText("Older")
+SkinActionButton(olderRecapButton)
+
 -- ============================================================
 -- Populate helpers
 -- ============================================================
@@ -474,28 +493,75 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton:EnableMouse(hasSpellTooltip)
 end
 
-local function RefreshRecap()
+local function RefreshRecap(requestedIndex)
     if not ARL.db then
         subtitleText:SetText("Waiting for saved variables to load...")
         summaryText:SetText("")
+        recapIndexText:SetText("")
         listText:SetText("")
         HideAllDeathRows()
+        newerRecapButton:Disable()
+        olderRecapButton:Disable()
         return
     end
 
-    local encounter = ARL.db.lastWipeEncounter
-    local wipeDate  = ARL.db.lastWipeDate
-    local deaths    = ARL.db.lastWipeDeaths
+    local history = ARL.db.deathRecapHistory
+    if type(history) ~= "table" then
+        history = {}
+    end
+    local total = #history
+
+    if total == 0 and (
+        (ARL.db.lastWipeEncounter and ARL.db.lastWipeEncounter ~= "")
+        or (ARL.db.lastWipeDate and ARL.db.lastWipeDate ~= "")
+        or (type(ARL.db.lastWipeDeaths) == "table" and #ARL.db.lastWipeDeaths > 0)
+    ) then
+        history[1] = {
+            encounter = ARL.db.lastWipeEncounter or "",
+            date = ARL.db.lastWipeDate or "",
+            outcome = "wipe",
+            deaths = ARL.db.lastWipeDeaths,
+        }
+        total = 1
+    end
+
+    if type(requestedIndex) == "number" then
+        selectedRecapIndex = math.floor(requestedIndex)
+    end
+
+    if total <= 0 then
+        selectedRecapIndex = 1
+    elseif selectedRecapIndex < 1 then
+        selectedRecapIndex = 1
+    elseif selectedRecapIndex > total then
+        selectedRecapIndex = total
+    end
+
+    local recap = history[selectedRecapIndex] or {}
+    local encounter = recap.encounter or ""
+    local wipeDate  = recap.date or ""
+    local deaths    = recap.deaths
+    local outcome = recap.outcome == "kill" and "Kill" or "Wipe"
 
     if encounter and encounter ~= "" then
         subtitleText:SetText(string.format(
-            "Encounter: |cffffd100%s|r  –  %s",
+            "[%s] Encounter: |cffffd100%s|r  –  %s",
+            outcome,
             encounter,
             wipeDate ~= "" and wipeDate or "unknown time"
         ))
     else
         subtitleText:SetText("No wipe data recorded yet.")
     end
+
+    if total > 0 then
+        recapIndexText:SetText(string.format("Recap %d/%d", selectedRecapIndex, total))
+    else
+        recapIndexText:SetText("Recap 0/0")
+    end
+
+    newerRecapButton:SetEnabled(total > 0 and selectedRecapIndex > 1)
+    olderRecapButton:SetEnabled(total > 0 and selectedRecapIndex < total)
 
     if not deaths or #deaths == 0 then
         summaryText:SetText("No reliable death-cause data found.")
@@ -532,12 +598,23 @@ local function RefreshRecap()
     content:SetHeight((#deaths * DEATH_ROW_HEIGHT) + 8)
 end
 
+newerRecapButton:SetScript("OnClick", function()
+    RefreshRecap(selectedRecapIndex - 1)
+end)
+
+olderRecapButton:SetScript("OnClick", function()
+    RefreshRecap(selectedRecapIndex + 1)
+end)
+
 -- ============================================================
 -- Public API
 -- ============================================================
 
-function ARL.ShowDeathRecap()
-    RefreshRecap()
+function ARL.ShowDeathRecap(index)
+    if type(index) ~= "number" then
+        index = 1
+    end
+    RefreshRecap(index)
     frame:Show()
     frame:Raise()
     -- Reset scroll to top
