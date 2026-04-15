@@ -64,7 +64,7 @@ local DEFAULTS = {
     lastWipeEncounter      = "",    -- name of the encounter that wiped
     lastWipeDate           = "",    -- human-readable timestamp of the wipe
     deathRecapHistory      = {},    -- newest-first recap history entries
-                                  -- {encounter,date,outcome,deaths}
+                                  -- {encounter,difficulty,date,outcome,deaths}
     maxDeathRecapsStored   = 20,    -- maximum recap history entries to keep
 }
 
@@ -226,6 +226,7 @@ local function InitDB()
     then
         ARL.db.deathRecapHistory[1] = {
             encounter = ARL.db.lastWipeEncounter or "",
+            difficulty = "",
             date = ARL.db.lastWipeDate or "",
             outcome = "wipe",
             deaths = type(ARL.db.lastWipeDeaths) == "table" and ARL.db.lastWipeDeaths or {},
@@ -2414,8 +2415,10 @@ end
 local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, autoOpen)
     if not ARL.db then return end
     local recapDate = date("%Y-%m-%d %H:%M")
+    local _, difficultyName = GetCurrentRaidDifficultyInfo()
     local recap = {
         encounter = encounterName,
+        difficulty = Trim(difficultyName),
         date = recapDate,
         outcome = (encounterOutcome == "wipe") and "wipe" or "kill",
         deaths = deaths,
