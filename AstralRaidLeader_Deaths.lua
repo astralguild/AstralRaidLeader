@@ -7,6 +7,12 @@ if not ARL then return end
 local GameTooltip = _G.GameTooltip
 local GetSpellInfo = _G.GetSpellInfo
 local C_Spell = _G.C_Spell
+local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
+local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
+local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
+local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
+local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
+local ToggleDropDownMenu = _G.ToggleDropDownMenu
 
 local function ResolveSpellNameAndIcon(spellId)
     if not spellId or spellId <= 0 then
@@ -62,7 +68,7 @@ end
 -- Frame construction
 -- ============================================================
 
-local FRAME_W, FRAME_H = 520, 430
+local FRAME_W, FRAME_H = 700, 500
 
 local frame = CreateFrame(
     "Frame",
@@ -158,7 +164,7 @@ SkinPanel(contentPanel, 0.05, 0.08, 0.12, 0.86, 0.23, 0.30, 0.40, 0.42)
 -- Subtitle line (encounter + date)
 local subtitleText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 subtitleText:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 10, -10)
-subtitleText:SetWidth(FRAME_W - 56)
+subtitleText:SetPoint("TOPRIGHT", contentPanel, "TOPRIGHT", -12, -10)
 subtitleText:SetJustifyH("LEFT")
 subtitleText:SetTextColor(0.82, 0.86, 0.93)
 subtitleText:SetText("")
@@ -166,14 +172,72 @@ subtitleText:SetText("")
 -- Summary line (e.g. "5 deaths recorded")
 local summaryText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 summaryText:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 10, -30)
-summaryText:SetWidth(FRAME_W - 56)
 summaryText:SetJustifyH("LEFT")
 summaryText:SetTextColor(0.96, 0.82, 0.22)
 summaryText:SetText("")
 
+local recapIndexText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+recapIndexText:SetPoint("TOPRIGHT", contentPanel, "TOPRIGHT", -12, -30)
+recapIndexText:SetJustifyH("RIGHT")
+recapIndexText:SetTextColor(0.82, 0.86, 0.93)
+recapIndexText:SetText("")
+
+summaryText:SetPoint("TOPRIGHT", recapIndexText, "TOPLEFT", -16, 0)
+
+local recapSelectorLabel = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+recapSelectorLabel:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 10, -66)
+recapSelectorLabel:SetText("Recap")
+
+local recapDropDown = CreateFrame(
+    "Frame",
+    "AstralRaidLeaderDeathRecapDropDown",
+    contentPanel,
+    "UIDropDownMenuTemplate"
+)
+recapDropDown:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", -6, -76)
+if UIDropDownMenu_SetWidth then
+    UIDropDownMenu_SetWidth(recapDropDown, 580)
+end
+if UIDropDownMenu_SetText then
+    UIDropDownMenu_SetText(recapDropDown, "No stored recaps")
+end
+recapDropDown:EnableMouse(false)
+
+local suppressRecapDropDownMouseDown = false
+
+local recapDropDownButton = _G["AstralRaidLeaderDeathRecapDropDownButton"]
+if recapDropDownButton then
+    recapDropDownButton:EnableMouse(true)
+    recapDropDownButton:SetHitRectInsets(0, 0, 0, 0)
+    recapDropDownButton:SetScript("OnClick", function()
+        if ToggleDropDownMenu then
+            suppressRecapDropDownMouseDown = true
+            ToggleDropDownMenu(1, nil, recapDropDown)
+        end
+    end)
+end
+
+recapDropDown:SetScript("OnMouseDown", function(_, mouseButton)
+    if suppressRecapDropDownMouseDown then
+        suppressRecapDropDownMouseDown = false
+        return
+    end
+    if mouseButton == "LeftButton" and ToggleDropDownMenu then
+        ToggleDropDownMenu(1, nil, recapDropDown)
+    end
+end)
+
+local recapDropDownText = _G["AstralRaidLeaderDeathRecapDropDownText"]
+if recapDropDownText then
+    recapDropDownText:ClearAllPoints()
+    recapDropDownText:SetPoint("LEFT", recapDropDown, "LEFT", 32, 2)
+    recapDropDownText:SetPoint("RIGHT", recapDropDown, "RIGHT", -43, 2)
+    recapDropDownText:SetJustifyH("LEFT")
+end
+
 -- Scroll frame for the death list
 -- Right inset is -30 to leave room for the scroll bar track inside the panel.
-local SCROLL_TOP_OFFSET = 56
+local SCROLL_TOP_OFFSET = 104
 local SCROLL_BOTTOM_OFFSET = 10
 local SCROLL_RIGHT_INSET = 34
 local SCROLLBAR_RIGHT_INSET = 8
@@ -232,6 +296,61 @@ listText:SetText("")
 
 local deathRows = {}
 local DEATH_ROW_HEIGHT = 18
+local selectedRecapIndex = 1
+
+local function FormatRecapDifficulty(value)
+    local text = tostring(value or "")
+    if text == "" then
+        return "Unknown"
+    end
+    if ARL.FormatRaidDifficultyDisplay then
+        return ARL.FormatRaidDifficultyDisplay(text)
+    end
+    return text
+end
+
+local function GetStoredRecapHistory()
+    if not ARL.db then return {}, 0 end
+
+    local history = ARL.db.deathRecapHistory
+    if type(history) ~= "table" then
+        history = {}
+    end
+
+    local total = #history
+    if total == 0 and (
+        (ARL.db.lastWipeEncounter and ARL.db.lastWipeEncounter ~= "")
+        or (ARL.db.lastWipeDate and ARL.db.lastWipeDate ~= "")
+        or (type(ARL.db.lastWipeDeaths) == "table" and #ARL.db.lastWipeDeaths > 0)
+    ) then
+        return {
+            {
+                encounter = ARL.db.lastWipeEncounter or "",
+                difficulty = "",
+                date = ARL.db.lastWipeDate or "",
+                outcome = "wipe",
+                deaths = ARL.db.lastWipeDeaths,
+            }
+        }, 1
+    end
+
+    return history, total
+end
+
+local function BuildRecapSelectionLabel(recap, index)
+    local outcome = (recap and recap.outcome == "kill") and "Kill" or "Wipe"
+    local difficulty = FormatRecapDifficulty(recap and recap.difficulty)
+    local encounter = recap and recap.encounter or "Unknown Encounter"
+    local recapDate = recap and recap.date or "unknown time"
+    return string.format(
+        "%d. [%s] %s %s - %s",
+        index,
+        outcome,
+        difficulty,
+        encounter,
+        recapDate
+    )
+end
 
 local function FormatExactAmount(value)
     if type(value) ~= "number" then
@@ -388,6 +507,18 @@ closeButton:SetText("Close")
 closeButton:SetScript("OnClick", function() frame:Hide() end)
 SkinActionButton(closeButton)
 
+local newerRecapButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+newerRecapButton:SetPoint("BOTTOMLEFT", 12, 12)
+newerRecapButton:SetSize(110, 24)
+newerRecapButton:SetText("Newer")
+SkinActionButton(newerRecapButton)
+
+local olderRecapButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+olderRecapButton:SetPoint("LEFT", newerRecapButton, "RIGHT", 8, 0)
+olderRecapButton:SetSize(110, 24)
+olderRecapButton:SetText("Older")
+SkinActionButton(olderRecapButton)
+
 -- ============================================================
 -- Populate helpers
 -- ============================================================
@@ -407,14 +538,18 @@ local function IsMissingMechanicName(value)
 end
 
 local function BuildDeathLine(i, entry)
+    local playerName = tostring((entry and entry.playerName) or "Unknown")
+    local sourceName = tostring((entry and entry.source) or "Unknown")
+    local shownTime = tostring((entry and entry.timeStr) or "?:??")
+
     local prefix = string.format(
         "%2d. %s%s%s  died to",
         i,
-        COLOR_PLAYER, entry.playerName, COLOR_RESET
+        COLOR_PLAYER, playerName, COLOR_RESET
     )
 
-    local spellId = entry.spellId
-    local mechanicName = entry.mechanic
+    local spellId = entry and entry.spellId
+    local mechanicName = entry and entry.mechanic
     if IsMissingMechanicName(mechanicName)
         and spellId and spellId > 0
     then
@@ -454,8 +589,8 @@ local function BuildDeathLine(i, entry)
 
     local suffix = string.format(
         "(from %s%s%s) %sat %s%s",
-        COLOR_SOURCE, entry.source, COLOR_RESET,
-        COLOR_TIME,   entry.timeStr, COLOR_RESET
+        COLOR_SOURCE, sourceName, COLOR_RESET,
+        COLOR_TIME,   shownTime, COLOR_RESET
     )
 
     return prefix, spellText, suffix
@@ -474,22 +609,86 @@ local function PopulateDeathRow(row, i, entry)
     row.spellButton:EnableMouse(hasSpellTooltip)
 end
 
-local function RefreshRecap()
-    if not ARL.db then
-        subtitleText:SetText("Waiting for saved variables to load...")
-        summaryText:SetText("")
-        listText:SetText("")
-        HideAllDeathRows()
+local function RefreshRecapDropDown(selectedIndex)
+    local history, total = GetStoredRecapHistory()
+    if not UIDropDownMenu_SetText then return end
+
+    if total <= 0 then
+        UIDropDownMenu_SetText(recapDropDown, "No stored recaps")
         return
     end
 
-    local encounter = ARL.db.lastWipeEncounter
-    local wipeDate  = ARL.db.lastWipeDate
-    local deaths    = ARL.db.lastWipeDeaths
+    local recap = history[selectedIndex]
+    UIDropDownMenu_SetText(
+        recapDropDown,
+        BuildRecapSelectionLabel(recap, selectedIndex)
+    )
+end
+
+local RefreshRecap
+
+UIDropDownMenu_Initialize(recapDropDown, function(_, level)
+    if level ~= 1 then return end
+
+    local history, total = GetStoredRecapHistory()
+    if total <= 0 then
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "No stored recaps"
+        info.disabled = true
+        UIDropDownMenu_AddButton(info, level)
+        return
+    end
+
+    for index, recap in ipairs(history) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = BuildRecapSelectionLabel(recap, index)
+        info.checked = index == selectedRecapIndex
+        info.func = function()
+            RefreshRecap(index)
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end)
+
+function RefreshRecap(requestedIndex)
+    if not ARL.db then
+        subtitleText:SetText("Waiting for saved variables to load...")
+        summaryText:SetText("")
+        recapIndexText:SetText("")
+        listText:SetText("")
+        HideAllDeathRows()
+        newerRecapButton:Disable()
+        olderRecapButton:Disable()
+        RefreshRecapDropDown(1)
+        return
+    end
+
+    local history, total = GetStoredRecapHistory()
+
+    if type(requestedIndex) == "number" then
+        selectedRecapIndex = math.floor(requestedIndex)
+    end
+
+    if total <= 0 then
+        selectedRecapIndex = 1
+    elseif selectedRecapIndex < 1 then
+        selectedRecapIndex = 1
+    elseif selectedRecapIndex > total then
+        selectedRecapIndex = total
+    end
+
+    local recap = history[selectedRecapIndex] or {}
+    local encounter = recap.encounter or ""
+    local difficulty = FormatRecapDifficulty(recap.difficulty)
+    local wipeDate  = recap.date or ""
+    local deaths    = type(recap.deaths) == "table" and recap.deaths or {}
+    local outcome = recap.outcome == "kill" and "Kill" or "Wipe"
 
     if encounter and encounter ~= "" then
         subtitleText:SetText(string.format(
-            "Encounter: |cffffd100%s|r  –  %s",
+            "[%s] |cffffd100%s|r Encounter: |cffffd100%s|r  –  %s",
+            outcome,
+            difficulty,
             encounter,
             wipeDate ~= "" and wipeDate or "unknown time"
         ))
@@ -497,14 +696,28 @@ local function RefreshRecap()
         subtitleText:SetText("No wipe data recorded yet.")
     end
 
-    if not deaths or #deaths == 0 then
+    if total > 0 then
+        recapIndexText:SetText(string.format("Recap %d/%d", selectedRecapIndex, total))
+    else
+        recapIndexText:SetText("Recap 0/0")
+    end
+
+    newerRecapButton:SetEnabled(total > 0 and selectedRecapIndex > 1)
+    olderRecapButton:SetEnabled(total > 0 and selectedRecapIndex < total)
+    RefreshRecapDropDown(selectedRecapIndex)
+
+    -- Always clear previous recap state before rendering the current selection.
+    summaryText:SetText("")
+    listText:SetText("")
+    listText:Hide()
+    HideAllDeathRows()
+    content:SetHeight(40)
+    scrollFrame:SetVerticalScroll(0)
+
+    if #deaths == 0 then
         summaryText:SetText("No reliable death-cause data found.")
         listText:SetText("(C_DamageMeter did not provide death details for this wipe.)")
         listText:Show()
-        HideAllDeathRows()
-
-        -- Resize content to fit the message
-        content:SetHeight(40)
         return
     end
 
@@ -513,10 +726,6 @@ local function RefreshRecap()
         #deaths,
         #deaths == 1 and "" or "s"
     ))
-
-    listText:SetText("")
-    listText:Hide()
-
     for i, entry in ipairs(deaths) do
         local row = AcquireDeathRow(i)
         row.entry = entry
@@ -530,14 +739,26 @@ local function RefreshRecap()
 
     -- Allow the content frame to resize so the scroll frame works correctly.
     content:SetHeight((#deaths * DEATH_ROW_HEIGHT) + 8)
+    scrollFrame:SetVerticalScroll(0)
 end
+
+newerRecapButton:SetScript("OnClick", function()
+    RefreshRecap(selectedRecapIndex - 1)
+end)
+
+olderRecapButton:SetScript("OnClick", function()
+    RefreshRecap(selectedRecapIndex + 1)
+end)
 
 -- ============================================================
 -- Public API
 -- ============================================================
 
-function ARL.ShowDeathRecap()
-    RefreshRecap()
+function ARL.ShowDeathRecap(index)
+    if type(index) ~= "number" then
+        index = 1
+    end
+    RefreshRecap(index)
     frame:Show()
     frame:Raise()
     -- Reset scroll to top
