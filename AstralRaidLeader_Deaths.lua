@@ -625,6 +625,8 @@ local function RefreshRecapDropDown(selectedIndex)
     )
 end
 
+local RefreshRecap
+
 UIDropDownMenu_Initialize(recapDropDown, function(_, level)
     if level ~= 1 then return end
 
@@ -648,7 +650,7 @@ UIDropDownMenu_Initialize(recapDropDown, function(_, level)
     end
 end)
 
-local function RefreshRecap(requestedIndex)
+function RefreshRecap(requestedIndex)
     if not ARL.db then
         subtitleText:SetText("Waiting for saved variables to load...")
         summaryText:SetText("")
