@@ -17,6 +17,12 @@ local GetInspectSpecialization = _G.GetInspectSpecialization
 local GetSpecialization = _G.GetSpecialization
 local GetSpecializationInfo = _G.GetSpecializationInfo
 local GetSpecializationInfoByID = _G.GetSpecializationInfoByID
+local GetNumGuildMembers = _G.GetNumGuildMembers
+local GetGuildRosterInfo = _G.GetGuildRosterInfo
+local IsInGuild = _G.IsInGuild
+local C_GuildInfo = _G.C_GuildInfo
+local GetTime = _G.GetTime
+local GetCurrentKeyBoardFocus = _G.GetCurrentKeyBoardFocus
 local UnitClass = _G.UnitClass
 local RAID_CLASS_COLORS = _G.RAID_CLASS_COLORS
 local ROLE_ICON_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
@@ -80,11 +86,13 @@ frame:Hide()
 frame:HookScript("OnShow", function(self)
     self:SetAlpha(1)
     self:EnableMouse(true)
+    self:EnableKeyboard(false)
 end)
 
 frame:HookScript("OnHide", function(self)
     self:SetAlpha(0)
     self:EnableMouse(false)
+    self:EnableKeyboard(false)
 end)
 
 if frame.SetBackdrop then
@@ -1473,6 +1481,9 @@ local function SplitRaidEditorGroups()
     summary.unknown = #unknown
 
     local activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
+    if activeGroupCount >= 3 and (activeGroupCount % 2) == 1 and activeGroupCount < 8 then
+        activeGroupCount = activeGroupCount + 1
+    end
     local activeGroups = {}
     for groupIndex = 1, activeGroupCount do
         activeGroups[#activeGroups + 1] = groupIndex
@@ -1483,32 +1494,12 @@ local function SplitRaidEditorGroups()
         primaryGroups[#primaryGroups + 1] = 2
     end
 
-    local dpsGroups = {}
-    for groupIndex = 3, activeGroupCount do
-        dpsGroups[#dpsGroups + 1] = groupIndex
-    end
-    if #dpsGroups == 0 then
-        for _, groupIndex in ipairs(primaryGroups) do
-            dpsGroups[#dpsGroups + 1] = groupIndex
-        end
-    end
-
     local oddGroups = {}
     local evenGroups = {}
-    for _, groupIndex in ipairs(dpsGroups) do
+    for _, groupIndex in ipairs(activeGroups) do
         if (groupIndex % 2) == 1 then
             oddGroups[#oddGroups + 1] = groupIndex
         else
-            evenGroups[#evenGroups + 1] = groupIndex
-        end
-    end
-    if #oddGroups == 0 then
-        for _, groupIndex in ipairs(dpsGroups) do
-            oddGroups[#oddGroups + 1] = groupIndex
-        end
-    end
-    if #evenGroups == 0 then
-        for _, groupIndex in ipairs(dpsGroups) do
             evenGroups[#evenGroups + 1] = groupIndex
         end
     end
@@ -1517,35 +1508,99 @@ local function SplitRaidEditorGroups()
         raidEditorState.groups[groupIndex] = {}
     end
 
+    local sideTargets = {
+        odd = math.ceil(#orderedNames / 2),
+        even = #orderedNames - math.ceil(#orderedNames / 2),
+    }
+    local sideCounts = { odd = 0, even = 0 }
+
     local function AddToGroup(groupIndex, playerName)
         raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+        local side = ((groupIndex % 2) == 1) and "odd" or "even"
+        sideCounts[side] = sideCounts[side] + 1
     end
 
-    local function PickLeastFilled(candidates, requireOpenSlot)
-        local bestGroup
-        local bestCount
-        for _, groupIndex in ipairs(candidates) do
+    local function PickFirstOpen(candidates)
+        for _, groupIndex in ipairs(candidates or {}) do
             local count = #(raidEditorState.groups[groupIndex] or {})
-            if (not requireOpenSlot) or count < 5 then
-                if not bestGroup or count < bestCount then
-                    bestGroup = groupIndex
-                    bestCount = count
-                end
+            if count < 5 then
+                return groupIndex
             end
         end
-        return bestGroup
+        return nil
     end
 
-    local function AddToLeastFilled(candidates, playerName)
-        local groupIndex = PickLeastFilled(candidates, true)
+    local function ChoosePreferredSide(preferredSide)
+        local oddDeficit = sideTargets.odd - sideCounts.odd
+        local evenDeficit = sideTargets.even - sideCounts.even
+
+        if preferredSide == "odd" or preferredSide == "even" then
+            local preferredDeficit = sideTargets[preferredSide] - sideCounts[preferredSide]
+            if preferredDeficit > 0 then
+                return preferredSide
+            end
+        end
+
+        if oddDeficit > evenDeficit then
+            return "odd"
+        end
+        if evenDeficit > oddDeficit then
+            return "even"
+        end
+
+        if preferredSide == "odd" or preferredSide == "even" then
+            return preferredSide
+        end
+        return "odd"
+    end
+
+    local function PickSequentialOpenGroup()
+        local preferredSide = ChoosePreferredSide(nil)
+        local preferredGroups = preferredSide == "odd" and oddGroups or evenGroups
+        local fallbackGroups = preferredSide == "odd" and evenGroups or oddGroups
+
+        local sideGroup = PickFirstOpen(preferredGroups)
+        if sideGroup then
+            return sideGroup
+        end
+
+        sideGroup = PickFirstOpen(fallbackGroups)
+        if sideGroup then
+            return sideGroup
+        end
+
+        for _, groupIndex in ipairs(activeGroups) do
+            local count = #(raidEditorState.groups[groupIndex] or {})
+            if count < 5 then
+                return groupIndex
+            end
+        end
+        return nil
+    end
+
+    local function AddToFirstAvailable(candidates, playerName)
+        local preferredSide = ChoosePreferredSide(nil)
+        local candidatePreferred = {}
+        local candidateFallback = {}
+
+        for _, groupIndex in ipairs(candidates or {}) do
+            if ((groupIndex % 2) == 1 and preferredSide == "odd")
+                or ((groupIndex % 2) == 0 and preferredSide == "even") then
+                candidatePreferred[#candidatePreferred + 1] = groupIndex
+            else
+                candidateFallback[#candidateFallback + 1] = groupIndex
+            end
+        end
+
+        local groupIndex = PickFirstOpen(candidatePreferred)
         if not groupIndex then
-            groupIndex = PickLeastFilled(activeGroups, true)
+            groupIndex = PickFirstOpen(candidateFallback)
         end
         if not groupIndex then
-            groupIndex = PickLeastFilled(candidates, false)
+            groupIndex = PickSequentialOpenGroup()
         end
         if not groupIndex then
-            groupIndex = PickLeastFilled(activeGroups, false)
+            groupIndex = activeGroups[1]
         end
         if not groupIndex then
             groupIndex = 1
@@ -1557,17 +1612,15 @@ local function SplitRaidEditorGroups()
     if tanks[1] then
         AddToGroup(1, tanks[1])
     end
-    if tanks[2] and activeGroupCount >= 2 then
-        AddToGroup(2, tanks[2])
-    elseif tanks[2] then
-        AddToLeastFilled(primaryGroups, tanks[2])
+    if tanks[2] then
+        AddToFirstAvailable(primaryGroups, tanks[2])
     end
     for index = 3, #tanks do
-        AddToLeastFilled(primaryGroups, tanks[index])
+        AddToFirstAvailable(primaryGroups, tanks[index])
     end
 
     for _, healerName in ipairs(healers) do
-        AddToLeastFilled(primaryGroups, healerName)
+        AddToFirstAvailable(primaryGroups, healerName)
     end
 
     local dpsBalance = {
@@ -1593,17 +1646,16 @@ local function SplitRaidEditorGroups()
 
         local preferredGroups = side == "odd" and oddGroups or evenGroups
         local fallbackGroups = side == "odd" and evenGroups or oddGroups
-        local targetGroup = PickLeastFilled(preferredGroups, true)
-            or PickLeastFilled(fallbackGroups, true)
-            or PickLeastFilled(dpsGroups, true)
-            or PickLeastFilled(activeGroups, true)
-            or PickLeastFilled(preferredGroups, false)
-            or PickLeastFilled(activeGroups, false)
+        local targetGroup = PickFirstOpen(preferredGroups)
+            or PickFirstOpen(fallbackGroups)
+            or PickSequentialOpenGroup()
+            or activeGroups[1]
             or 1
 
         AddToGroup(targetGroup, playerName)
-        dpsBalance[kind][side] = dpsBalance[kind][side] + 1
-        dpsBalance.total[side] = dpsBalance.total[side] + 1
+        local actualSide = ((targetGroup % 2) == 1) and "odd" or "even"
+        dpsBalance[kind][actualSide] = dpsBalance[kind][actualSide] + 1
+        dpsBalance.total[actualSide] = dpsBalance.total[actualSide] + 1
     end
 
     local meleeIndex = 1
@@ -1697,8 +1749,38 @@ local function LoadEditorFromCurrentRaid()
     return true
 end
 
+local raidEditorGuildRosterRequestAt = 0
+local RAID_EDITOR_GUILD_ROSTER_THROTTLE = 10
+
+local function RequestGuildRosterForRaidEditorIfStale()
+    if not IsInGuild or not IsInGuild() then
+        return
+    end
+    if not (C_GuildInfo and C_GuildInfo.GuildRoster and GetTime) then
+        return
+    end
+
+    local now = GetTime()
+    if (now - raidEditorGuildRosterRequestAt) < RAID_EDITOR_GUILD_ROSTER_THROTTLE then
+        return
+    end
+
+    C_GuildInfo.GuildRoster()
+    raidEditorGuildRosterRequestAt = now
+end
+
 local function BuildRosterColorLookup()
     local lookup = {}
+
+    local function AddNameLookupVariants(name, info)
+        local cleanName = Normalize(name)
+        if cleanName == "" then
+            return
+        end
+
+        lookup[cleanName:lower()] = info
+        lookup[ShortName(cleanName):lower()] = info
+    end
 
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
     for i = 1, numMembers do
@@ -1709,8 +1791,8 @@ local function BuildRosterColorLookup()
             local _, classToken = UnitClass(unit)
             local role = ResolveUnitRole(unit)
             local info = { classToken = classToken, role = role }
-            lookup[fullName] = info
-            lookup[name] = info
+            AddNameLookupVariants(fullName, info)
+            AddNameLookupVariants(name, info)
         end
     end
     local selfName, selfRealm = UnitName("player")
@@ -1719,9 +1801,34 @@ local function BuildRosterColorLookup()
         local _, classToken = UnitClass("player")
         local role = ResolveUnitRole("player")
         local info = { classToken = classToken, role = role }
-        lookup[fullSelf] = info
-        lookup[selfName] = info
+        AddNameLookupVariants(fullSelf, info)
+        AddNameLookupVariants(selfName, info)
     end
+
+    RequestGuildRosterForRaidEditorIfStale()
+    if IsInGuild and IsInGuild() and GetNumGuildMembers and GetGuildRosterInfo then
+        local guildMemberCount = GetNumGuildMembers() or 0
+        for i = 1, guildMemberCount do
+            local fullName, _, _, _, _, _, _, _, _, _, classToken = GetGuildRosterInfo(i)
+            classToken = tostring(classToken or "")
+            if fullName and fullName ~= "" and classToken ~= "" then
+                local cleanName = Normalize(fullName)
+                local lowerName = cleanName:lower()
+                local shortLower = ShortName(cleanName):lower()
+
+                local existing = lookup[lowerName] or lookup[shortLower]
+                if existing then
+                    if not existing.classToken or existing.classToken == "" then
+                        existing.classToken = classToken
+                    end
+                else
+                    local fallbackInfo = { classToken = classToken, role = "NONE" }
+                    AddNameLookupVariants(cleanName, fallbackInfo)
+                end
+            end
+        end
+    end
+
     return lookup
 end
 
@@ -1767,7 +1874,8 @@ local function RefreshRaidEditorBoard()
                     btn.Text:SetTextColor(0.95, 0.81, 0.24)
                     if btn.RoleIcon then btn.RoleIcon:Hide() end
                 else
-                    local info = rosterColors[name] or rosterColors[ShortName(name)]
+                    local cleanName = Normalize(name)
+                    local info = rosterColors[cleanName:lower()] or rosterColors[ShortName(cleanName):lower()]
                     if info and info.classToken then
                         local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[info.classToken]
                         if cc then
@@ -1834,6 +1942,47 @@ local function RefreshRaidEditorPanel()
     RefreshRaidEditorBoard()
 end
 
+local function UpdateOptionsKeyboardCapture()
+    local shouldCapture = frame:IsShown()
+        and panels[6]
+        and panels[6]:IsShown()
+        and raidEditorDrag
+        and raidEditorDrag.name
+
+    frame:EnableKeyboard(shouldCapture and true or false)
+end
+
+if panels[6] then
+    panels[6]:HookScript("OnShow", UpdateOptionsKeyboardCapture)
+    panels[6]:HookScript("OnHide", UpdateOptionsKeyboardCapture)
+end
+
+frame:SetScript("OnKeyDown", function(_, key)
+    if key ~= "DELETE" and key ~= "BACKSPACE" then
+        return
+    end
+
+    local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() or nil
+    if focused and focused.IsObjectType and focused:IsObjectType("EditBox") then
+        return
+    end
+
+    if not (panels[6] and panels[6]:IsShown()) then
+        return
+    end
+
+    if not (raidEditorDrag and raidEditorDrag.name) then
+        return
+    end
+
+    local removedName = raidEditorDrag.name
+    RemoveEditorPlayer(removedName)
+    raidEditorDrag = nil
+    RefreshRaidEditorBoard()
+    UpdateOptionsKeyboardCapture()
+    Print("Removed " .. removedName .. " from the draft.")
+end)
+
 for groupIndex = 1, 8 do
     local groupHeader = raidEditorGroupButtons[groupIndex]
     if groupHeader then
@@ -1847,6 +1996,7 @@ for groupIndex = 1, 8 do
             if toGroup == fromGroup then
                 raidEditorDrag = nil
                 RefreshRaidEditorBoard()
+                UpdateOptionsKeyboardCapture()
                 return
             end
             if #raidEditorState.groups[toGroup] >= 5 then
@@ -1857,6 +2007,7 @@ for groupIndex = 1, 8 do
             raidEditorState.groups[toGroup][#raidEditorState.groups[toGroup] + 1] = raidEditorDrag.name
             raidEditorDrag = nil
             RefreshRaidEditorBoard()
+            UpdateOptionsKeyboardCapture()
         end)
     end
 
@@ -1873,11 +2024,13 @@ for groupIndex = 1, 8 do
                     raidEditorDrag = nil
                 end
                 RefreshRaidEditorBoard()
+                UpdateOptionsKeyboardCapture()
                 return
             end
             if raidEditorDrag and raidEditorDrag.name == playerName then
                 raidEditorDrag = nil
                 RefreshRaidEditorBoard()
+                UpdateOptionsKeyboardCapture()
                 return
             end
             raidEditorDrag = {
@@ -1885,6 +2038,7 @@ for groupIndex = 1, 8 do
                 fromGroup = self._groupIndex,
             }
             RefreshRaidEditorBoard()
+            UpdateOptionsKeyboardCapture()
             Print("Picked up " .. playerName .. ". Click a group header to drop.")
         end)
     end
