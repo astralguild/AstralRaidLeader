@@ -441,6 +441,36 @@ local function NewRaidLayoutGroups()
     return groups
 end
 
+local function GetOverfullRaidLayoutGroups(groups)
+    local overfull = {}
+    for subgroup = 1, 8 do
+        local count = #(groups and groups[subgroup] or {})
+        if count > 5 then
+            overfull[#overfull + 1] = {
+                subgroup = subgroup,
+                count = count,
+            }
+        end
+    end
+    return overfull
+end
+
+local function BuildRaidLayoutOverfullGroupsText(overfull)
+    local parts = {}
+    for _, entry in ipairs(overfull or {}) do
+        parts[#parts + 1] = string.format("G%d=%d", entry.subgroup, entry.count)
+    end
+    return table.concat(parts, ", ")
+end
+
+local function BuildRaidLayoutOverfullGroupsError(profileLabel, overfull)
+    return string.format(
+        "Raid layout |cffffd100%s|r has subgroup(s) with more than 5 players: %s.",
+        profileLabel,
+        BuildRaidLayoutOverfullGroupsText(overfull)
+    )
+end
+
 local function NormalizeRaidLayoutGroups(rawGroups)
     local groups = NewRaidLayoutGroups()
     local invitelist = {}
@@ -523,6 +553,11 @@ local function BuildRaidLayoutProfile(input)
         groups, invitelist = NormalizeRaidLayoutGroups(input.groups)
     else
         groups, invitelist = BuildRaidLayoutGroupsFromInvitelist(input.invitelist)
+    end
+
+    local overfullGroups = GetOverfullRaidLayoutGroups(groups)
+    if #overfullGroups > 0 then
+        return nil, BuildRaidLayoutOverfullGroupsError(encounterName, overfullGroups)
     end
 
     local profile = {
@@ -876,6 +911,11 @@ local function BuildRaidLayoutTargets(profile, snapshot)
     local importedCount = 0
     local groupedTargets = GetRaidLayoutGroups(profile)
 
+    local overfullGroups = GetOverfullRaidLayoutGroups(groupedTargets)
+    if #overfullGroups > 0 then
+        return nil, BuildRaidLayoutOverfullGroupsError(GetRaidLayoutLabel(profile), overfullGroups)
+    end
+
     for desiredGroup = 1, 8 do
         for _, importedName in ipairs(groupedTargets[desiredGroup] or {}) do
             local cleanName = Trim(importedName)
@@ -921,11 +961,37 @@ local function BuildRaidLayoutTargets(profile, snapshot)
 
     return {
         targetByName = targetByName,
+        targetCounts = groupCounts,
         matchedCount = matchedCount,
         importedCount = importedCount,
         missing = missing,
         overflowCount = overflowCount,
     }
+end
+
+local function BuildRaidLayoutOccupancyText(occupancy)
+    local parts = {}
+    for subgroup = 1, 8 do
+        parts[#parts + 1] = string.format("G%d=%d", subgroup, occupancy[subgroup] or 0)
+    end
+    return table.concat(parts, ", ")
+end
+
+local function BuildRaidLayoutPendingText(pending)
+    local parts = {}
+    for index, move in ipairs(pending or {}) do
+        if index > 8 then
+            parts[#parts + 1] = string.format("... +%d more", #pending - 8)
+            break
+        end
+        parts[#parts + 1] = string.format(
+            "%s:%d->%d",
+            GetShortName(move.name),
+            tonumber(move.subgroup) or 0,
+            tonumber(move.desiredGroup) or 0
+        )
+    end
+    return table.concat(parts, ", ")
 end
 
 local RAID_DIFFICULTY_IDS = {
@@ -1373,6 +1439,7 @@ local function ApplyRaidLayoutProfile(profile, options)
     ARL.raidLayoutApplyState = {
         profile = profile,
         targetByName = targetState.targetByName,
+        targetCounts = targetState.targetCounts,
         matchedCount = targetState.matchedCount,
         importedCount = targetState.importedCount,
         missing = targetState.missing,
@@ -2033,28 +2100,71 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
     end
 
     if (not sessionId or sessionId == 0)
-        and (encounterIDForLookup or 0) ~= 0
-        and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
-    then
-        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
-    end
-
-    local function ResolveRecapCause(entry)
-        local recapID = SafeNumber(entry and entry.deathRecapID) or 0
-        if recapID <= 0 then return nil, nil, nil, nil, nil, nil end
-        if not _G.C_DeathRecap or type(_G.C_DeathRecap.GetRecapEvents) ~= "function" then
-            return nil, nil, nil, nil, nil, nil
+    local function FindBufferChainMove(targetGroup, visitedGroups)
+        if not bufferGroup then
+            return nil, nil
         end
 
-        local ok, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
+        visitedGroups = visitedGroups or {}
+        if visitedGroups[targetGroup] then
+            return nil, nil
+        end
+        visitedGroups[targetGroup] = true
+
+        local blockers = entriesBySubgroup[targetGroup]
+        if not blockers then
+            return nil, nil
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup then
+                if blockerDesired == bufferGroup or (occupancy[blockerDesired] or 0) < 5 then
+                    return blocker, blockerDesired
+                end
+            end
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup and not visitedGroups[blockerDesired] then
+                local moveEntry, moveGroup = FindBufferChainMove(blockerDesired, visitedGroups)
+                if moveEntry and moveGroup then
+                    return moveEntry, moveGroup
+                end
+            end
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup and blocker.subgroup ~= bufferGroup then
+                return blocker, bufferGroup
+            end
+        end
+
+        return nil, nil
+    end
+
+        and (encounterIDForLookup or 0) ~= 0
+        and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
+            local blocker, blockerDestination = FindBufferChainMove(move.desiredGroup)
+            if blocker and blockerDestination then
+                state.combatPaused = false
+                state.lastIssuedMove = string.format("%s>%d", blocker.name, blockerDestination)
+                SetRaidSubgroup(blocker.index, blockerDestination)
+                ScheduleRaidLayoutApplyRetry(state, 1.5)
+                return
         if not ok or type(recapEvents) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local eventData = recapEvents[1]
         if type(eventData) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
-        local mechanic = eventData.spellName
-        if mechanic == "..." or mechanic == "…" then
+        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
+            .. " and no buffer move was available. Current=%s; Targets=%s; Pending=%s",
             mechanic = nil
+        , BuildRaidLayoutOccupancyText(occupancy)
+        , BuildRaidLayoutOccupancyText(state.targetCounts or {})
+        , BuildRaidLayoutPendingText(pending)
         end
         if not mechanic or mechanic == "" then
             local eventType = eventData.event
