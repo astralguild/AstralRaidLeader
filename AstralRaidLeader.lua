@@ -1350,28 +1350,71 @@ local function ContinueRaidLayoutApply()
         end
     end
 
+    local function FindBufferChainMove(targetGroup, visitedGroups)
+        if not bufferGroup then
+            return nil, nil
+        end
+
+        visitedGroups = visitedGroups or {}
+        if visitedGroups[targetGroup] then
+            return nil, nil
+        end
+        visitedGroups[targetGroup] = true
+
+        local blockers = entriesBySubgroup[targetGroup]
+        if not blockers then
+            return nil, nil
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup then
+                if blockerDesired == bufferGroup or (occupancy[blockerDesired] or 0) < 5 then
+                    return blocker, blockerDesired
+                end
+            end
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup and not visitedGroups[blockerDesired] then
+                local moveEntry, moveGroup = FindBufferChainMove(blockerDesired, visitedGroups)
+                if moveEntry and moveGroup then
+                    return moveEntry, moveGroup
+                end
+            end
+        end
+
+        for _, blocker in ipairs(blockers) do
+            local blockerDesired = state.targetByName[blocker.name:lower()]
+            if blockerDesired and blockerDesired ~= blocker.subgroup and blocker.subgroup ~= bufferGroup then
+                return blocker, bufferGroup
+            end
+        end
+
+        return nil, nil
+    end
+
     if bufferGroup then
         for _, move in ipairs(pending) do
-            local blockers = entriesBySubgroup[move.desiredGroup]
-            if blockers then
-                for _, blocker in ipairs(blockers) do
-                    local blockerDesired = state.targetByName[blocker.name:lower()]
-                    if blockerDesired and blockerDesired ~= blocker.subgroup and blocker.subgroup ~= bufferGroup then
-                        state.combatPaused = false
-                        state.lastIssuedMove = string.format("%s>%d", blocker.name, bufferGroup)
-                        SetRaidSubgroup(blocker.index, bufferGroup)
-                        ScheduleRaidLayoutApplyRetry(state, 1.5)
-                        return
-                    end
-                end
+            local blocker, blockerDestination = FindBufferChainMove(move.desiredGroup)
+            if blocker and blockerDestination then
+                state.combatPaused = false
+                state.lastIssuedMove = string.format("%s>%d", blocker.name, blockerDestination)
+                SetRaidSubgroup(blocker.index, blockerDestination)
+                ScheduleRaidLayoutApplyRetry(state, 1.5)
+                return
             end
         end
     end
 
     StopRaidLayoutApply(string.format(
         "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
-            .. " and no buffer move was available.",
-        GetRaidLayoutLabel(state.profile)
+            .. " and no buffer move was available. Current=%s; Targets=%s; Pending=%s",
+        GetRaidLayoutLabel(state.profile),
+        BuildRaidLayoutOccupancyText(occupancy),
+        BuildRaidLayoutOccupancyText(state.targetCounts or {}),
+        BuildRaidLayoutPendingText(pending)
     ))
 end
 
@@ -2099,73 +2142,42 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         sessionId = C_DamageMeter.GetLastCombatSessionID()
     end
 
-    if (not sessionId or sessionId == 0)
-    local function FindBufferChainMove(targetGroup, visitedGroups)
-        if not bufferGroup then
-            return nil, nil
+    local function ResolveRecapCause(entry)
+        local destGUID = entry and (entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid)
+        if not destGUID or destGUID == "" then
+            return nil, nil, nil, nil, nil, nil
         end
 
-        visitedGroups = visitedGroups or {}
-        if visitedGroups[targetGroup] then
-            return nil, nil
-        end
-        visitedGroups[targetGroup] = true
-
-        local blockers = entriesBySubgroup[targetGroup]
-        if not blockers then
-            return nil, nil
-        end
-
-        for _, blocker in ipairs(blockers) do
-            local blockerDesired = state.targetByName[blocker.name:lower()]
-            if blockerDesired and blockerDesired ~= blocker.subgroup then
-                if blockerDesired == bufferGroup or (occupancy[blockerDesired] or 0) < 5 then
-                    return blocker, blockerDesired
-                end
+        if (not sessionId or sessionId == 0)
+            and (encounterIDForLookup or 0) ~= 0
+            and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
+        then
+            local okSession, encounterSession = pcall(function()
+                return C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
+            end)
+            if okSession then
+                sessionId = SafeNonNegativeNumber(encounterSession, sessionId)
             end
         end
 
-        for _, blocker in ipairs(blockers) do
-            local blockerDesired = state.targetByName[blocker.name:lower()]
-            if blockerDesired and blockerDesired ~= blocker.subgroup and not visitedGroups[blockerDesired] then
-                local moveEntry, moveGroup = FindBufferChainMove(blockerDesired, visitedGroups)
-                if moveEntry and moveGroup then
-                    return moveEntry, moveGroup
-                end
-            end
+        sessionId = SafeNonNegativeNumber(sessionId)
+        if not sessionId or sessionId == 0 then
+            return nil, nil, nil, nil, nil, nil
         end
 
-        for _, blocker in ipairs(blockers) do
-            local blockerDesired = state.targetByName[blocker.name:lower()]
-            if blockerDesired and blockerDesired ~= blocker.subgroup and blocker.subgroup ~= bufferGroup then
-                return blocker, bufferGroup
-            end
+        if type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function" then
+            return nil, nil, nil, nil, nil, nil
         end
 
-        return nil, nil
-    end
-
-        and (encounterIDForLookup or 0) ~= 0
-        and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
-            local blocker, blockerDestination = FindBufferChainMove(move.desiredGroup)
-            if blocker and blockerDestination then
-                state.combatPaused = false
-                state.lastIssuedMove = string.format("%s>%d", blocker.name, blockerDestination)
-                SetRaidSubgroup(blocker.index, blockerDestination)
-                ScheduleRaidLayoutApplyRetry(state, 1.5)
-                return
+        local ok, recapEvents = pcall(function()
+            return C_DamageMeter.GetDamageDataForPlayerByType(sessionId, destGUID, deathsType)
+        end)
         if not ok or type(recapEvents) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
         local eventData = recapEvents[1]
         if type(eventData) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
-        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
-            .. " and no buffer move was available. Current=%s; Targets=%s; Pending=%s",
-            mechanic = nil
-        , BuildRaidLayoutOccupancyText(occupancy)
-        , BuildRaidLayoutOccupancyText(state.targetCounts or {})
-        , BuildRaidLayoutPendingText(pending)
-        end
+        local mechanic = eventData.spellName or eventData.abilityName or nil
         if not mechanic or mechanic == "" then
             local eventType = eventData.event
             if eventType == "SWING_DAMAGE" then
