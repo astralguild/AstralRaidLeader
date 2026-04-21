@@ -403,6 +403,323 @@ local function FormatCompactAmount(value)
     return tostring(value)
 end
 
+local function FormatHealthState(current, maxValue)
+    if type(current) ~= "number" or current < 0 then
+        return nil
+    end
+
+    local currentText = FormatCompactAmount(current) or FormatExactAmount(current) or tostring(current)
+    if type(maxValue) == "number" and maxValue > 0 then
+        local pct = math.floor(((current / maxValue) * 100) + 0.5)
+        local maxText = FormatCompactAmount(maxValue) or FormatExactAmount(maxValue) or tostring(maxValue)
+        return string.format("%s%% (%s/%s)", pct, currentText, maxText)
+    end
+
+    return currentText
+end
+
+local detailsFrame
+local detailsSummaryText
+local detailsHealthText
+local detailsTimelineText
+
+local function EnsureDetailsFrame()
+    if detailsFrame then
+        return detailsFrame
+    end
+
+    local f = CreateFrame(
+        "Frame",
+        "AstralRaidLeaderDeathDetailsFrame",
+        UIParent,
+        BackdropTemplateMixin and "BackdropTemplate" or nil
+    )
+    f:SetSize(560, 380)
+    f:SetPoint("CENTER", UIParent, "CENTER", 44, -24)
+    f:SetClampedToScreen(true)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(frame:GetFrameLevel() + 4)
+    f:SetToplevel(true)
+    f:SetMovable(true)
+    f:EnableMouse(false)
+    f:SetAlpha(0)
+    f:Hide()
+
+    f:HookScript("OnShow", function(self)
+        self:SetAlpha(1)
+        self:EnableMouse(true)
+    end)
+
+    f:HookScript("OnHide", function(self)
+        self:SetAlpha(0)
+        self:EnableMouse(false)
+    end)
+
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        })
+        f:SetBackdropColor(0.03, 0.05, 0.08, 0.985)
+        f:SetBackdropBorderColor(0.34, 0.42, 0.54, 0.96)
+    end
+
+    local dHeader = CreateFrame("Frame", nil, f, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    dHeader:SetPoint("TOPLEFT", 7, -7)
+    dHeader:SetPoint("TOPRIGHT", -30, -7)
+    dHeader:SetHeight(28)
+    dHeader:SetFrameLevel(f:GetFrameLevel() + 8)
+    if dHeader.SetBackdrop then
+        dHeader:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        dHeader:SetBackdropColor(0.05, 0.09, 0.15, 0.88)
+    end
+
+    local dHeaderDivider = dHeader:CreateTexture(nil, "BORDER")
+    dHeaderDivider:SetPoint("BOTTOMLEFT", dHeader, "BOTTOMLEFT", 0, 0)
+    dHeaderDivider:SetPoint("BOTTOMRIGHT", dHeader, "BOTTOMRIGHT", 0, 0)
+    dHeaderDivider:SetHeight(1)
+    dHeaderDivider:SetColorTexture(0.44, 0.54, 0.68, 0.70)
+
+    local dTitle = dHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    dTitle:SetPoint("CENTER", dHeader, "CENTER", 0, 0)
+    dTitle:SetText("Death Details")
+    dTitle:SetTextColor(1.0, 0.96, 0.78)
+    dTitle:SetShadowColor(0.0, 0.0, 0.0, 0.95)
+    dTitle:SetShadowOffset(1, -1)
+    f.titleText = dTitle
+
+    local dTopClose = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    dTopClose:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -3)
+    dTopClose:SetScript("OnClick", function() f:Hide() end)
+
+    local dDragRegion = CreateFrame("Frame", nil, f)
+    dDragRegion:SetPoint("TOPLEFT", 8, -6)
+    dDragRegion:SetPoint("TOPRIGHT", -28, -6)
+    dDragRegion:SetHeight(22)
+    dDragRegion:EnableMouse(true)
+    dDragRegion:RegisterForDrag("LeftButton")
+    dDragRegion:SetScript("OnDragStart", function() f:StartMoving() end)
+    dDragRegion:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+
+    local dContentPanel = CreateFrame("Frame", nil, f, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    dContentPanel:SetPoint("TOPLEFT", 8, -40)
+    dContentPanel:SetPoint("BOTTOMRIGHT", -8, 44)
+    SkinPanel(dContentPanel, 0.05, 0.08, 0.12, 0.86, 0.23, 0.30, 0.40, 0.42)
+
+    detailsSummaryText = dContentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    detailsSummaryText:SetPoint("TOPLEFT", dContentPanel, "TOPLEFT", 10, -10)
+    detailsSummaryText:SetPoint("TOPRIGHT", dContentPanel, "TOPRIGHT", -12, -10)
+    detailsSummaryText:SetJustifyH("LEFT")
+    detailsSummaryText:SetTextColor(0.90, 0.92, 0.96)
+    detailsSummaryText:SetText("")
+
+    detailsHealthText = dContentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    detailsHealthText:SetPoint("TOPLEFT", detailsSummaryText, "BOTTOMLEFT", 0, -6)
+    detailsHealthText:SetPoint("TOPRIGHT", detailsSummaryText, "BOTTOMRIGHT", 0, -6)
+    detailsHealthText:SetJustifyH("LEFT")
+    detailsHealthText:SetTextColor(0.82, 0.86, 0.93)
+    detailsHealthText:SetText("")
+
+    local timelineLabel = dContentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timelineLabel:SetPoint("TOPLEFT", detailsHealthText, "BOTTOMLEFT", 0, -10)
+    timelineLabel:SetText("Recent events")
+    timelineLabel:SetTextColor(0.96, 0.82, 0.22)
+
+    local dScrollFrame = CreateFrame(
+        "ScrollFrame",
+        "AstralRaidLeaderDeathDetailsScroll",
+        dContentPanel,
+        "UIPanelScrollFrameTemplate"
+    )
+    dScrollFrame:SetPoint("TOPLEFT", dContentPanel, "TOPLEFT", 10, -72)
+    dScrollFrame:SetPoint("BOTTOMRIGHT", dContentPanel, "BOTTOMRIGHT", -34, 10)
+
+    local dSb = _G["AstralRaidLeaderDeathDetailsScrollScrollBar"]
+    if dSb then
+        dSb:ClearAllPoints()
+        dSb:SetWidth(12)
+        dSb:SetPoint("TOPRIGHT", dContentPanel, "TOPRIGHT", -8, -80)
+        dSb:SetPoint("BOTTOMRIGHT", dContentPanel, "BOTTOMRIGHT", -8, 18)
+    end
+
+    local dListInset = CreateFrame("Frame", nil, dContentPanel, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    dListInset:SetPoint("TOPLEFT", dScrollFrame, "TOPLEFT", -4, 4)
+    dListInset:SetPoint("BOTTOMRIGHT", dScrollFrame, "BOTTOMRIGHT", 4, -4)
+    SkinPanel(dListInset, 0.07, 0.10, 0.14, 0.34, 0.22, 0.28, 0.36, 0.24)
+    dListInset:SetFrameLevel(dScrollFrame:GetFrameLevel() - 1)
+
+    local dContent = CreateFrame("Frame", nil, dScrollFrame)
+    dContent:SetSize((dScrollFrame:GetWidth() or 500), 1)
+    dScrollFrame:SetScrollChild(dContent)
+    f.scrollFrame = dScrollFrame
+    f.scrollContent = dContent
+
+    detailsTimelineText = dContent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    detailsTimelineText:SetPoint("TOPLEFT", dContent, "TOPLEFT", 4, -4)
+    detailsTimelineText:SetPoint("TOPRIGHT", dContent, "TOPRIGHT", -4, -4)
+    detailsTimelineText:SetJustifyH("LEFT")
+    detailsTimelineText:SetJustifyV("TOP")
+    detailsTimelineText:SetSpacing(3)
+    detailsTimelineText:SetTextColor(0.90, 0.92, 0.96)
+    detailsTimelineText:SetText("")
+
+    local dCloseButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    dCloseButton:SetPoint("BOTTOMRIGHT", -12, 12)
+    dCloseButton:SetSize(100, 24)
+    dCloseButton:SetText("Close")
+    dCloseButton:SetScript("OnClick", function() f:Hide() end)
+    SkinActionButton(dCloseButton)
+
+    table.insert(UISpecialFrames, f:GetName())
+
+    detailsFrame = f
+    return detailsFrame
+end
+
+local function BuildTimelineDetailsLine(index, event)
+    local eventType = tostring((event and event.eventType) or "")
+    local eventToken = tostring((event and event.eventToken) or "")
+    local shownTime = tostring((event and event.timeStr) or "?:??")
+
+    local spellName = event and event.spellName
+    local spellId = event and event.spellId
+    if (not spellName or spellName == "") and spellId and spellId > 0 then
+        spellName = ResolveSpellNameAndIcon(spellId)
+    end
+    if not spellName or spellName == "" then
+        spellName = "Unknown"
+    end
+
+    local sourceName = tostring((event and event.source) or "Unknown")
+    local amountText = nil
+    local rawAmount = event and event.amount
+    if type(rawAmount) == "number" and rawAmount > 0 then
+        local compact = FormatCompactAmount(rawAmount) or tostring(rawAmount)
+        if eventType == "heal" then
+            amountText = "|cff55ff88+" .. compact .. "|r"
+        elseif eventType == "damage" then
+            amountText = "|cffff6666-" .. compact .. "|r"
+        end
+    end
+
+    local overkillText = nil
+    local rawOverkill = event and event.overkill
+    if type(rawOverkill) == "number" and rawOverkill > 0 then
+        overkillText = "|cffffaa33 overkill " .. (FormatCompactAmount(rawOverkill) or rawOverkill) .. "|r"
+    end
+
+    local healthAtEvent = nil
+    if type(event) == "table" then
+        local healthCurrent = event.healthAfter
+        if type(healthCurrent) ~= "number" then
+            healthCurrent = event.healthBefore
+        end
+        healthAtEvent = FormatHealthState(healthCurrent, event.healthMax)
+    end
+
+    local eventLabel = "Event"
+    if eventType == "damage" then
+        eventLabel = "Damage"
+    elseif eventType == "heal" then
+        eventLabel = "Heal"
+    elseif eventType == "aura" then
+        eventLabel = "Aura"
+    end
+
+    local auraSuffix = ""
+    if eventType == "aura" and eventToken ~= "" then
+        auraSuffix = " (" .. eventToken:gsub("_", " ") .. ")"
+    end
+
+    local line = string.format(
+        "%d. [%s] |cffd7dde9%s|r%s: |cffffd100%s|r from |cffffa133%s|r",
+        index,
+        shownTime,
+        eventLabel,
+        auraSuffix,
+        spellName,
+        sourceName
+    )
+
+    if amountText then
+        line = line .. "  " .. amountText
+    end
+    if overkillText then
+        line = line .. "  " .. overkillText
+    end
+    if healthAtEvent then
+        line = line .. "  |cff9fb0c8HP " .. healthAtEvent .. "|r"
+    end
+
+    return line
+end
+
+local function ShowDeathDetails(entry)
+    if type(entry) ~= "table" then
+        return
+    end
+
+    local popup = EnsureDetailsFrame()
+    if not popup then
+        return
+    end
+
+    local playerName = tostring(entry.playerName or "Unknown")
+    if popup.titleText then
+        popup.titleText:SetText("Death Details - " .. playerName)
+    end
+
+    local shownTime = tostring(entry.timeStr or "?:??")
+    local mechanicName = tostring(entry.mechanic or "Unknown")
+    local sourceName = tostring(entry.source or "Unknown")
+    local summary = string.format(
+        "%s died to %s (from %s) at %s.",
+        playerName,
+        mechanicName,
+        sourceName,
+        shownTime
+    )
+
+    local amount = FormatExactAmount(entry.hitAmount)
+    if amount then
+        summary = summary .. " Killing blow: " .. amount .. "."
+    end
+
+    detailsSummaryText:SetText(summary)
+
+    local healthText = FormatHealthState(entry.healthAtDeath, entry.healthMaxAtDeath)
+    if healthText then
+        detailsHealthText:SetText("Health after death event: " .. healthText)
+    else
+        detailsHealthText:SetText("Health after death event: unavailable")
+    end
+
+    local timeline = entry.eventTimeline
+    local lines = {}
+    if type(timeline) == "table" and #timeline > 0 then
+        for i, event in ipairs(timeline) do
+            lines[#lines + 1] = BuildTimelineDetailsLine(i, event)
+        end
+        if entry.timelineTruncated then
+            lines[#lines + 1] = ""
+            lines[#lines + 1] = "|cff9fb0c8Showing last 5 relevant events.|r"
+        end
+    else
+        lines[#lines + 1] = "No additional timeline data is available for this recap entry."
+    end
+
+    local timelineText = table.concat(lines, "\n")
+    detailsTimelineText:SetText(timelineText)
+
+    local textHeight = detailsTimelineText:GetStringHeight() or 0
+    popup.scrollContent:SetHeight(math.max(1, math.floor(textHeight + 14)))
+    popup.scrollFrame:SetVerticalScroll(0)
+    popup:Show()
+    popup:Raise()
+end
+
 local function ShowSpellTooltip(owner, spellId, entry)
     if not GameTooltip or not spellId or spellId <= 0 then
         return
@@ -493,6 +810,13 @@ local function AcquireDeathRow(index)
         if GameTooltip then
             GameTooltip:Hide()
         end
+    end)
+
+    spellButton:SetScript("OnClick", function(self, button)
+        if button ~= "LeftButton" or type(self.entry) ~= "table" then
+            return
+        end
+        ShowDeathDetails(self.entry)
     end)
 
     deathRows[index] = row
@@ -604,9 +928,10 @@ local function PopulateDeathRow(row, i, entry)
     row.suffixText:SetText(suffix)
 
     local hasSpellTooltip = entry.spellId and entry.spellId > 0
+    local hasDetails = type(entry.eventTimeline) == "table" and #entry.eventTimeline > 0
     row.spellButton.spellId = hasSpellTooltip and entry.spellId or nil
     row.spellButton.entry = entry
-    row.spellButton:EnableMouse(hasSpellTooltip)
+    row.spellButton:EnableMouse(hasSpellTooltip or hasDetails)
 end
 
 local function RefreshRecapDropDown(selectedIndex)
@@ -722,7 +1047,7 @@ function RefreshRecap(requestedIndex)
     end
 
     summaryText:SetText(string.format(
-        "%d death%s recorded during this attempt. Hover spell names to inspect the killing spell.",
+        "%d death%s recorded. Hover spell names for tooltips, left-click for event timeline details.",
         #deaths,
         #deaths == 1 and "" or "s"
     ))

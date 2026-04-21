@@ -2142,40 +2142,265 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         sessionId = C_DamageMeter.GetLastCombatSessionID()
     end
 
-    local function ResolveRecapCause(entry)
-        local destGUID = entry and (entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid)
-        if not destGUID or destGUID == "" then
-            return nil, nil, nil, nil, nil, nil
+    if (not sessionId or sessionId == 0)
+        and (encounterIDForLookup or 0) ~= 0
+        and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
+    then
+        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
+    end
+
+    local RECAP_TIMELINE_EVENT_LIMIT = 5
+
+    local function ResolveSpellNameByID(spellId)
+        if not spellId or spellId <= 0 then
+            return nil
         end
 
-        if (not sessionId or sessionId == 0)
-            and (encounterIDForLookup or 0) ~= 0
-            and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
-        then
-            local okSession, encounterSession = pcall(function()
-                return C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
-            end)
-            if okSession then
-                sessionId = SafeNonNegativeNumber(encounterSession, sessionId)
+        local GetSpellInfo = _G.GetSpellInfo
+        if type(GetSpellInfo) == "function" then
+            local name = GetSpellInfo(spellId)
+            if type(name) == "string" and name ~= "" then
+                return name
             end
         end
 
-        sessionId = SafeNonNegativeNumber(sessionId)
-        if not sessionId or sessionId == 0 then
-            return nil, nil, nil, nil, nil, nil
+        local C_Spell = _G.C_Spell
+        if type(C_Spell) == "table" then
+            if type(C_Spell.GetSpellInfo) == "function" then
+                local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
+                if ok and type(info) == "table" then
+                    local name = info.name or info.spellName
+                    if type(name) == "string" and name ~= "" then
+                        return name
+                    end
+                end
+            end
+
+            if type(C_Spell.GetSpellName) == "function" then
+                local ok, name = pcall(C_Spell.GetSpellName, spellId)
+                if ok and type(name) == "string" and name ~= "" then
+                    return name
+                end
+            end
         end
 
-        if type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function" then
-            return nil, nil, nil, nil, nil, nil
+        return nil
+    end
+
+    local function ExtractOrderedRecapEvents(payload)
+        if type(payload) ~= "table" then
+            return nil
         end
 
-        local ok, recapEvents = pcall(function()
-            return C_DamageMeter.GetDamageDataForPlayerByType(sessionId, destGUID, deathsType)
+        local candidateContainer = payload
+        if type(payload.events) == "table" then
+            candidateContainer = payload.events
+        elseif type(payload.recapEvents) == "table" then
+            candidateContainer = payload.recapEvents
+        elseif type(payload.deathEvents) == "table" then
+            candidateContainer = payload.deathEvents
+        end
+
+        local indexed = {}
+        for key, value in pairs(candidateContainer) do
+            if type(key) == "number" and type(value) == "table" then
+                indexed[#indexed + 1] = { index = key, event = value }
+            end
+        end
+
+        if #indexed == 0 and type(candidateContainer[1]) == "table" then
+            indexed[1] = { index = 1, event = candidateContainer[1] }
+        end
+
+        if #indexed == 0 and type(payload[1]) == "table" then
+            indexed[1] = { index = 1, event = payload[1] }
+        end
+
+        if #indexed == 0 then
+            return nil
+        end
+
+        table.sort(indexed, function(a, b)
+            return a.index < b.index
         end)
-        if not ok or type(recapEvents) ~= "table" then return nil, nil, nil, nil, nil, nil end
 
-        local eventData = recapEvents[1]
-        if type(eventData) ~= "table" then return nil, nil, nil, nil, nil, nil end
+        local events = {}
+        for _, item in ipairs(indexed) do
+            events[#events + 1] = item.event
+        end
+        return events
+    end
+
+    local function BuildRawTimelineEvents(recapEvents)
+        local okExtract, events = pcall(ExtractOrderedRecapEvents, recapEvents)
+        if not okExtract or type(events) ~= "table" then
+            return nil
+        end
+
+        local timeline = {}
+        for eventIndex, eventData in ipairs(events) do
+            if type(eventData) == "table" then
+                local eventToken = string.upper(tostring(
+                    eventData.event
+                    or eventData.eventType
+                    or eventData.logEvent
+                    or eventData.combatLogEvent
+                    or eventData.subEvent
+                    or ""
+                ))
+                local eventType = nil
+                if eventToken:find("AURA", 1, true) then
+                    eventType = "aura"
+                elseif eventToken:find("HEAL", 1, true) then
+                    eventType = "heal"
+                elseif eventToken:find("DAMAGE", 1, true)
+                    or eventToken == "SWING_DAMAGE"
+                    or eventToken == "RANGE_DAMAGE"
+                    or eventToken == "SPELL_DAMAGE"
+                then
+                    eventType = "damage"
+                end
+
+                if not eventType then
+                    if eventData.auraType or eventData.dispelType or eventData.isAura then
+                        eventType = "aura"
+                    elseif SafeNonNegativeNumber(
+                        eventData.heal,
+                        eventData.healAmount,
+                        eventData.healing,
+                        eventData.healValue
+                    ) then
+                        eventType = "heal"
+                    elseif SafeNonNegativeNumber(
+                        eventData.damage,
+                        eventData.damageAmount,
+                        eventData.hitAmount,
+                        eventData.rawDamage,
+                        eventData.amount,
+                        eventData.value
+                    ) then
+                        eventType = "damage"
+                    end
+                end
+
+                if eventType then
+                    local spellId = SafeNumber(eventData.spellID or eventData.spellId or eventData.abilityId)
+                    local spellName = eventData.spellName
+                        or eventData.abilityName
+                        or eventData.spell
+                        or eventData.ability
+                    if (not spellName or spellName == "") and spellId and spellId > 0 then
+                        spellName = ResolveSpellNameByID(spellId)
+                    end
+
+                    local source = nil
+                    if not eventData.hideCaster then
+                        source = eventData.sourceName
+                            or eventData.source
+                            or eventData.srcName
+                            or eventData.casterName
+                    end
+
+                    local amount = nil
+                    if eventType == "damage" then
+                        amount = SafeNonNegativeNumber(
+                            eventData.amount,
+                            eventData.damage,
+                            eventData.damageAmount,
+                            eventData.hitAmount,
+                            eventData.killingBlowAmount,
+                            eventData.value,
+                            eventData.rawDamage
+                        )
+                    elseif eventType == "heal" then
+                        amount = SafeNonNegativeNumber(
+                            eventData.amount,
+                            eventData.heal,
+                            eventData.healAmount,
+                            eventData.healing,
+                            eventData.value
+                        )
+                    end
+
+                    local overkill = SafeNonNegativeNumber(
+                        eventData.overkill,
+                        eventData.overKill,
+                        eventData.overkillAmount,
+                        eventData.killingBlowOverkill,
+                        eventData.excessDamage
+                    )
+
+                    local healthBefore = SafeNonNegativeNumber(
+                        eventData.healthBefore,
+                        eventData.destHealthBefore,
+                        eventData.preHealth,
+                        eventData.remainingHealthBefore
+                    )
+                    local healthAfter = SafeNonNegativeNumber(
+                        eventData.healthAfter,
+                        eventData.remainingHealth,
+                        eventData.finalHealth,
+                        eventData.destHealth
+                    )
+                    local healthMax = SafeNonNegativeNumber(
+                        eventData.maxHealth,
+                        eventData.healthMax,
+                        eventData.destMaxHealth,
+                        eventData.targetMaxHealth,
+                        eventData.maxHP
+                    )
+
+                    local rawTimeOffset = SafeNumber(
+                        eventData.timeOffset
+                        or eventData.deathTimeOffset
+                        or eventData.deathTimeOffsetSeconds
+                        or eventData.timeSinceEncounterStart
+                        or eventData.timeSinceCombatStart
+                        or eventData.relativeTime
+                        or eventData.relativeTimeSeconds
+                        or eventData.eventTime
+                        or eventData.combatTime
+                        or eventData.offset
+                        or eventData.elapsedTime
+                        or eventData.secondsFromStart
+                        or eventData.timeOfDeath
+                        or eventData.timeOfDeathSeconds
+                        or eventData.deathTime
+                        or eventData.deathTimeSeconds
+                        or eventData.timestamp
+                        or eventData.timeStamp
+                        or eventData.time
+                    )
+
+                    timeline[#timeline + 1] = {
+                        eventType = eventType,
+                        eventToken = eventToken ~= "" and eventToken or nil,
+                        spellId = spellId,
+                        spellName = spellName,
+                        source = source,
+                        amount = amount,
+                        overkill = overkill,
+                        auraType = eventData.auraType or eventData.dispelType,
+                        healthBefore = healthBefore,
+                        healthAfter = healthAfter,
+                        healthMax = healthMax,
+                        rawTimeOffset = rawTimeOffset,
+                        rawOrder = eventIndex,
+                    }
+                end
+            end
+        end
+
+        if #timeline == 0 then
+            return nil
+        end
+        return timeline
+    end
+
+    local function ResolveCauseFromEventData(eventData)
+        if type(eventData) ~= "table" then
+            return nil, nil, nil, nil, nil, nil
+        end
 
         local mechanic = eventData.spellName or eventData.abilityName or nil
         if not mechanic or mechanic == "" then
@@ -2244,7 +2469,65 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             end
         end
 
-        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount
+        local healthAtDeath = SafeNonNegativeNumber(
+            eventData.healthAfter,
+            eventData.remainingHealth,
+            eventData.finalHealth,
+            eventData.destHealth,
+            eventData.health
+        )
+        local healthMaxAtDeath = SafeNonNegativeNumber(
+            eventData.maxHealth,
+            eventData.healthMax,
+            eventData.destMaxHealth,
+            eventData.targetMaxHealth
+        )
+
+        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount, nil,
+            healthAtDeath, healthMaxAtDeath
+    end
+
+    local function ResolveRecapCause(entry)
+        local recapID = SafeNumber(entry and entry.deathRecapID) or 0
+        if recapID > 0
+            and _G.C_DeathRecap
+            and type(_G.C_DeathRecap.GetRecapEvents) == "function"
+        then
+            local okRecap, recapEvents = pcall(_G.C_DeathRecap.GetRecapEvents, recapID)
+            if okRecap and type(recapEvents) == "table" then
+                local m, s, sp, o, ok, am, tl, hd, hm = ResolveCauseFromEventData(recapEvents[1])
+                if m or s or sp then
+                    local okTimeline, timelineResult = pcall(BuildRawTimelineEvents, recapEvents)
+                    if okTimeline then
+                        tl = timelineResult
+                    end
+                    return m, s, sp, o, ok, am, tl, hd, hm
+                end
+            end
+        end
+
+        local destGUID = entry and (entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid)
+        sessionId = SafeNonNegativeNumber(sessionId)
+        if not destGUID or destGUID == "" or not sessionId or sessionId == 0 then
+            return nil, nil, nil, nil, nil, nil, nil, nil, nil
+        end
+        if type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function" then
+            return nil, nil, nil, nil, nil, nil, nil, nil, nil
+        end
+
+        local okDamageMeter, recapEvents = pcall(function()
+            return C_DamageMeter.GetDamageDataForPlayerByType(sessionId, destGUID, deathsType)
+        end)
+        if not okDamageMeter or type(recapEvents) ~= "table" then
+            return nil, nil, nil, nil, nil, nil, nil, nil, nil
+        end
+
+        local m, s, sp, o, ok, am, tl, hd, hm = ResolveCauseFromEventData(recapEvents[1])
+        local okTimeline, timelineResult = pcall(BuildRawTimelineEvents, recapEvents)
+        if okTimeline then
+            tl = timelineResult
+        end
+        return m, s, sp, o, ok, am, tl, hd, hm
     end
 
     local function ParseDeathEntries(container, encounterDuration, sessionStartTime)
@@ -2371,6 +2654,99 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return nil
         end
 
+        local function NormalizeTimelineEvents(rawEvents)
+            if type(rawEvents) ~= "table" then
+                return nil, false
+            end
+
+            local normalized = {}
+            for _, event in ipairs(rawEvents) do
+                if type(event) == "table" then
+                    local eventOffset = ResolveEncounterTimeOffset(event, event.rawTimeOffset)
+                    local eventTimeStr = "?:??"
+                    if eventOffset ~= nil then
+                        eventTimeStr = FormatEncounterTime(math.floor(eventOffset))
+                    end
+
+                    normalized[#normalized + 1] = {
+                        eventType = event.eventType,
+                        eventToken = event.eventToken,
+                        spellId = event.spellId,
+                        spellName = event.spellName,
+                        source = event.source,
+                        amount = event.amount,
+                        overkill = event.overkill,
+                        auraType = event.auraType,
+                        healthBefore = event.healthBefore,
+                        healthAfter = event.healthAfter,
+                        healthMax = event.healthMax,
+                        timeOffset = eventOffset,
+                        timeStr = eventTimeStr,
+                        rawOrder = event.rawOrder,
+                    }
+                end
+            end
+
+            table.sort(normalized, function(a, b)
+                local left = a and a.timeOffset
+                local right = b and b.timeOffset
+                local leftOrder = ToPlainNumber(a and a.rawOrder)
+                local rightOrder = ToPlainNumber(b and b.rawOrder)
+                if left == nil and right == nil then
+                    return leftOrder < rightOrder
+                end
+                if left == nil or right == nil then
+                    return leftOrder < rightOrder
+                end
+                left = ToPlainNumber(left)
+                right = ToPlainNumber(right)
+                local okCompare, result = pcall(function()
+                    return left < right
+                end)
+                if okCompare then
+                    return result
+                end
+                return tostring(left) < tostring(right)
+            end)
+
+            if #normalized == 0 then
+                return nil, false
+            end
+
+            local timelineTruncated = #normalized > RECAP_TIMELINE_EVENT_LIMIT
+            if timelineTruncated then
+                local trimmed = {}
+                local startIndex = #normalized - RECAP_TIMELINE_EVENT_LIMIT + 1
+                for i = startIndex, #normalized do
+                    trimmed[#trimmed + 1] = normalized[i]
+                end
+                normalized = trimmed
+            end
+
+            local hasPreciseTime = false
+            for _, event in ipairs(normalized) do
+                if event and event.timeOffset ~= nil then
+                    hasPreciseTime = true
+                    break
+                end
+            end
+
+            if not hasPreciseTime then
+                local maxIndex = #normalized - 1
+                for i, event in ipairs(normalized) do
+                    event.timeStr = "T-" .. tostring(maxIndex - (i - 1))
+                end
+            else
+                for i, event in ipairs(normalized) do
+                    if event.timeOffset == nil then
+                        event.timeStr = "T-" .. tostring(#normalized - i)
+                    end
+                end
+            end
+
+            return normalized, timelineTruncated
+        end
+
         local parsed = {}
         for _, entry in pairs(container) do
             if type(entry) == "table" then
@@ -2398,7 +2774,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.value
                 )
                 local recapMechanic, recapSource, recapSpellId, recapTimeOffset,
-                    recapOverkill, recapAmount = ResolveRecapCause(entry)
+                    recapOverkill, recapAmount, recapTimelineRaw,
+                    recapHealthAtDeath, recapHealthMaxAtDeath = ResolveRecapCause(entry)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
@@ -2414,6 +2791,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if recapAmount and recapAmount > 0 then
                     hitAmount = recapAmount
                 end
+
+                local eventTimeline, timelineTruncated = NormalizeTimelineEvents(recapTimelineRaw)
                 local timeOffset = ResolveEncounterTimeOffset(entry, recapTimeOffset)
                 local timeStr = "?:??"
                 if timeOffset ~= nil then
@@ -2428,6 +2807,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     hitAmount  = hitAmount,
                     timeOffset = timeOffset,
                     timeStr    = timeStr,
+                    eventTimeline = eventTimeline,
+                    timelineTruncated = timelineTruncated,
+                    healthAtDeath = recapHealthAtDeath,
+                    healthMaxAtDeath = recapHealthMaxAtDeath,
                 }
             end
         end
