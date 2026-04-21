@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: Astral |cffff8000Raid Leader|r
 ## Notes: Automatically passes Raid Leader to a configurable list of preferred characters. Provides reminders when a hand-off is needed.
 ## Author: AstralGuild
