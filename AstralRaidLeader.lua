@@ -2483,7 +2483,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             eventData.targetMaxHealth
         )
 
-        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount, nil, healthAtDeath, healthMaxAtDeath
+        return mechanic, source, spellId, recapTimeOffset, recapOverkill, recapAmount, nil,
+            healthAtDeath, healthMaxAtDeath
     end
 
     local function ResolveRecapCause(entry)
