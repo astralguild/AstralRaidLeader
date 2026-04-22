@@ -19,6 +19,7 @@ In-game settings window for configuring auto-promote, reminder behavior, popup n
 - **Group-type filters (multi-select)** – independently toggle auto-promote and death-recap capture for raids, parties, guild raids, and guild parties. You can enable any combination.
 - **Consumable audit** – when a ready check is initiated, the addon scans every queryable group member's active buffs and prints a report of who is missing tracked consumable categories (e.g. Flask, Food). Members outside your current instance/phase are skipped to avoid false positives. Consumable categories are fully configurable via `/arl consumable add`. The audit can be toggled on or off without affecting any other feature.
 - **Raid group layouts** – import Viserio-style encounter notes, edit layouts in a visual draft planner, and apply subgroup assignments to your current raid. Use the Raid Groups dropdown to select a layout (or choose **None (disabled)**). Saved layouts now support sparse subgroup assignments (for example intentionally placing players in group 8 while leaving earlier groups partially empty). Optional settings let you auto-apply on joins and invite missing listed players on apply.
+- **Boss-specific soak assignment parsing** – imported notes can apply encounter-specific subgroup mappings from note text for supported mythic encounters (currently Chimaerus and Vanguard). Parsing is encounter-gated and derived from the pasted import note body.
 - **Raid layout difficulty guard** – imported layouts are keyed by encounter + difficulty and only apply when the current raid difficulty matches the layout's saved difficulty.
 - **Death recap** – records wipe deaths and displays them in a recap window (`/arl deaths`). In current Midnight-compatible builds, death data is sourced from the built-in `C_DamageMeter` combat session API.
 - **Quiet mode** – suppress all addon chat output so auto-promotion happens silently in the background.
@@ -38,6 +39,8 @@ separate modules:
 - `AstralRaidLeader_Options_RaidGroupsImport.lua`
 - `AstralRaidLeader_Options_RaidGroupsSettings.lua`
 - `AstralRaidLeader_Options_RaidGroupsLogic.lua`
+- `AstralRaidLeader_RaidLayouts_BossAssignments.lua`
+- `AstralRaidLeader_Options_RaidGroupsHelpers.lua`
 
 `AstralRaidLeader.toc` loads these module files before `AstralRaidLeader_Options.lua` so builder/logic functions are
 available during options initialization.
@@ -138,6 +141,18 @@ On the `Layouts` sub-tab:
 - Use `Reorganize` to compact the current draft into sequential 5-player groups while preserving current top-to-bottom order.
 - Use `Save New` or `Overwrite` to persist the current draft.
 
+Supported encounter-specific note parsing (mythic only):
+- Chimaerus (`EncounterID:3306`):
+   - `Soak 1, 3, 4:` names are assigned to groups 1/3.
+   - `Soak 2:` names are assigned to groups 2/4.
+- Vanguard (`EncounterID:3180`):
+   - `Soak 1:` -> group 1
+   - `Soak 2:` -> group 2
+   - `Soak 3:` -> group 3
+   - `Soak 4:` -> group 4
+
+If a player appears in multiple soak lines for a supported encounter, the first parsed assignment wins.
+
 Saved layouts now persist explicit subgroup assignments (`groups[1..8]`) and still maintain `invitelist` for backward compatibility.
 This means sparse layouts (with intentional gaps) survive save/load and apply.
 
@@ -182,7 +197,7 @@ WTF/Account/<account>/SavedVariables/AstralRaidLeader.lua
 
 ## Compatibility
 
-Targets **WoW Retail** (Interface `120001`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.
+Targets **WoW Retail** (Interface `120005`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.
 
 ## Release workflow
 

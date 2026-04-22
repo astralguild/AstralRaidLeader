@@ -170,7 +170,7 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
         return false
     end
 
-    local assignments = {}
+    local assignments
     if hints.kind == "soak_assignments" and type(hints.assignments) == "table" then
         assignments = hints.assignments
     elseif hints.kind == "chimaerus_soaks" then
