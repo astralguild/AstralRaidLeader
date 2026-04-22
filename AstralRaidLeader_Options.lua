@@ -12,11 +12,6 @@ local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
 local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 local UnitInRaid = _G.UnitInRaid
-local UnitGroupRolesAssigned = _G.UnitGroupRolesAssigned
-local GetInspectSpecialization = _G.GetInspectSpecialization
-local GetSpecialization = _G.GetSpecialization
-local GetSpecializationInfo = _G.GetSpecializationInfo
-local GetSpecializationInfoByID = _G.GetSpecializationInfoByID
 local GetNumGuildMembers = _G.GetNumGuildMembers
 local GetGuildRosterInfo = _G.GetGuildRosterInfo
 local IsInGuild = _G.IsInGuild
@@ -1033,6 +1028,7 @@ local function ResetRaidEditorState()
     raidEditorState.encounterID = 0
     raidEditorState.difficulty = "mythic"
     raidEditorState.name = ""
+    raidEditorState.assignmentHints = nil
     for i = 1, 8 do
         raidEditorState.groups[i] = {}
     end
@@ -1225,6 +1221,33 @@ local function RemoveEditorPlayer(name)
     return true
 end
 
+local raidGroupsHelpers = ARL.OptionsRaidGroupsHelpers or {}
+local ResolveUnitRole = raidGroupsHelpers.ResolveUnitRole
+local BuildRaidRosterRoleLookup = raidGroupsHelpers.BuildRaidRosterRoleLookup
+local TryApplyBossSoakAssignmentsToEditor = raidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor
+
+local function IsAssignmentHintsApplicable(hints, encounterID, difficulty)
+    if type(hints) ~= "table" then
+        return false
+    end
+
+    local hintEncounterID = tonumber(hints.encounterID)
+    local currentEncounterID = tonumber(encounterID)
+    if hintEncounterID and currentEncounterID and hintEncounterID ~= currentEncounterID then
+        return false
+    end
+
+    local hintDifficulty = Normalize(hints.difficultyToken or hints.difficulty)
+    local currentDifficulty = Normalize(difficulty):lower()
+    if hintDifficulty ~= "" and currentDifficulty ~= "" then
+        if hintDifficulty:lower() ~= currentDifficulty then
+            return false
+        end
+    end
+
+    return hints.kind == "soak_assignments" or hints.kind == "chimaerus_soaks"
+end
+
 local function BuildProfileFromEditorState()
     local encounterID = tonumber(editorEncounterEdit:GetText()) or 0
     local difficulty = Normalize(editorDifficultyEdit:GetText())
@@ -1240,6 +1263,13 @@ local function BuildProfileFromEditorState()
     raidEditorState.difficulty = difficulty
     raidEditorState.name = layoutName
 
+    local assignmentHints = nil
+    if IsAssignmentHintsApplicable(raidEditorState.assignmentHints, encounterID, difficulty) then
+        assignmentHints = raidEditorState.assignmentHints
+    else
+        raidEditorState.assignmentHints = nil
+    end
+
     local groups = {}
     for groupIndex = 1, 8 do
         groups[groupIndex] = {}
@@ -1253,6 +1283,7 @@ local function BuildProfileFromEditorState()
         difficulty = difficulty,
         name = layoutName,
         groups = groups,
+        assignmentHints = assignmentHints,
     }
 end
 
@@ -1261,6 +1292,8 @@ local function LoadEditorFromProfile(profile)
     raidEditorState.encounterID = profile.encounterID or 0
     raidEditorState.difficulty = profile.difficulty or "mythic"
     raidEditorState.name = profile.name or ""
+    raidEditorState.assignmentHints = type(profile.assignmentHints) == "table"
+        and profile.assignmentHints or nil
     local groups = BuildEditorGroupsFromProfile(profile)
     for groupIndex = 1, 8 do
         for _, playerName in ipairs(groups[groupIndex] or {}) do
@@ -1279,6 +1312,21 @@ local function ReorganizeRaidEditorGroups()
         end
     end
 
+    local rosterLookup = BuildRaidRosterRoleLookup and BuildRaidRosterRoleLookup(Normalize, ShortName) or {}
+    if TryApplyBossSoakAssignmentsToEditor and TryApplyBossSoakAssignmentsToEditor({
+            raidEditorState = raidEditorState,
+            orderedNames = orderedNames,
+            rosterLookup = rosterLookup,
+            fallbackOrder = { 1, 2, 3, 4, 5, 6, 7, 8 },
+            Normalize = Normalize,
+            ShortName = ShortName,
+            IsAssignmentHintsApplicable = IsAssignmentHintsApplicable,
+            SetEditorTargetGroup = SetEditorTargetGroup,
+            ClearDrag = function() raidEditorDrag = nil end,
+        }) then
+        return
+    end
+
     for groupIndex = 1, 8 do
         raidEditorState.groups[groupIndex] = {}
     end
@@ -1290,135 +1338,6 @@ local function ReorganizeRaidEditorGroups()
 
     raidEditorDrag = nil
     SetEditorTargetGroup(1)
-end
-
-local RANGED_SPEC_IDS = {
-    [62] = true, [63] = true, [64] = true,
-    [102] = true,
-    [258] = true,
-    [262] = true,
-    [253] = true, [254] = true,
-    [1467] = true, [1473] = true,
-    [265] = true, [266] = true, [267] = true,
-}
-
-local MELEE_SPEC_IDS = {
-    [70] = true,
-    [71] = true, [72] = true,
-    [251] = true, [252] = true,
-    [577] = true,
-    [103] = true,
-    [255] = true,
-    [268] = true, [269] = true,
-    [263] = true,
-    [259] = true, [260] = true, [261] = true,
-}
-
-local RANGED_ONLY_CLASSES = {
-    MAGE = true,
-    PRIEST = true,
-    WARLOCK = true,
-    EVOKER = true,
-}
-
-local MELEE_ONLY_CLASSES = {
-    WARRIOR = true,
-    DEATHKNIGHT = true,
-    ROGUE = true,
-    DEMONHUNTER = true,
-}
-
-local function ResolveUnitRole(unit)
-    local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
-    if assigned ~= "NONE" then
-        return assigned
-    end
-
-    if unit == "player" and GetSpecialization and GetSpecializationInfo then
-        local specIndex = GetSpecialization()
-        if specIndex and specIndex > 0 then
-            local _, _, _, _, role = GetSpecializationInfo(specIndex)
-            if role and role ~= "" then
-                return role
-            end
-        end
-    end
-
-    local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
-    if specID and specID > 0 and GetSpecializationInfoByID then
-        local _, _, _, _, role = GetSpecializationInfoByID(specID)
-        if role and role ~= "" then
-            return role
-        end
-    end
-
-    return "NONE"
-end
-
-local function ResolveUnitCombatType(unit, classToken, role)
-    if role == "TANK" or role == "HEALER" then
-        return nil
-    end
-
-    local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
-    if unit == "player" and GetSpecialization and GetSpecializationInfo then
-        local specIndex = GetSpecialization()
-        if specIndex and specIndex > 0 then
-            local specInfoID = select(1, GetSpecializationInfo(specIndex))
-            if specInfoID and specInfoID > 0 then
-                specID = specInfoID
-            end
-        end
-    end
-
-    if specID and specID > 0 then
-        if RANGED_SPEC_IDS[specID] then
-            return "ranged"
-        end
-        if MELEE_SPEC_IDS[specID] then
-            return "melee"
-        end
-    end
-
-    if classToken and RANGED_ONLY_CLASSES[classToken] then
-        return "ranged"
-    end
-    if classToken and MELEE_ONLY_CLASSES[classToken] then
-        return "melee"
-    end
-
-    if classToken == "HUNTER" or classToken == "DRUID" or classToken == "SHAMAN" then
-        return "ranged"
-    end
-
-    if classToken == "PALADIN" or classToken == "MONK" then
-        return "melee"
-    end
-
-    return nil
-end
-
-local function BuildRaidRosterRoleLookup()
-    local lookup = {}
-    local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
-    for raidIndex = 1, numMembers do
-        local unit = "raid" .. raidIndex
-        local name, realm = UnitName(unit)
-        if name then
-            local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
-            local _, classToken = UnitClass(unit)
-            local role = ResolveUnitRole(unit)
-            local info = {
-                classToken = classToken,
-                role = role,
-                combatType = ResolveUnitCombatType(unit, classToken, role),
-            }
-            lookup[Normalize(fullName):lower()] = info
-            lookup[Normalize(name):lower()] = info
-            lookup[ShortName(fullName):lower()] = info
-        end
-    end
-    return lookup
 end
 
 local function SplitRaidEditorGroups()
@@ -1444,7 +1363,7 @@ local function SplitRaidEditorGroups()
         return summary
     end
 
-    local rosterLookup = BuildRaidRosterRoleLookup()
+    local rosterLookup = BuildRaidRosterRoleLookup and BuildRaidRosterRoleLookup(Normalize, ShortName) or {}
     local tanks = {}
     local healers = {}
     local melee = {}
@@ -1479,6 +1398,20 @@ local function SplitRaidEditorGroups()
     summary.melee = #melee
     summary.ranged = #ranged
     summary.unknown = #unknown
+
+    if TryApplyBossSoakAssignmentsToEditor and TryApplyBossSoakAssignmentsToEditor({
+            raidEditorState = raidEditorState,
+            orderedNames = orderedNames,
+            rosterLookup = rosterLookup,
+            fallbackOrder = { 5, 6, 7, 8, 1, 2, 3, 4 },
+            Normalize = Normalize,
+            ShortName = ShortName,
+            IsAssignmentHintsApplicable = IsAssignmentHintsApplicable,
+            SetEditorTargetGroup = SetEditorTargetGroup,
+            ClearDrag = function() raidEditorDrag = nil end,
+        }) then
+        return summary
+    end
 
     local activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
     if activeGroupCount >= 3 and (activeGroupCount % 2) == 1 and activeGroupCount < 8 then

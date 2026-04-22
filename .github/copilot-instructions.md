@@ -2,13 +2,14 @@
 
 ## Project Overview
 
-AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, raid group layouts, guild rank priority, and death recaps. Target interface version: `120001` (Midnight).
+AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, raid group layouts, guild rank priority, and death recaps. Target interface version: `120005` (Midnight).
 
 ### File Layout
 
 | File | Purpose |
 |---|---|
 | `AstralRaidLeader.lua` | Core logic: event handling, auto-promote, guild rank resolution, consumable audit, death tracking, slash commands |
+| `AstralRaidLeader_RaidLayouts_BossAssignments.lua` | Core helper module for boss-specific raid layout assignment parsing and hint-based subgroup construction |
 | `AstralRaidLeader_Options.lua` | Options bootstrap/wiring for builder modules (860×700 custom frame) |
 | `AstralRaidLeader_Options_General.lua` | Builder for General options panel |
 | `AstralRaidLeader_Options_Leaders.lua` | Builder for Leaders panel |
@@ -18,6 +19,7 @@ AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It ma
 | `AstralRaidLeader_Options_RaidGroupsLayouts.lua` | Builder for Raid Groups Layouts panel |
 | `AstralRaidLeader_Options_RaidGroupsImport.lua` | Builder for Raid Groups Import panel |
 | `AstralRaidLeader_Options_RaidGroupsSettings.lua` | Builder for Raid Groups Settings panel |
+| `AstralRaidLeader_Options_RaidGroupsHelpers.lua` | Shared options helper module for raid-group role lookup and boss-aware editor assignment helpers |
 | `AstralRaidLeader_Options_RaidGroupsLogic.lua` | Binder for Raid Groups handlers, popups, and checkbox wiring |
 | `AstralRaidLeader_Deaths.lua` | Death recap window (520×430 custom frame) |
 | `AstralRaidLeader.toc` | Addon manifest; load order is core `.lua` → options modules → `_Options.lua` → `_Deaths.lua` |
@@ -269,3 +271,5 @@ Sets muted text color on `cb.Text`, brightens on hover. Idempotent via `cb._arlS
 17. **Sparse subgroup persistence** — saved layouts now support sparse groups via `profile.groups[1..8]`. Keep `groups` authoritative for assignment while keeping `invitelist` in sync for compatibility.
 18. **Active layout re-click behavior** — clicking the already-selected layout in the dropdown should be non-destructive (no implicit clear/discard path).
 19. **Difficulty display formatting** — keep storage tokens canonical (`mythic`/`heroic`/`normal`/`lfr`) and format display text with explicit mapping (`Mythic`/`Heroic`/`Normal`/`LFR`).
+20. **Boss soak parsing scope** — encounter-specific soak assignment parsing must be derived from pasted import note text (not docs files) and gated by encounter ID + difficulty.
+21. **Duplicate soak membership** — for supported encounter-specific parsing, if a player appears in multiple soak lines, first parsed assignment wins.
