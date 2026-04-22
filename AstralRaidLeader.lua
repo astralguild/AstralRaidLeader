@@ -555,6 +555,31 @@ local function BuildRaidLayoutProfile(input)
         groups, invitelist = BuildRaidLayoutGroupsFromInvitelist(input.invitelist)
     end
 
+    local assignmentHints
+    local bossAssignmentHelpers = ARL.RaidLayoutBossAssignments
+    if type(input.assignmentHints) == "table" then
+        assignmentHints = input.assignmentHints
+    elseif bossAssignmentHelpers and bossAssignmentHelpers.ParseBossSoakAssignmentHints then
+        assignmentHints = bossAssignmentHelpers.ParseBossSoakAssignmentHints(
+            encounterID,
+            difficulty,
+            input and input.noteBody,
+            invitelist
+        )
+    end
+
+    if type(input.groups) ~= "table"
+        and type(assignmentHints) == "table"
+        and (
+            assignmentHints.kind == "soak_assignments"
+            or assignmentHints.kind == "chimaerus_soaks"
+        )
+        and bossAssignmentHelpers
+        and bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints
+    then
+        groups, invitelist = bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints(invitelist, assignmentHints)
+    end
+
     local overfullGroups = GetOverfullRaidLayoutGroups(groups)
     if #overfullGroups > 0 then
         return nil, BuildRaidLayoutOverfullGroupsError(encounterName, overfullGroups)
@@ -566,6 +591,7 @@ local function BuildRaidLayoutProfile(input)
         name = encounterName,
         groups = groups,
         invitelist = invitelist,
+        assignmentHints = assignmentHints,
     }
     profile.key = GetRaidLayoutKey(profile)
 
@@ -660,15 +686,16 @@ local function ParseRaidLayoutImport(text)
         return nil, "Paste at least one encounter block to import."
     end
 
-    local flattened = normalized:gsub("[%s%c]+", " ")
     local byKey = {}
     local orderedKeys = {}
-    for encounterIDText, difficultyText, encounterNameText, inviteListText in flattened:gmatch(
-        "EncounterID:%s*([^;]+)%s*;%s*Difficulty:%s*([^;]+)%s*;%s*Name:%s*([^;]+)%s*;?%s*invitelist:%s*(.-)%s*;"
+    for encounterIDText, difficultyText, encounterNameText, noteBodyText, inviteListText in normalized:gmatch(
+        "EncounterID:%s*([^;]+)%s*;%s*Difficulty:%s*([^;]+)%s*;%s*Name:%s*([^;]+)%s*;?(.-)"
+            .. "invitelist:%s*(.-)%s*;"
     ) do
         local encounterID = tonumber(Trim(encounterIDText))
         local difficulty = Trim(difficultyText)
         local encounterName = Trim(encounterNameText)
+        local noteBody = Trim(noteBodyText)
         local inviteList = {}
         local seenNames = {}
 
@@ -687,6 +714,7 @@ local function ParseRaidLayoutImport(text)
                 difficulty = difficulty ~= "" and difficulty or "Unknown",
                 name = encounterName,
                 invitelist = inviteList,
+                noteBody = noteBody,
             }
             local profile = BuildRaidLayoutProfile(rawProfile)
 

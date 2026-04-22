@@ -9,6 +9,7 @@
 ## X-Curse-Project-ID: 1491447
 
 AstralRaidLeader.lua
+AstralRaidLeader_RaidLayouts_BossAssignments.lua
 AstralRaidLeader_Options_General.lua
 AstralRaidLeader_Options_Leaders.lua
 AstralRaidLeader_Options_GuildRanks.lua
@@ -17,6 +18,7 @@ AstralRaidLeader_Options_DeathsPanel.lua
 AstralRaidLeader_Options_RaidGroupsLayouts.lua
 AstralRaidLeader_Options_RaidGroupsImport.lua
 AstralRaidLeader_Options_RaidGroupsSettings.lua
+AstralRaidLeader_Options_RaidGroupsHelpers.lua
 AstralRaidLeader_Options_RaidGroupsLogic.lua
 AstralRaidLeader_Options.lua
 AstralRaidLeader_Deaths.lua
