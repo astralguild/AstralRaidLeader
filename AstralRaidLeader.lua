@@ -101,6 +101,8 @@ end
 -- Forward declarations used by raid-layout helpers before death-tracking setup.
 local currentEncounterName = ""
 local currentEncounterID = 0
+local encounterStartTime = 0
+local RESET_PULL_THRESHOLD_SECONDS = 10
 
 -- Shared UI helpers consumed by the options and death-recap windows.
 ARL.UI = ARL.UI or {}
@@ -3119,13 +3121,22 @@ end
 HandleDeathTrackingEvent = function(event, ...)
     if event == "ENCOUNTER_START" then
         local encounterID, encounterName = ...
-        currentEncounterID     = tonumber(encounterID) or 0
-        currentEncounterName   = encounterName or "Unknown"
+        currentEncounterID   = tonumber(encounterID) or 0
+        currentEncounterName = encounterName or "Unknown"
+        encounterStartTime   = GetTime()
 
     elseif event == "ENCOUNTER_END" then
         local _, encounterName, _, _, success = ...
 
-        if ARL.db and ARL.db.deathTrackingEnabled and IsInRelevantDeathGroup() then
+        local elapsed = GetTime() - encounterStartTime
+        local isResetPull = encounterStartTime > 0 and elapsed < RESET_PULL_THRESHOLD_SECONDS
+
+        if isResetPull then
+            if ARL.db and ARL.db.deathTrackingEnabled then
+                Print("Skipping death recap - encounter lasted less than " ..
+                    RESET_PULL_THRESHOLD_SECONDS .. " seconds (reset pull).")
+            end
+        elseif ARL.db and ARL.db.deathTrackingEnabled and IsInRelevantDeathGroup() then
             local finalEncounterName = encounterName or currentEncounterName
             local finalEncounterID = currentEncounterID
             if success == 0 then
@@ -3147,8 +3158,9 @@ HandleDeathTrackingEvent = function(event, ...)
             end
         end
 
-        currentEncounterID     = 0
-        currentEncounterName   = ""
+        currentEncounterID   = 0
+        currentEncounterName = ""
+        encounterStartTime   = 0
     end
 end
 
