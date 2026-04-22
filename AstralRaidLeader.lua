@@ -689,7 +689,7 @@ local function ParseRaidLayoutImport(text)
     local byKey = {}
     local orderedKeys = {}
     for encounterIDText, difficultyText, encounterNameText, noteBodyText, inviteListText in normalized:gmatch(
-        "EncounterID:%s*([^;]+)%s*;%s*Difficulty:%s*([^;]+)%s*;%s*Name:%s*([^;]+)%s*;?(.-)"
+        "EncounterID:%s*([^;\r\n]+)%s*;%s*Difficulty:%s*([^;\r\n]+)%s*;%s*Name:%s*([^;\r\n]+)%s*;?(.-)"
             .. "invitelist:%s*(.-)%s*;"
     ) do
         local encounterID = tonumber(Trim(encounterIDText))
