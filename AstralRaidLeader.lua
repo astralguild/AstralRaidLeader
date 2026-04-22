@@ -2177,7 +2177,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
     end
 
-    local RECAP_TIMELINE_EVENT_LIMIT = 5
+    local RECAP_TIMELINE_EVENT_LIMIT = 10
 
     local function ResolveSpellNameByID(spellId)
         if not spellId or spellId <= 0 then

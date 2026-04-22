@@ -806,7 +806,7 @@ local function ShowDeathDetails(entry)
             shownRows = i
         end
         if entry.timelineTruncated then
-            lines[#lines + 1] = "|cff9fb0c8Showing last 5 relevant events.|r"
+            lines[#lines + 1] = "|cff9fb0c8Showing last 10 relevant events.|r"
         end
     else
         lines[#lines + 1] = "No additional timeline data is available for this recap entry."
