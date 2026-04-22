@@ -422,6 +422,9 @@ local detailsFrame
 local detailsSummaryText
 local detailsHealthText
 local detailsTimelineText
+local detailsTimelineRows = {}
+local DETAILS_TIMELINE_ROW_HEIGHT = 20
+local ShowSpellTooltip
 
 local function EnsureDetailsFrame()
     if detailsFrame then
@@ -656,6 +659,100 @@ local function BuildTimelineDetailsLine(index, event)
     return line
 end
 
+local function HideAllDetailsTimelineRows()
+    for _, row in ipairs(detailsTimelineRows) do
+        row.event = nil
+        row.spellId = nil
+        row:Hide()
+    end
+end
+
+local function AcquireDetailsTimelineRow(index, popup)
+    local row = detailsTimelineRows[index]
+    if row then
+        return row
+    end
+
+    row = CreateFrame("Button", nil, popup.scrollContent)
+    row:SetHeight(DETAILS_TIMELINE_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", 4, -4 - ((index - 1) * DETAILS_TIMELINE_ROW_HEIGHT))
+    row:SetPoint("TOPRIGHT", -4, -4 - ((index - 1) * DETAILS_TIMELINE_ROW_HEIGHT))
+    row:EnableMouse(false)
+
+    local hoverBG = row:CreateTexture(nil, "BACKGROUND")
+    hoverBG:SetAllPoints(row)
+    hoverBG:SetColorTexture(1, 1, 1, 0.04)
+    hoverBG:Hide()
+    row.hoverBG = hoverBG
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(14, 14)
+    icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    icon:Hide()
+    row.spellIcon = icon
+
+    local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    text:SetPoint("LEFT", row, "LEFT", 0, 0)
+    text:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    text:SetJustifyH("LEFT")
+    text:SetJustifyV("MIDDLE")
+    text:SetWordWrap(false)
+    text:SetTextColor(0.90, 0.92, 0.96)
+    row.lineText = text
+
+    row:SetScript("OnEnter", function(self)
+        if self.hoverBG then
+            self.hoverBG:Show()
+        end
+        if self.spellId and self.spellId > 0 then
+            ShowSpellTooltip(self, self.spellId, self.event)
+        end
+    end)
+
+    row:SetScript("OnLeave", function(self)
+        if self.hoverBG then
+            self.hoverBG:Hide()
+        end
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+
+    detailsTimelineRows[index] = row
+    return row
+end
+
+local function PopulateDetailsTimelineRow(row, index, event)
+    row.event = event
+    row.spellId = nil
+    row.lineText:SetText(BuildTimelineDetailsLine(index, event))
+
+    local spellId = type(event) == "table" and event.spellId or nil
+    if type(spellId) == "number" and spellId > 0 then
+        row.spellId = spellId
+        local _, icon = ResolveSpellNameAndIcon(spellId)
+        if icon then
+            row.spellIcon:SetTexture(icon)
+            row.spellIcon:Show()
+            row.lineText:ClearAllPoints()
+            row.lineText:SetPoint("LEFT", row.spellIcon, "RIGHT", 6, 0)
+            row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        else
+            row.spellIcon:Hide()
+            row.lineText:ClearAllPoints()
+            row.lineText:SetPoint("LEFT", row, "LEFT", 0, 0)
+            row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        end
+    else
+        row.spellIcon:Hide()
+        row.lineText:ClearAllPoints()
+        row.lineText:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    end
+
+    row:EnableMouse(row.spellId ~= nil)
+end
+
 local function ShowDeathDetails(entry)
     if type(entry) ~= "table" then
         return
@@ -697,13 +794,18 @@ local function ShowDeathDetails(entry)
     end
 
     local timeline = entry.eventTimeline
+    HideAllDetailsTimelineRows()
+
     local lines = {}
+    local shownRows = 0
     if type(timeline) == "table" and #timeline > 0 then
         for i, event in ipairs(timeline) do
-            lines[#lines + 1] = BuildTimelineDetailsLine(i, event)
+            local row = AcquireDetailsTimelineRow(i, popup)
+            PopulateDetailsTimelineRow(row, i, event)
+            row:Show()
+            shownRows = i
         end
         if entry.timelineTruncated then
-            lines[#lines + 1] = ""
             lines[#lines + 1] = "|cff9fb0c8Showing last 5 relevant events.|r"
         end
     else
@@ -713,14 +815,19 @@ local function ShowDeathDetails(entry)
     local timelineText = table.concat(lines, "\n")
     detailsTimelineText:SetText(timelineText)
 
+    detailsTimelineText:ClearAllPoints()
+    local messageTop = -4 - (shownRows * DETAILS_TIMELINE_ROW_HEIGHT)
+    detailsTimelineText:SetPoint("TOPLEFT", popup.scrollContent, "TOPLEFT", 4, messageTop)
+    detailsTimelineText:SetPoint("TOPRIGHT", popup.scrollContent, "TOPRIGHT", -4, messageTop)
     local textHeight = detailsTimelineText:GetStringHeight() or 0
-    popup.scrollContent:SetHeight(math.max(1, math.floor(textHeight + 14)))
+    local totalHeight = (shownRows * DETAILS_TIMELINE_ROW_HEIGHT) + textHeight + 16
+    popup.scrollContent:SetHeight(math.max(1, math.floor(totalHeight)))
     popup.scrollFrame:SetVerticalScroll(0)
     popup:Show()
     popup:Raise()
 end
 
-local function ShowSpellTooltip(owner, spellId, entry)
+function ShowSpellTooltip(owner, spellId, entry)
     if not GameTooltip or not spellId or spellId <= 0 then
         return
     end
@@ -739,7 +846,7 @@ local function ShowSpellTooltip(owner, spellId, entry)
     end
 
     if type(entry) == "table" then
-        local hitAmount = FormatExactAmount(entry.hitAmount)
+        local hitAmount = FormatExactAmount(entry.hitAmount or entry.amount)
         local overkill = FormatExactAmount(entry.overkill)
         if hitAmount then
             GameTooltip:AddLine("Killing blow: " .. hitAmount, 0.90, 0.92, 0.96)

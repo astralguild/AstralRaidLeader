@@ -2654,7 +2654,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return nil
         end
 
-        local function NormalizeTimelineEvents(rawEvents)
+        local function NormalizeTimelineEvents(rawEvents, fallbackAnchorOffset)
             if type(rawEvents) ~= "table" then
                 return nil, false
             end
@@ -2731,15 +2731,67 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
             end
 
+            local function NormalizeSyntheticOffset(value)
+                local plain = SafeNumber(value)
+                if plain == nil then
+                    return nil
+                end
+                plain = ClampNonNegative(plain)
+                if plain == nil then
+                    return nil
+                end
+                return math.floor(plain)
+            end
+
+            local anchorOffset = NormalizeSyntheticOffset(fallbackAnchorOffset)
+
             if not hasPreciseTime then
-                local maxIndex = #normalized - 1
-                for i, event in ipairs(normalized) do
-                    event.timeStr = "T-" .. tostring(maxIndex - (i - 1))
+                if anchorOffset ~= nil then
+                    local newestIndex = #normalized
+                    for i, event in ipairs(normalized) do
+                        local syntheticOffset = anchorOffset - (newestIndex - i)
+                        syntheticOffset = math.max(0, syntheticOffset)
+                        event.timeOffset = syntheticOffset
+                        event.timeStr = FormatEncounterTime(syntheticOffset)
+                    end
+                else
+                    for _, event in ipairs(normalized) do
+                        event.timeStr = "?:??"
+                    end
                 end
             else
                 for i, event in ipairs(normalized) do
                     if event.timeOffset == nil then
-                        event.timeStr = "T-" .. tostring(#normalized - i)
+                        local inferredOffset
+
+                        for j = i + 1, #normalized do
+                            local nextOffset = NormalizeSyntheticOffset(normalized[j].timeOffset)
+                            if nextOffset ~= nil then
+                                inferredOffset = math.max(0, nextOffset - (j - i))
+                                break
+                            end
+                        end
+
+                        if inferredOffset == nil then
+                            for j = i - 1, 1, -1 do
+                                local prevOffset = NormalizeSyntheticOffset(normalized[j].timeOffset)
+                                if prevOffset ~= nil then
+                                    inferredOffset = prevOffset + (i - j)
+                                    break
+                                end
+                            end
+                        end
+
+                        if inferredOffset == nil and anchorOffset ~= nil then
+                            inferredOffset = math.max(0, anchorOffset - (#normalized - i))
+                        end
+
+                        if inferredOffset ~= nil then
+                            event.timeOffset = inferredOffset
+                            event.timeStr = FormatEncounterTime(inferredOffset)
+                        else
+                            event.timeStr = "?:??"
+                        end
                     end
                 end
             end
@@ -2792,12 +2844,12 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     hitAmount = recapAmount
                 end
 
-                local eventTimeline, timelineTruncated = NormalizeTimelineEvents(recapTimelineRaw)
                 local timeOffset = ResolveEncounterTimeOffset(entry, recapTimeOffset)
                 local timeStr = "?:??"
                 if timeOffset ~= nil then
                     timeStr = FormatEncounterTime(math.floor(timeOffset))
                 end
+                local eventTimeline, timelineTruncated = NormalizeTimelineEvents(recapTimelineRaw, timeOffset)
                 parsed[#parsed + 1] = {
                     playerName = playerName,
                     mechanic   = mechanic,
