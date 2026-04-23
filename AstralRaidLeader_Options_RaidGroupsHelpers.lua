@@ -5,6 +5,7 @@ local ARL = _G["AstralRaidLeader"]
 if not ARL then return end
 
 local UnitGroupRolesAssigned = _G.UnitGroupRolesAssigned
+local GetPartyAssignment = _G.GetPartyAssignment
 local GetInspectSpecialization = _G.GetInspectSpecialization
 local GetSpecialization = _G.GetSpecialization
 local GetSpecializationInfo = _G.GetSpecializationInfo
@@ -52,6 +53,10 @@ local MELEE_ONLY_CLASSES = {
 }
 
 function ARL.OptionsRaidGroupsHelpers.ResolveUnitRole(unit)
+    if GetPartyAssignment and GetPartyAssignment("MAINTANK", unit) then
+        return "TANK"
+    end
+
     local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or "NONE"
     if assigned ~= "NONE" then
         return assigned
@@ -247,7 +252,31 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
         return nil
     end
 
-    local function PickAssignmentTarget(targetGroups)
+    local function PickAssignmentTarget(targetGroups, assignmentTankCounts, preferTankSpread)
+        if preferTankSpread and type(targetGroups) == "table" and #targetGroups > 0 then
+            local bestGroup
+            local bestTankCount
+            local bestSize
+            for _, groupIndex in ipairs(targetGroups) do
+                local group = raidEditorState.groups[groupIndex] or {}
+                local groupSize = #group
+                if groupSize < 5 then
+                    local tankCount = assignmentTankCounts[groupIndex] or 0
+                    if not bestGroup
+                        or tankCount < bestTankCount
+                        or (tankCount == bestTankCount and groupSize < bestSize)
+                    then
+                        bestGroup = groupIndex
+                        bestTankCount = tankCount
+                        bestSize = groupSize
+                    end
+                end
+            end
+            if bestGroup then
+                return bestGroup
+            end
+        end
+
         return PickFirstOpen(targetGroups) or PickFirstOpen(fallbackOrder)
     end
 
@@ -271,19 +300,25 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
             end
         end
 
-        local orderedLane = {}
-        for _, name in ipairs(tanksLane) do
-            orderedLane[#orderedLane + 1] = name
-        end
-        for _, name in ipairs(healersLane) do
-            orderedLane[#orderedLane + 1] = name
-        end
-        for _, name in ipairs(dpsLane) do
-            orderedLane[#orderedLane + 1] = name
+        local assignmentTankCounts = {}
+
+        for _, playerName in ipairs(tanksLane) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, true)
+            if target then
+                AddToGroup(target, playerName)
+                assignmentTankCounts[target] = (assignmentTankCounts[target] or 0) + 1
+            end
         end
 
-        for _, playerName in ipairs(orderedLane) do
-            local target = PickAssignmentTarget(targetGroups)
+        for _, playerName in ipairs(healersLane) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, false)
+            if target then
+                AddToGroup(target, playerName)
+            end
+        end
+
+        for _, playerName in ipairs(dpsLane) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, false)
             if target then
                 AddToGroup(target, playerName)
             end
