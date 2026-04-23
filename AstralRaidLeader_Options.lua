@@ -1463,6 +1463,8 @@ local function SplitRaidEditorGroups()
         return PickFirstOpen(overflowGroups)
     end
 
+    local PickSequentialOpenGroup
+
     local function PickOpenTargetGroup(preferredGroups, fallbackGroups)
         return PickFirstOpen(preferredGroups)
             or PickFirstOpen(fallbackGroups)
@@ -1496,7 +1498,7 @@ local function SplitRaidEditorGroups()
         return "odd"
     end
 
-    local function PickSequentialOpenGroup()
+    PickSequentialOpenGroup = function()
         local preferredSide = ChoosePreferredSide(nil)
         local preferredGroups = preferredSide == "odd" and oddGroups or evenGroups
         local fallbackGroups = preferredSide == "odd" and evenGroups or oddGroups
