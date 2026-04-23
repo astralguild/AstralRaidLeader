@@ -1364,6 +1364,7 @@ local function SplitRaidEditorGroups()
     end
 
     local rosterLookup = BuildRaidRosterRoleLookup and BuildRaidRosterRoleLookup(Normalize, ShortName) or {}
+
     local tanks = {}
     local healers = {}
     local melee = {}
@@ -1399,27 +1400,22 @@ local function SplitRaidEditorGroups()
     summary.ranged = #ranged
     summary.unknown = #unknown
 
-    if TryApplyBossSoakAssignmentsToEditor and TryApplyBossSoakAssignmentsToEditor({
-            raidEditorState = raidEditorState,
-            orderedNames = orderedNames,
-            rosterLookup = rosterLookup,
-            fallbackOrder = { 5, 6, 7, 8, 1, 2, 3, 4 },
-            Normalize = Normalize,
-            ShortName = ShortName,
-            IsAssignmentHintsApplicable = IsAssignmentHintsApplicable,
-            SetEditorTargetGroup = SetEditorTargetGroup,
-            ClearDrag = function() raidEditorDrag = nil end,
-        }) then
-        return summary
-    end
-
     local activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
     if activeGroupCount >= 3 and (activeGroupCount % 2) == 1 and activeGroupCount < 8 then
         activeGroupCount = activeGroupCount + 1
     end
+    local isMythic = Normalize(raidEditorState.difficulty):lower() == "mythic"
     local activeGroups = {}
     for groupIndex = 1, activeGroupCount do
         activeGroups[#activeGroups + 1] = groupIndex
+    end
+    local overflowGroups = {}
+    if isMythic then
+        for _, groupIndex in ipairs({ 8, 7, 6, 5 }) do
+            if groupIndex > activeGroupCount then
+                overflowGroups[#overflowGroups + 1] = groupIndex
+            end
+        end
     end
 
     local primaryGroups = { 1 }
@@ -1463,6 +1459,21 @@ local function SplitRaidEditorGroups()
         return nil
     end
 
+    local function PickOverflowOpenGroup()
+        return PickFirstOpen(overflowGroups)
+    end
+
+    local PickSequentialOpenGroup
+
+    local function PickOpenTargetGroup(preferredGroups, fallbackGroups)
+        return PickFirstOpen(preferredGroups)
+            or PickFirstOpen(fallbackGroups)
+            or PickOverflowOpenGroup()
+            or PickSequentialOpenGroup()
+            or activeGroups[1]
+            or 1
+    end
+
     local function ChoosePreferredSide(preferredSide)
         local oddDeficit = sideTargets.odd - sideCounts.odd
         local evenDeficit = sideTargets.even - sideCounts.even
@@ -1487,7 +1498,7 @@ local function SplitRaidEditorGroups()
         return "odd"
     end
 
-    local function PickSequentialOpenGroup()
+    PickSequentialOpenGroup = function()
         local preferredSide = ChoosePreferredSide(nil)
         local preferredGroups = preferredSide == "odd" and oddGroups or evenGroups
         local fallbackGroups = preferredSide == "odd" and evenGroups or oddGroups
@@ -1525,19 +1536,7 @@ local function SplitRaidEditorGroups()
             end
         end
 
-        local groupIndex = PickFirstOpen(candidatePreferred)
-        if not groupIndex then
-            groupIndex = PickFirstOpen(candidateFallback)
-        end
-        if not groupIndex then
-            groupIndex = PickSequentialOpenGroup()
-        end
-        if not groupIndex then
-            groupIndex = activeGroups[1]
-        end
-        if not groupIndex then
-            groupIndex = 1
-        end
+        local groupIndex = PickOpenTargetGroup(candidatePreferred, candidateFallback)
         AddToGroup(groupIndex, playerName)
         return groupIndex
     end
@@ -1545,7 +1544,9 @@ local function SplitRaidEditorGroups()
     if tanks[1] then
         AddToGroup(1, tanks[1])
     end
-    if tanks[2] then
+    if tanks[2] and activeGroupCount >= 2 then
+        AddToGroup(2, tanks[2])
+    elseif tanks[2] then
         AddToFirstAvailable(primaryGroups, tanks[2])
     end
     for index = 3, #tanks do
@@ -1579,11 +1580,7 @@ local function SplitRaidEditorGroups()
 
         local preferredGroups = side == "odd" and oddGroups or evenGroups
         local fallbackGroups = side == "odd" and evenGroups or oddGroups
-        local targetGroup = PickFirstOpen(preferredGroups)
-            or PickFirstOpen(fallbackGroups)
-            or PickSequentialOpenGroup()
-            or activeGroups[1]
-            or 1
+        local targetGroup = PickOpenTargetGroup(preferredGroups, fallbackGroups)
 
         AddToGroup(targetGroup, playerName)
         local actualSide = ((targetGroup % 2) == 1) and "odd" or "even"
