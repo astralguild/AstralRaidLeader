@@ -12,6 +12,7 @@ local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local ToggleDropDownMenu = _G.ToggleDropDownMenu
 local MAX_RAID_MEMBERS = _G.MAX_RAID_MEMBERS or 40
 local UnitInRaid = _G.UnitInRaid
+local GetRaidRosterInfo = _G.GetRaidRosterInfo
 local GetNumGuildMembers = _G.GetNumGuildMembers
 local GetGuildRosterInfo = _G.GetGuildRosterInfo
 local IsInGuild = _G.IsInGuild
@@ -1341,10 +1342,28 @@ local function ReorganizeRaidEditorGroups()
 end
 
 local function SplitRaidEditorGroups()
+    local isMythic = Normalize(raidEditorState.difficulty):lower() == "mythic"
     local orderedNames = {}
-    for groupIndex = 1, 8 do
-        for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
-            orderedNames[#orderedNames + 1] = playerName
+    local preservedOverflowGroups = {}
+
+    if isMythic then
+        for groupIndex = 5, 8 do
+            preservedOverflowGroups[groupIndex] = {}
+            for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+                preservedOverflowGroups[groupIndex][#preservedOverflowGroups[groupIndex] + 1] = playerName
+            end
+        end
+
+        for groupIndex = 1, 4 do
+            for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+                orderedNames[#orderedNames + 1] = playerName
+            end
+        end
+    else
+        for groupIndex = 1, 8 do
+            for _, playerName in ipairs(raidEditorState.groups[groupIndex] or {}) do
+                orderedNames[#orderedNames + 1] = playerName
+            end
         end
     end
 
@@ -1400,11 +1419,15 @@ local function SplitRaidEditorGroups()
     summary.ranged = #ranged
     summary.unknown = #unknown
 
-    local activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
-    if activeGroupCount >= 3 and (activeGroupCount % 2) == 1 and activeGroupCount < 8 then
-        activeGroupCount = activeGroupCount + 1
+    local activeGroupCount
+    if isMythic then
+        activeGroupCount = 4
+    else
+        activeGroupCount = math.max(1, math.min(8, math.ceil(#orderedNames / 5)))
+        if activeGroupCount >= 3 and (activeGroupCount % 2) == 1 and activeGroupCount < 8 then
+            activeGroupCount = activeGroupCount + 1
+        end
     end
-    local isMythic = Normalize(raidEditorState.difficulty):lower() == "mythic"
     local activeGroups = {}
     for groupIndex = 1, activeGroupCount do
         activeGroups[#activeGroups + 1] = groupIndex
@@ -1435,6 +1458,14 @@ local function SplitRaidEditorGroups()
 
     for groupIndex = 1, 8 do
         raidEditorState.groups[groupIndex] = {}
+    end
+
+    if isMythic then
+        for groupIndex = 5, 8 do
+            for _, playerName in ipairs(preservedOverflowGroups[groupIndex] or {}) do
+                raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+            end
+        end
     end
 
     local sideTargets = {
@@ -1660,8 +1691,15 @@ local function LoadEditorFromCurrentRaid()
             local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
             local cleanName = Normalize(fullName)
             if cleanName ~= "" then
-                local rosterIndex = UnitInRaid and UnitInRaid(unit) or raidIndex
-                local subgroup = math.floor(((tonumber(rosterIndex) or raidIndex) - 1) / 5) + 1
+                local subgroup
+                local rosterIndex = UnitInRaid and UnitInRaid(unit)
+                if rosterIndex and GetRaidRosterInfo then
+                    local _, _, rosterSubgroup = GetRaidRosterInfo(rosterIndex)
+                    subgroup = tonumber(rosterSubgroup)
+                end
+                if not subgroup or subgroup < 1 then
+                    subgroup = math.floor((raidIndex - 1) / 5) + 1
+                end
                 local key = cleanName:lower()
                 if not seen[key] then
                     seen[key] = true
