@@ -1364,6 +1364,7 @@ local function ContinueRaidLayoutApply()
 
     for _, move in ipairs(pending) do
         if (occupancy[move.desiredGroup] or 0) < 5 then
+            state.fullGroupStallCount = 0
             state.combatPaused = false
             state.lastIssuedMove = string.format("%s>%d", move.name, move.desiredGroup)
             SetRaidSubgroup(move.index, move.desiredGroup)
@@ -1429,6 +1430,7 @@ local function ContinueRaidLayoutApply()
         for _, move in ipairs(pending) do
             local blocker, blockerDestination = FindBufferChainMove(move.desiredGroup)
             if blocker and blockerDestination then
+                state.fullGroupStallCount = 0
                 state.combatPaused = false
                 state.lastIssuedMove = string.format("%s>%d", blocker.name, blockerDestination)
                 SetRaidSubgroup(blocker.index, blockerDestination)
@@ -1438,9 +1440,20 @@ local function ContinueRaidLayoutApply()
         end
     end
 
+    -- Subgroup changes can be throttled by the server. Give the roster a few short
+    -- retries before treating a full-target deadlock as a hard failure.
+    state.fullGroupStallCount = (state.fullGroupStallCount or 0) + 1
+    if state.fullGroupStallCount <= 6 then
+        if state.fullGroupStallCount == 1 then
+            Print("Raid layout apply is waiting for subgroup updates before retrying.")
+        end
+        ScheduleRaidLayoutApplyRetry(state, 1.25)
+        return
+    end
+
     StopRaidLayoutApply(string.format(
         "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
-            .. " and no buffer move was available. Current=%s; Targets=%s; Pending=%s",
+            .. " and no buffer move was available after retries. Current=%s; Targets=%s; Pending=%s",
         GetRaidLayoutLabel(state.profile),
         BuildRaidLayoutOccupancyText(occupancy),
         BuildRaidLayoutOccupancyText(state.targetCounts or {}),
@@ -1524,6 +1537,7 @@ local function ApplyRaidLayoutProfile(profile, options)
         retryAt = 0,
         retryToken = 0,
         noProgressCount = 0,
+        fullGroupStallCount = 0,
         lastPendingSignature = nil,
     }
 
@@ -2115,6 +2129,7 @@ end)
 -- Per-session state (not persisted).
 local WIPE_FINALIZE_MAX_RETRIES = 12
 local WIPE_FINALIZE_RETRY_DELAY = 0.75
+local WIPE_FINALIZE_STABLE_PASSES = 2
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
@@ -2165,19 +2180,24 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
 
-    local sessionId = nil
+    local currentSessionId = nil
     if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
-        sessionId = C_DamageMeter.GetCurrentCombatSessionID()
-    elseif type(C_DamageMeter.GetLastCombatSessionID) == "function" then
-        sessionId = C_DamageMeter.GetLastCombatSessionID()
+        currentSessionId = C_DamageMeter.GetCurrentCombatSessionID()
     end
 
-    if (not sessionId or sessionId == 0)
-        and (encounterIDForLookup or 0) ~= 0
+    local lastSessionId = nil
+    if type(C_DamageMeter.GetLastCombatSessionID) == "function" then
+        lastSessionId = C_DamageMeter.GetLastCombatSessionID()
+    end
+
+    local encounterSessionId = nil
+    if (encounterIDForLookup or 0) ~= 0
         and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
     then
-        sessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
+        encounterSessionId = C_DamageMeter.GetCombatSessionIDByEncounterID(encounterIDForLookup)
     end
+
+    local sessionId = currentSessionId or lastSessionId or encounterSessionId
 
     local RECAP_TIMELINE_EVENT_LIMIT = 10
 
@@ -2517,7 +2537,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             healthAtDeath, healthMaxAtDeath
     end
 
-    local function ResolveRecapCause(entry)
+    local function ResolveRecapCause(entry, lookupSessionId)
         local recapID = SafeNumber(entry and entry.deathRecapID) or 0
         if recapID > 0
             and _G.C_DeathRecap
@@ -2537,8 +2557,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local destGUID = entry and (entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid)
-        sessionId = SafeNonNegativeNumber(sessionId)
-        if not destGUID or destGUID == "" or not sessionId or sessionId == 0 then
+        lookupSessionId = SafeNonNegativeNumber(lookupSessionId)
+        if not destGUID or destGUID == "" or not lookupSessionId or lookupSessionId == 0 then
             return nil, nil, nil, nil, nil, nil, nil, nil, nil
         end
         if type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function" then
@@ -2546,7 +2566,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local okDamageMeter, recapEvents = pcall(function()
-            return C_DamageMeter.GetDamageDataForPlayerByType(sessionId, destGUID, deathsType)
+            return C_DamageMeter.GetDamageDataForPlayerByType(lookupSessionId, destGUID, deathsType)
         end)
         if not okDamageMeter or type(recapEvents) ~= "table" then
             return nil, nil, nil, nil, nil, nil, nil, nil, nil
@@ -2560,7 +2580,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return m, s, sp, o, ok, am, tl, hd, hm
     end
 
-    local function ParseDeathEntries(container, encounterDuration, sessionStartTime)
+    local function ParseDeathEntries(container, encounterDuration, sessionStartTime, sourceSessionId)
         if type(container) ~= "table" then return {} end
 
         local function ToPlainNumber(...)
@@ -2855,9 +2875,16 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.finalAmount,
                     entry.value
                 )
+                local lookupSessionId = SafeNonNegativeNumber(
+                    sourceSessionId,
+                    entry.sessionId,
+                    entry.combatSessionId,
+                    entry.combatSessionID,
+                    entry.sessionID
+                )
                 local recapMechanic, recapSource, recapSpellId, recapTimeOffset,
                     recapOverkill, recapAmount, recapTimelineRaw,
-                    recapHealthAtDeath, recapHealthMaxAtDeath = ResolveRecapCause(entry)
+                    recapHealthAtDeath, recapHealthMaxAtDeath = ResolveRecapCause(entry, lookupSessionId)
                 if recapMechanic and recapMechanic ~= "" then
                     mechanic = recapMechanic
                 end
@@ -2884,6 +2911,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     playerName = playerName,
                     mechanic   = mechanic,
                     source     = source,
+                    destGUID   = entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid,
+                    sessionId  = lookupSessionId,
                     spellId    = spellId,
                     overkill   = overkill,
                     hitAmount  = hitAmount,
@@ -2915,8 +2944,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return parsed
     end
 
-    local function ExtractDeathsFromSession(session)
+    local function ExtractDeathsFromSession(session, sourceSessionId)
         if type(session) ~= "table" then return {} end
+
+        local lookupSessionId = SafeNonNegativeNumber(
+            sourceSessionId,
+            session.sessionId,
+            session.combatSessionId,
+            session.combatSessionID,
+            session.id,
+            session.sessionID
+        )
 
         local encounterDuration = SafeNumber(session.durationSeconds)
             or SafeNumber(session.combatDurationSeconds)
@@ -2957,14 +2995,59 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
         -- Older/alternate layouts.
         local deathList = session.deaths or session.Deaths or session.deathLog or session.DeathLog
-        local parsed = ParseDeathEntries(deathList, encounterDuration, sessionStartTime)
+        local parsed = ParseDeathEntries(deathList, encounterDuration, sessionStartTime, lookupSessionId)
         if #parsed > 0 then return parsed end
 
         -- Midnight 12.x layout for Deaths meter type.
-        parsed = ParseDeathEntries(session.combatSources, encounterDuration, sessionStartTime)
+        parsed = ParseDeathEntries(session.combatSources, encounterDuration, sessionStartTime, lookupSessionId)
         if #parsed > 0 then return parsed end
 
         return {}
+    end
+
+    local function BuildDeathEntryFingerprint(entry)
+        if type(entry) ~= "table" then
+            return ""
+        end
+
+        local roundedOffset = ""
+        local offset = SafeNumber(entry.timeOffset)
+        if offset ~= nil then
+            roundedOffset = tostring(math.floor((offset * 10) + 0.5))
+        end
+
+        return table.concat({
+            tostring(SafeNonNegativeNumber(entry.sessionId) or 0),
+            tostring(entry.destGUID or ""),
+            tostring((entry.playerName or ""):lower()),
+            tostring((entry.mechanic or ""):lower()),
+            tostring((entry.source or ""):lower()),
+            tostring(SafeNonNegativeNumber(entry.spellId) or 0),
+            tostring(SafeNonNegativeNumber(entry.hitAmount) or 0),
+            tostring(SafeNonNegativeNumber(entry.overkill) or 0),
+            roundedOffset,
+        }, "::")
+    end
+
+    local function SortDeathsByTime(deaths)
+        table.sort(deaths, function(a, b)
+            local left = SafeNumber(a and a.timeOffset)
+            local right = SafeNumber(b and b.timeOffset)
+            if left == nil and right == nil then
+                return tostring(a and a.playerName or "") < tostring(b and b.playerName or "")
+            end
+            if left == nil then return false end
+            if right == nil then return true end
+
+            local okCompare, result = pcall(function()
+                return left < right
+            end)
+            if okCompare and left ~= right then
+                return result
+            end
+
+            return tostring(a and a.playerName or "") < tostring(b and b.playerName or "")
+        end)
     end
 
     local function GetSessionByID(id)
@@ -2987,16 +3070,71 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return nil
     end
 
-    local session = GetSessionByID(sessionId)
-    if not session then
-        -- Fall back to session-type lookup when an ID is unavailable at wipe end.
-        local dmSessionType = _G.Enum and _G.Enum.DamageMeterSessionType
-        local currentSessionType = (dmSessionType and dmSessionType.Current) or 1
-        local expiredSessionType = (dmSessionType and dmSessionType.Expired) or 2
-        session = GetSessionByType(currentSessionType) or GetSessionByType(expiredSessionType)
+    local mergedDeaths = {}
+    local seenFingerprints = {}
+
+    local function MergeDeaths(deaths)
+        if type(deaths) ~= "table" then
+            return
+        end
+
+        for _, entry in ipairs(deaths) do
+            local fingerprint = BuildDeathEntryFingerprint(entry)
+            if fingerprint ~= "" and not seenFingerprints[fingerprint] then
+                seenFingerprints[fingerprint] = true
+                mergedDeaths[#mergedDeaths + 1] = entry
+            end
+        end
     end
 
-    return ExtractDeathsFromSession(session)
+    local function ResolveSessionIdentifier(session, fallbackId)
+        return SafeNonNegativeNumber(
+            fallbackId,
+            session and session.sessionId,
+            session and session.combatSessionId,
+            session and session.combatSessionID,
+            session and session.id,
+            session and session.sessionID
+        )
+    end
+
+    local function ConsiderSession(session, fallbackId)
+        local resolvedSessionId = ResolveSessionIdentifier(session, fallbackId)
+        MergeDeaths(ExtractDeathsFromSession(session, resolvedSessionId))
+    end
+
+    local consideredIds = {}
+    local function ConsiderSessionByID(id)
+        id = SafeNonNegativeNumber(id)
+        if not id or id == 0 or consideredIds[id] then
+            return
+        end
+        consideredIds[id] = true
+        ConsiderSession(GetSessionByID(id), id)
+    end
+
+    ConsiderSessionByID(currentSessionId)
+    ConsiderSessionByID(lastSessionId)
+    ConsiderSessionByID(encounterSessionId)
+    ConsiderSessionByID(sessionId)
+
+    -- Fall back to session-type lookup when IDs are unavailable or still settling.
+    local dmSessionType = _G.Enum and _G.Enum.DamageMeterSessionType
+    local currentSessionType = (dmSessionType and dmSessionType.Current) or 1
+    local expiredSessionType = (dmSessionType and dmSessionType.Expired) or 2
+    ConsiderSession(GetSessionByType(currentSessionType))
+    ConsiderSession(GetSessionByType(expiredSessionType))
+
+    if #mergedDeaths == 0 then
+        local session = GetSessionByID(sessionId)
+        if session then
+            local resolvedSessionId = ResolveSessionIdentifier(session, sessionId)
+            MergeDeaths(ExtractDeathsFromSession(session, resolvedSessionId))
+        end
+    end
+
+    SortDeathsByTime(mergedDeaths)
+    return mergedDeaths
 end
 
 local function PersistEncounterRecap(encounterName, deaths, encounterOutcome, autoOpen)
@@ -3089,33 +3227,93 @@ local function HasDamageDetailValues(deaths)
     return false
 end
 
-local function FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt)
+local function CopyDeathEntries(deaths)
+    if type(deaths) ~= "table" then
+        return {}
+    end
+
+    local copied = {}
+    for index, entry in ipairs(deaths) do
+        copied[index] = entry
+    end
+    return copied
+end
+
+local function IsBetterDeathRecapCandidate(candidate, best)
+    local candidateCount = type(candidate) == "table" and #candidate or 0
+    local bestCount = type(best) == "table" and #best or 0
+    if candidateCount ~= bestCount then
+        return candidateCount > bestCount
+    end
+
+    if candidateCount == 0 then
+        return false
+    end
+
+    local candidateHasDetails = HasDamageDetailValues(candidate)
+    local bestHasDetails = HasDamageDetailValues(best)
+    if candidateHasDetails ~= bestHasDetails then
+        return candidateHasDetails
+    end
+
+    local candidateHasTiming = HasReliableDeathTiming(candidate)
+    local bestHasTiming = HasReliableDeathTiming(best)
+    if candidateHasTiming ~= bestHasTiming then
+        return candidateHasTiming
+    end
+
+    return false
+end
+
+local function FinalizeEncounterRecapWithRetries(
+    encounterName,
+    encounterID,
+    encounterOutcome,
+    autoOpen,
+    attempt,
+    bestDeaths,
+    stablePasses
+)
     if not ARL.db or not ARL.db.deathTrackingEnabled then return end
 
     local meterDeaths = BuildDeathsFromDamageMeter(encounterID)
-    if #meterDeaths > 0 then
-        local hasTiming = HasReliableDeathTiming(meterDeaths)
-        local hasDamageDetails = HasDamageDetailValues(meterDeaths)
+    bestDeaths = type(bestDeaths) == "table" and bestDeaths or {}
+    stablePasses = tonumber(stablePasses) or 0
+
+    if IsBetterDeathRecapCandidate(meterDeaths, bestDeaths) then
+        bestDeaths = CopyDeathEntries(meterDeaths)
+        stablePasses = 0
+    else
+        stablePasses = stablePasses + 1
+    end
+
+    if #bestDeaths > 0 then
+        local hasTiming = HasReliableDeathTiming(bestDeaths)
+        local hasDamageDetails = HasDamageDetailValues(bestDeaths)
         local isLikelyPartial = (not hasTiming) and (not hasDamageDetails)
-        if isLikelyPartial and attempt < WIPE_FINALIZE_MAX_RETRIES then
-            _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
-                FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt + 1)
-            end)
+        local isStable = stablePasses >= WIPE_FINALIZE_STABLE_PASSES
+        if (not isLikelyPartial) and isStable then
+            PersistEncounterRecap(encounterName, bestDeaths, encounterOutcome, autoOpen)
             return
         end
-
-        PersistEncounterRecap(encounterName, meterDeaths, encounterOutcome, autoOpen)
-        return
     end
 
     if attempt < WIPE_FINALIZE_MAX_RETRIES then
         _G.C_Timer.After(WIPE_FINALIZE_RETRY_DELAY, function()
-            FinalizeEncounterRecapWithRetries(encounterName, encounterID, encounterOutcome, autoOpen, attempt + 1)
+            FinalizeEncounterRecapWithRetries(
+                encounterName,
+                encounterID,
+                encounterOutcome,
+                autoOpen,
+                attempt + 1,
+                bestDeaths,
+                stablePasses
+            )
         end)
         return
     end
 
-    PersistEncounterRecap(encounterName, {}, encounterOutcome, autoOpen)
+    PersistEncounterRecap(encounterName, bestDeaths, encounterOutcome, autoOpen)
 end
 
 HandleDeathTrackingEvent = function(event, ...)
