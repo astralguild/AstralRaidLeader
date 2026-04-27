@@ -2054,6 +2054,8 @@ eventFrame:RegisterEvent("ENCOUNTER_END")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         InitDB()
+        -- Start each session with raid layout auto-apply disabled until the user reselects one.
+        ARL.db.activeRaidLayoutKey = ""
         lastGroupMemberCount = GetNumGroupMembers()
         RequestGuildRosterIfStale()
         Print("Loaded. Type |cffffff00/arl help|r for commands.")
