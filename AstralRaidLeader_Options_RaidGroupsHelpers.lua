@@ -102,7 +102,7 @@ local function ResolveUnitSpecID(unit)
     return specID
 end
 
-local function ResolveUnitCombatType(unit, classToken, role, specID)
+local function ResolveUnitCombatType(classToken, role, specID)
     if role == "TANK" or role == "HEALER" then
         return nil
     end
@@ -164,7 +164,7 @@ function ARL.OptionsRaidGroupsHelpers.BuildRaidRosterRoleLookup(normalize, short
             local info = {
                 classToken = classToken,
                 role = role,
-                combatType = ResolveUnitCombatType(unit, classToken, role, specID),
+                combatType = ResolveUnitCombatType(classToken, role, specID),
                 healerPosition = ResolveHealerPosition(classToken, role, specID),
             }
             lookup[normalize(fullName):lower()] = info
