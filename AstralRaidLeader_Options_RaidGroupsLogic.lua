@@ -201,19 +201,6 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
         RefreshRaidEditorBoard()
     end)
 
-    raidImportUI.loadToEditorButton:SetScript("OnClick", function()
-        local ok, err = LoadEditorFromImportText(raidImportUI.raidImportEdit:GetText())
-        if not ok then
-            Print(err)
-            return
-        end
-        RefreshRaidEditorBoard()
-        if getCurrentMainTabIndex() == 4 then
-            SelectSubTab(1)
-        end
-        Print("Loaded import text into the visual editor.")
-    end)
-
     newEmptyRaidLayoutButton:SetScript("OnClick", function()
         if InCombatLockdown() then
             Print("Cannot create a new raid layout while in combat.")
@@ -340,6 +327,14 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
             result.added or 0,
             result.updated or 0
         ))
+
+        local loaded, err = LoadEditorFromImportText(raidImportUI.raidImportEdit:GetText())
+        if not loaded then
+            Print(err)
+            return
+        end
+        RefreshRaidEditorBoard()
+        Print("Loaded the first imported encounter into the visual editor.")
 
         if getCurrentMainTabIndex() == 4 then
             SelectSubTab(1)

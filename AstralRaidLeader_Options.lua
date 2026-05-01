@@ -755,7 +755,6 @@ raidImportUI = RequireBuilderFields("Raid Groups import", raidImportUI, {
     "raidImportEdit",
     "importRaidLayoutsButton",
     "clearRaidImportButton",
-    "loadToEditorButton",
 })
 if not raidImportUI then return end
 
@@ -815,7 +814,7 @@ for _, btn in ipairs({
     deathsUI.applyMaxRecapsStoredButton,
     deathsUI.openRecapButton,
     raidImportUI.importRaidLayoutsButton, raidImportUI.clearRaidImportButton,
-    raidImportUI.loadToEditorButton, applyRaidLayoutButton,
+    applyRaidLayoutButton,
     deleteRaidLayoutButton, clearRaidLayoutsButton,
     loadSelectedToEditorButton,
     raidGroupsUI.editorGroupPrevButton, raidGroupsUI.editorGroupNextButton,
@@ -853,17 +852,13 @@ AttachButtonTooltip(
 AttachButtonTooltip(
     raidImportUI.importRaidLayoutsButton,
     "Import Note",
-    "Parses the text in the import box and adds or updates saved raid layouts from that note format."
+    "Parses the text in the import box, saves raid layouts, and opens the first parsed encounter in"
+        .. " the visual editor."
 )
 AttachButtonTooltip(
     raidImportUI.clearRaidImportButton,
     "Clear Text",
     "Clears the import text box without changing any saved layouts."
-)
-AttachButtonTooltip(
-    raidImportUI.loadToEditorButton,
-    "Load To Editor",
-    "Parses the first layout found in the import text and opens it in the visual editor."
 )
 AttachButtonTooltip(
     loadSelectedToEditorButton,

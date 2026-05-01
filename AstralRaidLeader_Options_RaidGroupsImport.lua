@@ -25,7 +25,7 @@ function ARL.OptionsBuilders.BuildRaidGroupsImportPanel(deps)
     raidImportHelp:SetJustifyH("LEFT")
     raidImportHelp:SetText(
         "Paste a raid layout note here, then import it directly"
-            .. " or load the first parsed layout into the visual editor."
+            .. " and auto-load the first parsed layout into the visual editor."
     )
 
     local raidImportInset = CreateFrame("Frame", nil, panel, BackdropTemplateMixin and "BackdropTemplate" or nil)
@@ -75,11 +75,6 @@ function ARL.OptionsBuilders.BuildRaidGroupsImportPanel(deps)
     ui.clearRaidImportButton:SetPoint("LEFT", ui.importRaidLayoutsButton, "RIGHT", 8, 0)
     ui.clearRaidImportButton:SetSize(90, 24)
     ui.clearRaidImportButton:SetText("Clear Text")
-
-    ui.loadToEditorButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    ui.loadToEditorButton:SetPoint("LEFT", ui.clearRaidImportButton, "RIGHT", 8, 0)
-    ui.loadToEditorButton:SetSize(110, 24)
-    ui.loadToEditorButton:SetText("Load To Editor")
 
     return ui
 end
