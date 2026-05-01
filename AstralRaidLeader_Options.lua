@@ -900,8 +900,8 @@ AttachButtonTooltip(
 AttachButtonTooltip(
     splitRaidLayoutButton,
     "Split Raid",
-    "Builds a role split: one tank in groups 1/2, healers balanced into groups 1/2,"
-        .. " and melee/ranged spread across odd/even groups."
+    "Builds a role split: tanks anchor groups 1/2, healers spread across active groups"
+        .. " (Mistweaver/Holy Paladin prefer earlier groups), and melee/ranged DPS split odd/even."
 )
 AttachButtonTooltip(
     saveNewRaidLayoutButton,
@@ -1395,7 +1395,10 @@ local function SplitRaidEditorGroups()
         if role == "TANK" then
             tanks[#tanks + 1] = playerName
         elseif role == "HEALER" then
-            healers[#healers + 1] = playerName
+            healers[#healers + 1] = {
+                name = playerName,
+                frontPreferred = info and info.healerPosition == "front",
+            }
         else
             local combatType = info and info.combatType
             if combatType == "melee" then
@@ -1579,8 +1582,68 @@ local function SplitRaidEditorGroups()
         AddToFirstAvailable(primaryGroups, tanks[index])
     end
 
-    for _, healerName in ipairs(healers) do
-        AddToFirstAvailable(primaryGroups, healerName)
+    local frontHealers = {}
+    local backHealers = {}
+    for _, healerInfo in ipairs(healers) do
+        if healerInfo.frontPreferred then
+            frontHealers[#frontHealers + 1] = healerInfo.name
+        else
+            backHealers[#backHealers + 1] = healerInfo.name
+        end
+    end
+
+    local frontIndex = 1
+    local backIndex = 1
+    local function PopNextHealer()
+        if frontIndex <= #frontHealers then
+            local name = frontHealers[frontIndex]
+            frontIndex = frontIndex + 1
+            return name
+        end
+        if backIndex <= #backHealers then
+            local name = backHealers[backIndex]
+            backIndex = backIndex + 1
+            return name
+        end
+        return nil
+    end
+
+    local healerTargetsByGroup = {}
+    local healerGroupCount = math.max(1, #activeGroups)
+    local healerBase = math.floor(#healers / healerGroupCount)
+    local healerRemainder = #healers - (healerBase * healerGroupCount)
+    for groupOrderIndex, groupIndex in ipairs(activeGroups) do
+        local target = healerBase
+        if groupOrderIndex <= healerRemainder then
+            target = target + 1
+        end
+        local openSlots = math.max(0, 5 - #(raidEditorState.groups[groupIndex] or {}))
+        healerTargetsByGroup[groupIndex] = math.min(target, openSlots)
+    end
+
+    local healerAssigned = 0
+    for _, groupIndex in ipairs(activeGroups) do
+        local target = healerTargetsByGroup[groupIndex] or 0
+        for _ = 1, target do
+            local healerName = PopNextHealer()
+            if not healerName then
+                break
+            end
+            AddToGroup(groupIndex, healerName)
+            healerAssigned = healerAssigned + 1
+        end
+    end
+
+    while healerAssigned < #healers do
+        local healerName = PopNextHealer()
+        if not healerName then
+            break
+        end
+        local groupIndex = PickSequentialOpenGroup()
+            or PickOverflowOpenGroup()
+            or PickOpenTargetGroup(activeGroups, overflowGroups)
+        AddToGroup(groupIndex, healerName)
+        healerAssigned = healerAssigned + 1
     end
 
     local dpsBalance = {

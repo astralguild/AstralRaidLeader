@@ -38,6 +38,11 @@ local MELEE_SPEC_IDS = {
     [259] = true, [260] = true, [261] = true,
 }
 
+local FRONT_HEALER_SPEC_IDS = {
+    [65] = true,
+    [270] = true,
+}
+
 local RANGED_ONLY_CLASSES = {
     MAGE = true,
     PRIEST = true,
@@ -83,11 +88,7 @@ function ARL.OptionsRaidGroupsHelpers.ResolveUnitRole(unit)
     return "NONE"
 end
 
-local function ResolveUnitCombatType(unit, classToken, role)
-    if role == "TANK" or role == "HEALER" then
-        return nil
-    end
-
+local function ResolveUnitSpecID(unit)
     local specID = GetInspectSpecialization and GetInspectSpecialization(unit)
     if unit == "player" and GetSpecialization and GetSpecializationInfo then
         local specIndex = GetSpecialization()
@@ -97,6 +98,13 @@ local function ResolveUnitCombatType(unit, classToken, role)
                 specID = specInfoID
             end
         end
+    end
+    return specID
+end
+
+local function ResolveUnitCombatType(classToken, role, specID)
+    if role == "TANK" or role == "HEALER" then
+        return nil
     end
 
     if specID and specID > 0 then
@@ -126,6 +134,22 @@ local function ResolveUnitCombatType(unit, classToken, role)
     return nil
 end
 
+local function ResolveHealerPosition(classToken, role, specID)
+    if role ~= "HEALER" then
+        return nil
+    end
+
+    if specID and FRONT_HEALER_SPEC_IDS[specID] then
+        return "front"
+    end
+
+    if classToken == "PALADIN" or classToken == "MONK" then
+        return "front"
+    end
+
+    return "back"
+end
+
 function ARL.OptionsRaidGroupsHelpers.BuildRaidRosterRoleLookup(normalize, shortName)
     local lookup = {}
     local numMembers = GetNumGroupMembers and GetNumGroupMembers() or 0
@@ -136,10 +160,12 @@ function ARL.OptionsRaidGroupsHelpers.BuildRaidRosterRoleLookup(normalize, short
             local fullName = (realm and realm ~= "") and (name .. "-" .. realm) or name
             local _, classToken = UnitClass(unit)
             local role = ARL.OptionsRaidGroupsHelpers.ResolveUnitRole(unit)
+            local specID = ResolveUnitSpecID(unit)
             local info = {
                 classToken = classToken,
                 role = role,
-                combatType = ResolveUnitCombatType(unit, classToken, role),
+                combatType = ResolveUnitCombatType(classToken, role, specID),
+                healerPosition = ResolveHealerPosition(classToken, role, specID),
             }
             lookup[normalize(fullName):lower()] = info
             lookup[normalize(name):lower()] = info
