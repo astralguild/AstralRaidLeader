@@ -602,7 +602,7 @@ local function EnsureDetailsFrame()
     return detailsFrame
 end
 
-local function BuildTimelineDetailsLine(index, event)
+local function BuildTimelineDetailsLine(event)
     local eventType = tostring((event and event.eventType) or "")
     local eventToken = tostring((event and event.eventToken) or "")
     local shownTime = "?.?s"
@@ -761,7 +761,7 @@ end
 local function PopulateDetailsTimelineRow(row, index, event)
     row.event = event
     row.spellId = nil
-    row.lineText:SetText(BuildTimelineDetailsLine(index, event))
+    row.lineText:SetText(BuildTimelineDetailsLine(event))
 
     local spellId = type(event) == "table" and event.spellId or nil
     if type(spellId) == "number" and spellId > 0 then
