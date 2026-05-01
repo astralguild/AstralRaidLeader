@@ -758,7 +758,7 @@ local function AcquireDetailsTimelineRow(index, popup)
     return row
 end
 
-local function PopulateDetailsTimelineRow(row, index, event)
+local function PopulateDetailsTimelineRow(row, event)
     row.event = event
     row.spellId = nil
     row.lineText:SetText(BuildTimelineDetailsLine(event))
@@ -894,7 +894,7 @@ local function ShowDeathDetails(entry)
             local event = timeline[i]
             rowIndex = rowIndex + 1
             local row = AcquireDetailsTimelineRow(rowIndex, popup)
-            PopulateDetailsTimelineRow(row, rowIndex, event)
+            PopulateDetailsTimelineRow(row, event)
             row:Show()
             shownRows = rowIndex
         end
