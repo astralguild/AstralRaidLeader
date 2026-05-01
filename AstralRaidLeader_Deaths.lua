@@ -403,6 +403,27 @@ local function FormatCompactAmount(value)
     return tostring(value)
 end
 
+local function FormatCompactAmountOneDecimal(value)
+    if type(value) ~= "number" then
+        return nil
+    end
+
+    value = math.abs(value)
+    if value <= 0 then
+        return nil
+    end
+
+    if value >= 1000000 then
+        return string.format("%.1fM", value / 1000000)
+    end
+
+    if value >= 1000 then
+        return string.format("%.1fk", value / 1000)
+    end
+
+    return string.format("%.1f", value)
+end
+
 local function FormatHealthState(current, maxValue)
     if type(current) ~= "number" or current < 0 then
         return nil
@@ -584,7 +605,10 @@ end
 local function BuildTimelineDetailsLine(index, event)
     local eventType = tostring((event and event.eventType) or "")
     local eventToken = tostring((event and event.eventToken) or "")
-    local shownTime = tostring((event and event.timeStr) or "?:??")
+    local shownTime = "?.?s"
+    if type(event) == "table" then
+        shownTime = tostring(event.relativeTimeStr or event.timeStr or "?.?s")
+    end
 
     local spellName = event and event.spellName
     local spellId = event and event.spellId
@@ -599,36 +623,50 @@ local function BuildTimelineDetailsLine(index, event)
     local amountText = nil
     local rawAmount = event and event.amount
     if type(rawAmount) == "number" and rawAmount > 0 then
-        local compact = FormatCompactAmount(rawAmount) or tostring(rawAmount)
+        local compact = FormatCompactAmountOneDecimal(rawAmount)
+            or FormatCompactAmount(rawAmount)
+            or tostring(rawAmount)
         if eventType == "heal" then
-            amountText = "|cff55ff88+" .. compact .. "|r"
+            amountText = "+" .. compact
         elseif eventType == "damage" then
-            amountText = "|cffff6666-" .. compact .. "|r"
+            amountText = "-" .. compact
+        else
+            amountText = compact
         end
     end
 
     local overkillText = nil
     local rawOverkill = event and event.overkill
     if type(rawOverkill) == "number" and rawOverkill > 0 then
-        overkillText = "|cffffaa33 overkill " .. (FormatCompactAmount(rawOverkill) or rawOverkill) .. "|r"
+        local overkillAmount = FormatCompactAmountOneDecimal(rawOverkill)
+            or FormatCompactAmount(rawOverkill)
+            or tostring(rawOverkill)
+        overkillText = string.format("(%s overkill)", overkillAmount)
     end
 
-    local healthAtEvent = nil
-    if type(event) == "table" then
-        local healthCurrent = event.healthAfter
+    local healthPctText = nil
+    if type(event) == "table" and type(event.healthMax) == "number" and event.healthMax > 0 then
+        local healthCurrent = nil
+        if eventType == "damage" and type(event.healthBefore) == "number" then
+            healthCurrent = event.healthBefore
+        elseif eventType == "heal" and type(event.healthAfter) == "number" then
+            healthCurrent = event.healthAfter
+        end
+        if type(healthCurrent) ~= "number" then
+            healthCurrent = event.healthAfter
+        end
         if type(healthCurrent) ~= "number" then
             healthCurrent = event.healthBefore
         end
-        healthAtEvent = FormatHealthState(healthCurrent, event.healthMax)
-    end
-
-    local eventLabel = "Event"
-    if eventType == "damage" then
-        eventLabel = "Damage"
-    elseif eventType == "heal" then
-        eventLabel = "Heal"
-    elseif eventType == "aura" then
-        eventLabel = "Aura"
+        if type(healthCurrent) == "number" and healthCurrent >= 0 then
+            local pct = math.floor(((healthCurrent / event.healthMax) * 100) + 0.5)
+            if pct < 0 then
+                pct = 0
+            elseif pct > 999 then
+                pct = 999
+            end
+            healthPctText = string.format("(%d%%)", pct)
+        end
     end
 
     local auraSuffix = ""
@@ -637,23 +675,21 @@ local function BuildTimelineDetailsLine(index, event)
     end
 
     local line = string.format(
-        "%d. [%s] |cffd7dde9%s|r%s: |cffffd100%s|r from |cffffa133%s|r",
-        index,
+        "%s |cffffd100%s|r%s |cffff8000(%s)|r",
         shownTime,
-        eventLabel,
-        auraSuffix,
         spellName,
+        auraSuffix,
         sourceName
     )
 
     if amountText then
-        line = line .. "  " .. amountText
+        line = line .. "  |cffff6666" .. amountText .. "|r"
     end
     if overkillText then
-        line = line .. "  " .. overkillText
+        line = line .. "  |cffffaa33" .. overkillText .. "|r"
     end
-    if healthAtEvent then
-        line = line .. "  |cff9fb0c8HP " .. healthAtEvent .. "|r"
+    if healthPctText then
+        line = line .. "  |cff9fb0c8" .. healthPctText .. "|r"
     end
 
     return line
@@ -768,11 +804,14 @@ local function ShowDeathDetails(entry)
         popup.titleText:SetText("Death Details - " .. playerName)
     end
 
-    local shownTime = tostring(entry.timeStr or "?:??")
+    local shownTime = "0.0s"
+    if type(entry) ~= "table" or entry.timeOffset == nil then
+        shownTime = "?.?s"
+    end
     local mechanicName = tostring(entry.mechanic or "Unknown")
     local sourceName = tostring(entry.source or "Unknown")
     local summary = string.format(
-        "%s died to %s (from %s) at %s.",
+        "%s died to %s (from %s) at %s relative to kill.",
         playerName,
         mechanicName,
         sourceName,
@@ -786,7 +825,58 @@ local function ShowDeathDetails(entry)
 
     detailsSummaryText:SetText(summary)
 
+    local function ResolveTimelineHealthText(timeline)
+        if type(timeline) ~= "table" or #timeline == 0 then
+            return nil
+        end
+
+        local preferredEvent = nil
+        for _, event in ipairs(timeline) do
+            if type(event) == "table" and event.isKillingBlow then
+                preferredEvent = event
+                break
+            end
+        end
+
+        local function BuildHealthFromEvent(event)
+            if type(event) ~= "table" then
+                return nil
+            end
+            local maxValue = event.healthMax
+            if type(maxValue) ~= "number" or maxValue <= 0 then
+                return nil
+            end
+
+            local current = event.healthAfter
+            if type(current) ~= "number" then
+                current = event.healthBefore
+            end
+            if type(current) ~= "number" or current < 0 then
+                return nil
+            end
+
+            return FormatHealthState(current, maxValue)
+        end
+
+        local healthText = BuildHealthFromEvent(preferredEvent)
+        if healthText then
+            return healthText
+        end
+
+        for i = #timeline, 1, -1 do
+            healthText = BuildHealthFromEvent(timeline[i])
+            if healthText then
+                return healthText
+            end
+        end
+
+        return nil
+    end
+
     local healthText = FormatHealthState(entry.healthAtDeath, entry.healthMaxAtDeath)
+    if not healthText then
+        healthText = ResolveTimelineHealthText(entry.eventTimeline)
+    end
     if healthText then
         detailsHealthText:SetText("Health after death event: " .. healthText)
     else
@@ -799,11 +889,14 @@ local function ShowDeathDetails(entry)
     local lines = {}
     local shownRows = 0
     if type(timeline) == "table" and #timeline > 0 then
-        for i, event in ipairs(timeline) do
-            local row = AcquireDetailsTimelineRow(i, popup)
-            PopulateDetailsTimelineRow(row, i, event)
+        local rowIndex = 0
+        for i = #timeline, 1, -1 do
+            local event = timeline[i]
+            rowIndex = rowIndex + 1
+            local row = AcquireDetailsTimelineRow(rowIndex, popup)
+            PopulateDetailsTimelineRow(row, rowIndex, event)
             row:Show()
-            shownRows = i
+            shownRows = rowIndex
         end
         if entry.timelineTruncated then
             lines[#lines + 1] = "|cff9fb0c8Showing last 10 relevant events.|r"

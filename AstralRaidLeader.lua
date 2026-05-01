@@ -60,6 +60,7 @@ local DEFAULTS = {
     }, -- independent per-type toggles
     showRecapOnWipe        = true,  -- automatically open the recap window after a wipe
     showRecapOnEncounterEnd = false, -- automatically open the recap window after any encounter end (kill or wipe)
+    deathPayloadDebugEnabled = false, -- allow post-encounter raw death payload capture for debug
     lastWipeDeaths         = {},    -- list of death records from the most recent wipe
     lastWipeEncounter      = "",    -- name of the encounter that wiped
     lastWipeDate           = "",    -- human-readable timestamp of the wipe
@@ -2132,12 +2133,182 @@ end)
 local WIPE_FINALIZE_MAX_RETRIES = 12
 local WIPE_FINALIZE_RETRY_DELAY = 0.75
 local WIPE_FINALIZE_STABLE_PASSES = 2
+local deathDebugTargetName = nil
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
     local m = math.floor(seconds / 60)
     local s = seconds % 60
     return string.format("%d:%02d", m, s)
+end
+
+-- Format seconds relative to a kill/death anchor as signed tenths.
+local function FormatRelativeEncounterTime(seconds)
+    if type(seconds) ~= "number" then
+        return "?.?s"
+    end
+
+    local roundedTenths
+    if seconds < 0 then
+        roundedTenths = -math.floor((-seconds * 10) + 0.5) / 10
+    else
+        roundedTenths = math.floor((seconds * 10) + 0.5) / 10
+    end
+
+    if math.abs(roundedTenths) < 0.05 then
+        roundedTenths = 0
+    end
+
+    return string.format("%.1fs", roundedTenths)
+end
+
+local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
+    if type(deathDebugTargetName) ~= "string" or deathDebugTargetName == "" then
+        return
+    end
+
+    if not (ARL.db and ARL.db.deathPayloadDebugEnabled) then
+        return
+    end
+
+    local playerUnitName = ""
+    if type(_G.UnitName) == "function" then
+        playerUnitName = GetShortName(_G.UnitName("player"))
+    end
+    local targetName = playerUnitName ~= "" and playerUnitName or deathDebugTargetName
+    local targetLower = targetName:lower()
+    local playerDestGUID = ""
+    if type(_G.UnitGUID) == "function" then
+        playerDestGUID = tostring(_G.UnitGUID("player") or "")
+    end
+
+    local matchedEntry = nil
+    if type(deaths) == "table" then
+        if playerDestGUID ~= "" then
+            for _, entry in ipairs(deaths) do
+                local entryGUID = tostring(entry and entry.destGUID or "")
+                if entryGUID ~= "" and entryGUID == playerDestGUID then
+                    matchedEntry = entry
+                    break
+                end
+            end
+        end
+
+        for _, entry in ipairs(deaths) do
+            if matchedEntry then
+                break
+            end
+            local playerName = GetShortName(entry and entry.playerName)
+            if playerName ~= "" and playerName:lower() == targetLower then
+                matchedEntry = entry
+                break
+            end
+        end
+    end
+
+    if not matchedEntry then
+        Print(string.format(
+            "Death payload debug still armed for |cffffd100%s|r (no death found this encounter).",
+            targetName
+        ))
+        return
+    end
+
+    local destGUID = playerDestGUID
+    if destGUID == "" then
+        destGUID = tostring(matchedEntry.destGUID or "")
+    end
+
+    local sessionCandidates = {}
+    local seenSessions = {}
+    local function AddSessionCandidate(raw)
+        local parsed = tonumber(raw)
+        if parsed and parsed > 0 and not seenSessions[parsed] then
+            seenSessions[parsed] = true
+            sessionCandidates[#sessionCandidates + 1] = parsed
+        end
+    end
+
+    AddSessionCandidate(matchedEntry and matchedEntry.sessionId)
+    AddSessionCandidate(matchedEntry and matchedEntry.combatSessionId)
+    AddSessionCandidate(matchedEntry and matchedEntry.combatSessionID)
+
+    if C_DamageMeter then
+        if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
+            AddSessionCandidate(C_DamageMeter.GetCurrentCombatSessionID())
+        end
+        if type(C_DamageMeter.GetLastCombatSessionID) == "function" then
+            AddSessionCandidate(C_DamageMeter.GetLastCombatSessionID())
+        end
+        if (tonumber(encounterID) or 0) ~= 0
+            and type(C_DamageMeter.GetCombatSessionIDByEncounterID) == "function"
+        then
+            AddSessionCandidate(C_DamageMeter.GetCombatSessionIDByEncounterID(encounterID))
+        end
+    end
+
+    local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
+    if #sessionCandidates == 0 or destGUID == ""
+        or not C_DamageMeter
+        or type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function"
+    then
+        Print(string.format(
+            "Unable to capture raw death payload for |cffffd100%s|r (missing session/GUID data).",
+            targetName
+        ))
+        return
+    end
+
+    local payload = nil
+    local chosenSessionId = nil
+    local bestCount = -1
+    for _, candidateSessionId in ipairs(sessionCandidates) do
+        local okPayload, candidatePayload = pcall(function()
+            return C_DamageMeter.GetDamageDataForPlayerByType(candidateSessionId, destGUID, deathsType)
+        end)
+        if okPayload and type(candidatePayload) == "table" then
+            local payloadCount = #candidatePayload
+            if payloadCount > bestCount then
+                payload = candidatePayload
+                chosenSessionId = candidateSessionId
+                bestCount = payloadCount
+            end
+        end
+    end
+
+    if type(payload) ~= "table" or not chosenSessionId then
+        Print(string.format(
+            "Death payload capture failed for |cffffd100%s|r. Debug capture remains armed.",
+            targetName
+        ))
+        return
+    end
+
+    ARL.deathDebugLastPayload = {
+        target = targetName,
+        encounter = tostring(encounterName or "Unknown"),
+        encounterID = tonumber(encounterID) or 0,
+        capturedAt = date("%Y-%m-%d %H:%M:%S"),
+        sessionId = chosenSessionId,
+        destGUID = destGUID,
+        payload = payload,
+    }
+
+    Print(string.format(
+        "Captured raw death payload for |cffffd100%s|r (%d top-level entries).",
+        targetName,
+        #payload
+    ))
+    Print("Stored at: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
+
+    if type(_G.DevTools_Dump) == "function" then
+        Print("Dumping payload to chat via DevTools_Dump...")
+        _G.DevTools_Dump(ARL.deathDebugLastPayload)
+    else
+        Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
+    end
+
+    deathDebugTargetName = nil
 end
 
 local function BuildDeathsFromDamageMeter(encounterIDForLookup)
@@ -2706,7 +2877,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return nil
         end
 
-        local function NormalizeTimelineEvents(rawEvents, fallbackAnchorOffset)
+        local function NormalizeTimelineEvents(rawEvents, fallbackAnchorOffset, fallbackOverkill)
             if type(rawEvents) ~= "table" then
                 return nil, false
             end
@@ -2734,6 +2905,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         healthMax = event.healthMax,
                         timeOffset = eventOffset,
                         timeStr = eventTimeStr,
+                        relativeTimeOffset = nil,
+                        relativeTimeStr = "?.?s",
                         rawOrder = event.rawOrder,
                     }
                 end
@@ -2795,6 +2968,14 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 return math.floor(plain)
             end
 
+            local function NormalizeAnchorOffset(value)
+                local plain = SafeNumber(value)
+                if plain == nil then
+                    return nil
+                end
+                return ClampNonNegative(plain)
+            end
+
             local anchorOffset = NormalizeSyntheticOffset(fallbackAnchorOffset)
 
             if not hasPreciseTime then
@@ -2845,6 +3026,125 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                             event.timeStr = "?:??"
                         end
                     end
+                end
+            end
+
+            local killAnchorOffset = nil
+            for i = #normalized, 1, -1 do
+                local event = normalized[i]
+                if event and type(event.overkill) == "number" and event.overkill > 0 then
+                    killAnchorOffset = NormalizeAnchorOffset(event.timeOffset)
+                    if killAnchorOffset ~= nil then
+                        break
+                    end
+                end
+            end
+
+            if killAnchorOffset == nil then
+                for i = #normalized, 1, -1 do
+                    local event = normalized[i]
+                    killAnchorOffset = NormalizeAnchorOffset(event and event.timeOffset)
+                    if killAnchorOffset ~= nil then
+                        break
+                    end
+                end
+            end
+
+            if killAnchorOffset == nil then
+                killAnchorOffset = NormalizeAnchorOffset(fallbackAnchorOffset)
+            end
+
+            local killingEventIndex = nil
+            local smallestDistance = nil
+            if killAnchorOffset ~= nil then
+                for i, event in ipairs(normalized) do
+                    local eventOffset = NormalizeAnchorOffset(event and event.timeOffset)
+                    if eventOffset ~= nil then
+                        local distance = math.abs(eventOffset - killAnchorOffset)
+                        if smallestDistance == nil
+                            or distance < smallestDistance
+                            or (distance == smallestDistance and i > (killingEventIndex or 0))
+                        then
+                            smallestDistance = distance
+                            killingEventIndex = i
+                        end
+                    end
+                end
+            end
+
+            for i, event in ipairs(normalized) do
+                local eventOffset = NormalizeAnchorOffset(event and event.timeOffset)
+                local relativeOffset = nil
+                if eventOffset ~= nil and killAnchorOffset ~= nil then
+                    relativeOffset = eventOffset - killAnchorOffset
+                end
+                event.isKillingBlow = (killingEventIndex ~= nil and i == killingEventIndex)
+                if event.isKillingBlow
+                    and (type(event.overkill) ~= "number" or event.overkill <= 0)
+                    and type(fallbackOverkill) == "number"
+                    and fallbackOverkill > 0
+                then
+                    event.overkill = fallbackOverkill
+                end
+                event.relativeTimeOffset = relativeOffset
+                event.relativeTimeStr = "?.?s"
+            end
+
+            local positiveCount = 0
+            local negativeCount = 0
+            for _, event in ipairs(normalized) do
+                local relativeOffset = event and event.relativeTimeOffset
+                if type(relativeOffset) == "number" then
+                    if relativeOffset > 0.05 then
+                        positiveCount = positiveCount + 1
+                    elseif relativeOffset < -0.05 then
+                        negativeCount = negativeCount + 1
+                    end
+                end
+            end
+
+            if negativeCount == 0 and positiveCount > 0 then
+                for _, event in ipairs(normalized) do
+                    if type(event.relativeTimeOffset) == "number" then
+                        event.relativeTimeOffset = -event.relativeTimeOffset
+                    end
+                end
+            end
+
+            local timedCount = 0
+            local relativeMin = nil
+            local relativeMax = nil
+            for _, event in ipairs(normalized) do
+                local relativeOffset = event and event.relativeTimeOffset
+                if type(relativeOffset) == "number" then
+                    timedCount = timedCount + 1
+                    if relativeMin == nil or relativeOffset < relativeMin then
+                        relativeMin = relativeOffset
+                    end
+                    if relativeMax == nil or relativeOffset > relativeMax then
+                        relativeMax = relativeOffset
+                    end
+                end
+            end
+
+            if timedCount >= 2 and relativeMin ~= nil and relativeMax ~= nil then
+                local spread = math.abs(relativeMax - relativeMin)
+                if spread < 0.05 then
+                    local newestIndex = #normalized
+                    for i, event in ipairs(normalized) do
+                        local syntheticRelative = i - newestIndex
+                        event.relativeTimeOffset = syntheticRelative
+                        event.relativeTimeStr = FormatRelativeEncounterTime(syntheticRelative)
+                    end
+                end
+            end
+
+            for _, event in ipairs(normalized) do
+                local relativeOffset = event and event.relativeTimeOffset
+                if type(relativeOffset) == "number" then
+                    event.relativeTimeStr = FormatRelativeEncounterTime(relativeOffset)
+                else
+                    event.relativeTimeStr = "?.?s"
                 end
             end
 
@@ -2908,7 +3208,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if timeOffset ~= nil then
                     timeStr = FormatEncounterTime(math.floor(timeOffset))
                 end
-                local eventTimeline, timelineTruncated = NormalizeTimelineEvents(recapTimelineRaw, timeOffset)
+                local relativeTimeOffset = 0
+                local relativeTimeStr = "0.0s"
+                if timeOffset == nil then
+                    relativeTimeOffset = nil
+                    relativeTimeStr = "?.?s"
+                end
+                local eventTimeline, timelineTruncated = NormalizeTimelineEvents(
+                    recapTimelineRaw,
+                    timeOffset,
+                    overkill
+                )
                 parsed[#parsed + 1] = {
                     playerName = playerName,
                     mechanic   = mechanic,
@@ -2920,6 +3230,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     hitAmount  = hitAmount,
                     timeOffset = timeOffset,
                     timeStr    = timeStr,
+                    relativeTimeOffset = relativeTimeOffset,
+                    relativeTimeStr = relativeTimeStr,
                     eventTimeline = eventTimeline,
                     timelineTruncated = timelineTruncated,
                     healthAtDeath = recapHealthAtDeath,
@@ -3295,6 +3607,7 @@ local function FinalizeEncounterRecapWithRetries(
         local isLikelyPartial = (not hasTiming) and (not hasDamageDetails)
         local isStable = stablePasses >= WIPE_FINALIZE_STABLE_PASSES
         if (not isLikelyPartial) and isStable then
+            CaptureArmedDeathDebugPayload(encounterName, encounterID, bestDeaths)
             PersistEncounterRecap(encounterName, bestDeaths, encounterOutcome, autoOpen)
             return
         end
@@ -3315,6 +3628,7 @@ local function FinalizeEncounterRecapWithRetries(
         return
     end
 
+    CaptureArmedDeathDebugPayload(encounterName, encounterID, bestDeaths)
     PersistEncounterRecap(encounterName, bestDeaths, encounterOutcome, autoOpen)
 end
 
@@ -3971,6 +4285,41 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             if key then Print("Usage: /arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]") end
         end
 
+    -- /arl deathdebug [player|off|status]
+    elseif cmd == "deathdebug" or cmd == "deathpayload" then
+        local trimmedArg = Trim(arg)
+        local lowered = trimmedArg:lower()
+        if lowered == "" or lowered == "status" then
+            if deathDebugTargetName and deathDebugTargetName ~= "" then
+                Print(string.format(
+                    "Death payload debug is armed for: |cffffd100%s|r",
+                    deathDebugTargetName
+                ))
+            else
+                Print("Death payload debug is currently disarmed.")
+            end
+            if type(ARL.deathDebugLastPayload) == "table" then
+                Print("Last payload: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
+            end
+        elseif lowered == "off" or lowered == "clear" then
+            deathDebugTargetName = nil
+            Print("Death payload debug disarmed.")
+        else
+            if lowered == "on" or lowered == "self" or lowered == "player" then
+                local playerName = ""
+                if type(_G.UnitName) == "function" then
+                    playerName = GetShortName(_G.UnitName("player"))
+                end
+                deathDebugTargetName = playerName ~= "" and playerName or "player"
+            else
+                deathDebugTargetName = GetShortName(trimmedArg)
+            end
+            Print(string.format(
+                "Death payload debug armed for |cffffd100%s|r (player unit preferred). Capture runs after encounter ends.",
+                deathDebugTargetName
+            ))
+        end
+
     -- bare /arl opens settings
     elseif cmd == "" then
         if ARL.ShowOptions then
@@ -4002,6 +4351,9 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         Print(
             "  |cffffff00/arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]|r "
             .. "– Toggle death recap capture per group type"
+        )
+        Print(
+            "  |cffffff00/arl deathdebug [player|off|status]|r – One-shot raw death payload capture"
         )
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")

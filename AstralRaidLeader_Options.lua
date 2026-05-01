@@ -655,6 +655,7 @@ deathsUI = RequireBuilderFields("Deaths", deathsUI, {
     "deathTrackingCB",
     "showRecapCB",
     "showRecapOnAnyEndCB",
+    "deathPayloadDebugCB",
     "deathGroupRaidCB",
     "deathGroupPartyCB",
     "deathGroupGuildRaidCB",
@@ -662,6 +663,7 @@ deathsUI = RequireBuilderFields("Deaths", deathsUI, {
     "maxRecapsStoredEdit",
     "applyMaxRecapsStoredButton",
     "openRecapButton",
+    "dumpDeathPayloadButton",
 })
 if not deathsUI then return end
 
@@ -783,6 +785,7 @@ for _, cb in ipairs({
     generalUI.groupRaidCB, generalUI.groupPartyCB, generalUI.groupGuildRaidCB, generalUI.groupGuildPartyCB,
     guildRanksUI.useGuildRankCB, consumablesUI.consumableAuditCB,
     deathsUI.deathTrackingCB, deathsUI.showRecapCB, deathsUI.showRecapOnAnyEndCB,
+    deathsUI.deathPayloadDebugCB,
     deathsUI.deathGroupRaidCB, deathsUI.deathGroupPartyCB,
     deathsUI.deathGroupGuildRaidCB, deathsUI.deathGroupGuildPartyCB,
     raidGroupsSettingsUI.raidGroupAutoApplyOnJoinListCB,
@@ -813,6 +816,7 @@ for _, btn in ipairs({
     consumablesUI.runAuditButton,
     deathsUI.applyMaxRecapsStoredButton,
     deathsUI.openRecapButton,
+    deathsUI.dumpDeathPayloadButton,
     raidImportUI.importRaidLayoutsButton, raidImportUI.clearRaidImportButton,
     applyRaidLayoutButton,
     deleteRaidLayoutButton, clearRaidLayoutsButton,
@@ -2226,6 +2230,7 @@ local function RefreshUI()
     deathsUI.deathTrackingCB:SetChecked(ARL.db.deathTrackingEnabled)
     deathsUI.showRecapCB:SetChecked(ARL.db.showRecapOnWipe)
     deathsUI.showRecapOnAnyEndCB:SetChecked(ARL.db.showRecapOnEncounterEnd)
+    deathsUI.deathPayloadDebugCB:SetChecked(ARL.db.deathPayloadDebugEnabled == true)
     deathsUI.maxRecapsStoredEdit:SetText(tostring(tonumber(ARL.db.maxDeathRecapsStored) or 20))
 
     local deathFilter = ARL.db.deathGroupTypeFilter or "raid"
@@ -2697,6 +2702,14 @@ deathsUI.showRecapOnAnyEndCB:SetScript("OnClick", function(self)
         ARL.db.showRecapOnEncounterEnd and "enabled" or "disabled"))
 end)
 
+deathsUI.deathPayloadDebugCB:SetScript("OnClick", function(self)
+    if updating or not ARL.db then return end
+    ARL.db.deathPayloadDebugEnabled = self:GetChecked() and true or false
+    Print(string.format("Death payload debug capture |cff%s%s|r.",
+        ARL.db.deathPayloadDebugEnabled and "00ff00" or "ff0000",
+        ARL.db.deathPayloadDebugEnabled and "enabled" or "disabled"))
+end)
+
 local function ApplyMaxDeathRecapHistorySetting()
     if not ARL.db then return end
 
@@ -2767,6 +2780,20 @@ deathsUI.openRecapButton:SetScript("OnClick", function()
         ARL:ShowDeathRecap()
     else
         Print("Death recap UI is not available yet. Try again in a moment.")
+    end
+end)
+
+deathsUI.dumpDeathPayloadButton:SetScript("OnClick", function()
+    if type(ARL.deathDebugLastPayload) ~= "table" then
+        Print("No captured death payload is available yet.")
+        return
+    end
+
+    if type(_G.DevTools_Dump) == "function" then
+        _G.DevTools_Dump(ARL.deathDebugLastPayload)
+        Print("Dumped: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
+    else
+        Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
     end
 end)
 
