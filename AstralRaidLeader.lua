@@ -2965,7 +2965,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if plain == nil then
                     return nil
                 end
-                return math.floor(plain)
+                return plain
             end
 
             local function NormalizeAnchorOffset(value)
@@ -2982,10 +2982,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if anchorOffset ~= nil then
                     local newestIndex = #normalized
                     for i, event in ipairs(normalized) do
-                        local syntheticOffset = anchorOffset - (newestIndex - i)
+                        local syntheticOffset = anchorOffset - ((newestIndex - i) * 0.1)
                         syntheticOffset = math.max(0, syntheticOffset)
                         event.timeOffset = syntheticOffset
-                        event.timeStr = FormatEncounterTime(syntheticOffset)
+                        event.timeStr = FormatEncounterTime(math.floor(syntheticOffset))
                     end
                 else
                     for _, event in ipairs(normalized) do
@@ -3000,7 +3000,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         for j = i + 1, #normalized do
                             local nextOffset = NormalizeSyntheticOffset(normalized[j].timeOffset)
                             if nextOffset ~= nil then
-                                inferredOffset = math.max(0, nextOffset - (j - i))
+                                inferredOffset = math.max(0, nextOffset - ((j - i) * 0.1))
                                 break
                             end
                         end
@@ -3009,19 +3009,19 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                             for j = i - 1, 1, -1 do
                                 local prevOffset = NormalizeSyntheticOffset(normalized[j].timeOffset)
                                 if prevOffset ~= nil then
-                                    inferredOffset = prevOffset + (i - j)
+                                    inferredOffset = prevOffset + ((i - j) * 0.1)
                                     break
                                 end
                             end
                         end
 
                         if inferredOffset == nil and anchorOffset ~= nil then
-                            inferredOffset = math.max(0, anchorOffset - (#normalized - i))
+                            inferredOffset = math.max(0, anchorOffset - ((#normalized - i) * 0.1))
                         end
 
                         if inferredOffset ~= nil then
                             event.timeOffset = inferredOffset
-                            event.timeStr = FormatEncounterTime(inferredOffset)
+                            event.timeStr = FormatEncounterTime(math.floor(inferredOffset))
                         else
                             event.timeStr = "?:??"
                         end
@@ -3132,7 +3132,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if spread < 0.05 then
                     local newestIndex = #normalized
                     for i, event in ipairs(normalized) do
-                        local syntheticRelative = i - newestIndex
+                        local syntheticRelative = (i - newestIndex) * 0.1
                         event.relativeTimeOffset = syntheticRelative
                         event.relativeTimeStr = FormatRelativeEncounterTime(syntheticRelative)
                     end
