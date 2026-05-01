@@ -1696,6 +1696,8 @@ local pendingNotifyName = nil
 local lastGroupMemberCount = 0
 local guildRosterRequestThrottleSeconds = 10
 local lastGuildRosterRequestAt = 0
+-- Debug payload capture arm/payload; session-local (never persisted).
+local deathDebugTargetName = nil
 
 RequestGuildRosterIfStale = function()
     if not IsInGuild() then return end
@@ -2057,6 +2059,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         InitDB()
         -- Start each session with raid layout auto-apply disabled until the user reselects one.
         ARL.db.activeRaidLayoutKey = ""
+        -- Debug payload capture is session-local and resets on login/reload.
+        deathDebugTargetName = nil
+        ARL.deathDebugLastPayload = nil
         lastGroupMemberCount = GetNumGroupMembers()
         RequestGuildRosterIfStale()
         Print("Loaded. Type |cffffff00/arl help|r for commands.")
@@ -2133,7 +2138,25 @@ end)
 local WIPE_FINALIZE_MAX_RETRIES = 12
 local WIPE_FINALIZE_RETRY_DELAY = 0.75
 local WIPE_FINALIZE_STABLE_PASSES = 2
-local deathDebugTargetName = nil
+
+local function ClearDeathDebugState(disarmMessage, clearPayload)
+    local wasArmed = type(deathDebugTargetName) == "string" and deathDebugTargetName ~= ""
+    deathDebugTargetName = nil
+
+    if clearPayload then
+        ARL.deathDebugLastPayload = nil
+    end
+
+    if disarmMessage and disarmMessage ~= "" then
+        Print(disarmMessage)
+    elseif wasArmed then
+        Print("Death payload debug disarmed.")
+    end
+end
+
+ARL.ClearDeathDebugState = function(disarmMessage, clearPayload)
+    ClearDeathDebugState(disarmMessage, clearPayload)
+end
 
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
@@ -2175,8 +2198,7 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
     if type(_G.UnitName) == "function" then
         playerUnitName = GetShortName(_G.UnitName("player"))
     end
-    local targetName = playerUnitName ~= "" and playerUnitName or deathDebugTargetName
-    local targetLower = targetName:lower()
+    local targetName = playerUnitName ~= "" and playerUnitName or "player"
     local playerDestGUID = ""
     if type(_G.UnitGUID) == "function" then
         playerDestGUID = tostring(_G.UnitGUID("player") or "")
@@ -2194,23 +2216,26 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
             end
         end
 
-        for _, entry in ipairs(deaths) do
-            if matchedEntry then
-                break
-            end
-            local playerName = GetShortName(entry and entry.playerName)
-            if playerName ~= "" and playerName:lower() == targetLower then
-                matchedEntry = entry
-                break
+        if not matchedEntry and playerUnitName ~= "" then
+            local targetLower = playerUnitName:lower()
+            for _, entry in ipairs(deaths) do
+                local playerName = GetShortName(entry and entry.playerName)
+                if playerName ~= "" and playerName:lower() == targetLower then
+                    matchedEntry = entry
+                    break
+                end
             end
         end
     end
 
     if not matchedEntry then
-        Print(string.format(
-            "Death payload debug still armed for |cffffd100%s|r (no death found this encounter).",
-            targetName
-        ))
+        ClearDeathDebugState(
+            string.format(
+                "Death payload debug disarmed for |cffffd100%s|r (no death found this encounter).",
+                targetName
+            ),
+            false
+        )
         return
     end
 
@@ -2252,10 +2277,13 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
         or not C_DamageMeter
         or type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function"
     then
-        Print(string.format(
-            "Unable to capture raw death payload for |cffffd100%s|r (missing session/GUID data).",
-            targetName
-        ))
+        ClearDeathDebugState(
+            string.format(
+                "Death payload debug disarmed for |cffffd100%s|r (missing session/GUID data).",
+                targetName
+            ),
+            false
+        )
         return
     end
 
@@ -2277,10 +2305,13 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
     end
 
     if type(payload) ~= "table" or not chosenSessionId then
-        Print(string.format(
-            "Death payload capture failed for |cffffd100%s|r. Debug capture remains armed.",
-            targetName
-        ))
+        ClearDeathDebugState(
+            string.format(
+                "Death payload debug disarmed for |cffffd100%s|r (capture failed).",
+                targetName
+            ),
+            false
+        )
         return
     end
 
@@ -2308,7 +2339,7 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
         Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
     end
 
-    deathDebugTargetName = nil
+    ClearDeathDebugState("Death payload debug disarmed after successful capture.", false)
 end
 
 local function BuildDeathsFromDamageMeter(encounterIDForLookup)
@@ -4285,16 +4316,13 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             if key then Print("Usage: /arl deathgrouptype [raid|party|guild_raid|guild_party] [on|off]") end
         end
 
-    -- /arl deathdebug [player|off|status]
+    -- /arl deathdebug [on|off|status]
     elseif cmd == "deathdebug" or cmd == "deathpayload" then
         local trimmedArg = Trim(arg)
         local lowered = trimmedArg:lower()
         if lowered == "" or lowered == "status" then
             if deathDebugTargetName and deathDebugTargetName ~= "" then
-                Print(string.format(
-                    "Death payload debug is armed for: |cffffd100%s|r",
-                    deathDebugTargetName
-                ))
+                Print("Death payload debug is armed for: |cffffd100player unit|r")
             else
                 Print("Death payload debug is currently disarmed.")
             end
@@ -4302,21 +4330,15 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
                 Print("Last payload: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
             end
         elseif lowered == "off" or lowered == "clear" then
-            deathDebugTargetName = nil
-            Print("Death payload debug disarmed.")
+            ClearDeathDebugState("Death payload debug disarmed.", false)
         else
-            if lowered == "on" or lowered == "self" or lowered == "player" then
-                local playerName = ""
-                if type(_G.UnitName) == "function" then
-                    playerName = GetShortName(_G.UnitName("player"))
-                end
-                deathDebugTargetName = playerName ~= "" and playerName or "player"
-            else
-                deathDebugTargetName = GetShortName(trimmedArg)
+            if lowered ~= "on" and lowered ~= "self" and lowered ~= "player" and lowered ~= "" then
+                Print("Death payload debug is self-only; ignoring target argument.")
             end
+            deathDebugTargetName = "self"
             Print(string.format(
-                "Death payload debug armed for |cffffd100%s|r (player unit preferred). Capture runs after encounter ends.",
-                deathDebugTargetName
+                "Death payload debug armed for |cffffd100%s|r. Capture runs after encounter ends.",
+                "player unit"
             ))
         end
 
@@ -4353,7 +4375,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             .. "– Toggle death recap capture per group type"
         )
         Print(
-            "  |cffffff00/arl deathdebug [player|off|status]|r – One-shot raw death payload capture"
+            "  |cffffff00/arl deathdebug [on|off|status]|r – One-shot raw death payload capture (self only)"
         )
         Print("  |cffffff00/arl consumable ...|r     – Manage tracked consumable categories (run for sub-commands)")
         Print("  |cffffff00/arl consumableaudit [on|off]|r – Toggle consumable audit on ready check")

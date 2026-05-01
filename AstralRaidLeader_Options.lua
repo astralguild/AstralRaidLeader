@@ -2705,6 +2705,9 @@ end)
 deathsUI.deathPayloadDebugCB:SetScript("OnClick", function(self)
     if updating or not ARL.db then return end
     ARL.db.deathPayloadDebugEnabled = self:GetChecked() and true or false
+    if not ARL.db.deathPayloadDebugEnabled and type(ARL.ClearDeathDebugState) == "function" then
+        ARL.ClearDeathDebugState("Death payload debug disarmed (debug capture disabled).", true)
+    end
     Print(string.format("Death payload debug capture |cff%s%s|r.",
         ARL.db.deathPayloadDebugEnabled and "00ff00" or "ff0000",
         ARL.db.deathPayloadDebugEnabled and "enabled" or "disabled"))
@@ -2789,8 +2792,19 @@ deathsUI.dumpDeathPayloadButton:SetScript("OnClick", function()
         return
     end
 
+    local payload = ARL.deathDebugLastPayload
+    local encounterText = tostring(payload.encounter or "Unknown")
+    local capturedAtText = tostring(payload.capturedAt or "unknown time")
+    local sessionText = tostring(payload.sessionId or "?")
+    Print(string.format(
+        "Dumping captured death payload (%s, session %s, captured %s).",
+        encounterText,
+        sessionText,
+        capturedAtText
+    ))
+
     if type(_G.DevTools_Dump) == "function" then
-        _G.DevTools_Dump(ARL.deathDebugLastPayload)
+        _G.DevTools_Dump(payload)
         Print("Dumped: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
     else
         Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
