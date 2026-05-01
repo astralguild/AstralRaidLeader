@@ -30,36 +30,41 @@ function ARL.OptionsBuilders.BuildDeathsPanel(deps)
         "Also open the Death Recap when the encounter ends successfully.",
         8, -64)
 
+    ui.deathPayloadDebugCB = CreateCheckbox(panel,
+        "Enable post-combat death payload debug capture",
+        "Allows /arl deathdebug to dump raw C_DamageMeter death payloads after encounters.",
+        8, -92)
+
     local deathGroupFilterLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -96)
+    deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -124)
     deathGroupFilterLabel:SetText("Track recap data in:")
 
     ui.deathGroupRaidCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    ui.deathGroupRaidCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -118)
+    ui.deathGroupRaidCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -146)
     ui.deathGroupRaidCB.Text:SetText("Raids")
     ui.deathGroupRaidCB.tooltipText = "Track death recap data in any raid group."
 
     ui.deathGroupPartyCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    ui.deathGroupPartyCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 175, -118)
+    ui.deathGroupPartyCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 175, -146)
     ui.deathGroupPartyCB.Text:SetText("Parties")
     ui.deathGroupPartyCB.tooltipText = "Track death recap data in parties (not raids)."
 
     ui.deathGroupGuildRaidCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    ui.deathGroupGuildRaidCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -146)
+    ui.deathGroupGuildRaidCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -174)
     ui.deathGroupGuildRaidCB.Text:SetText("Guild Raids")
     ui.deathGroupGuildRaidCB.tooltipText = "Track death recap data in raids that Blizzard marks as guild groups."
 
     ui.deathGroupGuildPartyCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    ui.deathGroupGuildPartyCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 175, -146)
+    ui.deathGroupGuildPartyCB:SetPoint("TOPLEFT", panel, "TOPLEFT", 175, -174)
     ui.deathGroupGuildPartyCB.Text:SetText("Guild Parties")
     ui.deathGroupGuildPartyCB.tooltipText = "Track death recap data in parties that Blizzard marks as guild groups."
 
     local maxRecapsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    maxRecapsLabel:SetPoint("TOPLEFT", 8, -184)
+    maxRecapsLabel:SetPoint("TOPLEFT", 8, -212)
     maxRecapsLabel:SetText("Stored recap history size")
 
     ui.maxRecapsStoredEdit = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    ui.maxRecapsStoredEdit:SetPoint("TOPLEFT", 8, -204)
+    ui.maxRecapsStoredEdit:SetPoint("TOPLEFT", 8, -232)
     ui.maxRecapsStoredEdit:SetSize(78, 24)
     ui.maxRecapsStoredEdit:SetAutoFocus(false)
     ui.maxRecapsStoredEdit:SetMaxLetters(3)
@@ -70,15 +75,20 @@ function ARL.OptionsBuilders.BuildDeathsPanel(deps)
     ui.applyMaxRecapsStoredButton:SetText("Apply")
 
     local recapInfoText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    recapInfoText:SetPoint("TOPLEFT", 8, -236)
+    recapInfoText:SetPoint("TOPLEFT", 8, -264)
     recapInfoText:SetWidth(520)
     recapInfoText:SetJustifyH("LEFT")
     recapInfoText:SetText("Use /arl deaths or /arl deaths <index> to open stored recaps.")
 
     ui.openRecapButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    ui.openRecapButton:SetPoint("TOPLEFT", 8, -266)
+    ui.openRecapButton:SetPoint("TOPLEFT", 8, -294)
     ui.openRecapButton:SetSize(140, 24)
     ui.openRecapButton:SetText("Open Latest Recap")
+
+    ui.dumpDeathPayloadButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    ui.dumpDeathPayloadButton:SetPoint("LEFT", ui.openRecapButton, "RIGHT", 8, 0)
+    ui.dumpDeathPayloadButton:SetSize(170, 24)
+    ui.dumpDeathPayloadButton:SetText("Dump Debug Payload")
 
     return ui
 end
