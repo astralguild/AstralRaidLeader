@@ -2158,6 +2158,29 @@ ARL.ClearDeathDebugState = function(disarmMessage, clearPayload)
     ClearDeathDebugState(disarmMessage, clearPayload)
 end
 
+local function IsDeathDebugArmed()
+    return type(deathDebugTargetName) == "string" and deathDebugTargetName ~= ""
+end
+
+local function ArmDeathDebugForNextEncounter()
+    if not (ARL.db and ARL.db.deathPayloadDebugEnabled) then
+        Print("Enable post-combat death payload debug capture first in /arl settings.")
+        return false
+    end
+
+    deathDebugTargetName = "self"
+    Print("Death payload debug armed for |cffffd100player unit|r. Capture runs after encounter ends.")
+    return true
+end
+
+ARL.IsDeathDebugArmed = function()
+    return IsDeathDebugArmed()
+end
+
+ARL.ArmDeathDebugForNextEncounter = function()
+    return ArmDeathDebugForNextEncounter()
+end
+
 -- Format seconds as M:SS for the recap display.
 local function FormatEncounterTime(seconds)
     local m = math.floor(seconds / 60)
@@ -2257,6 +2280,24 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
     AddSessionCandidate(matchedEntry and matchedEntry.sessionId)
     AddSessionCandidate(matchedEntry and matchedEntry.combatSessionId)
     AddSessionCandidate(matchedEntry and matchedEntry.combatSessionID)
+    if type(deaths) == "table" then
+        for _, entry in ipairs(deaths) do
+            AddSessionCandidate(entry and entry.sessionId)
+            AddSessionCandidate(entry and entry.combatSessionId)
+            AddSessionCandidate(entry and entry.combatSessionID)
+        end
+    end
+
+    local function AddSessionCandidateFromSession(session)
+        if type(session) ~= "table" then
+            return
+        end
+        AddSessionCandidate(session.sessionId)
+        AddSessionCandidate(session.combatSessionId)
+        AddSessionCandidate(session.combatSessionID)
+        AddSessionCandidate(session.id)
+        AddSessionCandidate(session.sessionID)
+    end
 
     if C_DamageMeter then
         if type(C_DamageMeter.GetCurrentCombatSessionID) == "function" then
@@ -2270,6 +2311,40 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
         then
             AddSessionCandidate(C_DamageMeter.GetCombatSessionIDByEncounterID(encounterID))
         end
+
+        local dmSessionType = _G.Enum and _G.Enum.DamageMeterSessionType
+        if type(C_DamageMeter.GetCombatSessionFromType) == "function" then
+            local currentSessionType = (dmSessionType and dmSessionType.Current) or 1
+            local expiredSessionType = (dmSessionType and dmSessionType.Expired) or 2
+            local okCurrent, currentSession = pcall(
+                C_DamageMeter.GetCombatSessionFromType,
+                currentSessionType,
+                (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
+            )
+            if okCurrent then
+                AddSessionCandidateFromSession(currentSession)
+            end
+
+            local okExpired, expiredSession = pcall(
+                C_DamageMeter.GetCombatSessionFromType,
+                expiredSessionType,
+                (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
+            )
+            if okExpired then
+                AddSessionCandidateFromSession(expiredSession)
+            end
+        end
+    end
+
+    if destGUID == "" then
+        destGUID = tostring(
+            matchedEntry and (
+                matchedEntry.destGUID
+                or matchedEntry.destGuid
+                or matchedEntry.playerGUID
+                or matchedEntry.playerGuid
+            ) or ""
+        )
     end
 
     local deathsType = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
@@ -2277,13 +2352,43 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
         or not C_DamageMeter
         or type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function"
     then
-        ClearDeathDebugState(
-            string.format(
-                "Death payload debug disarmed for |cffffd100%s|r (missing session/GUID data).",
-                targetName
-            ),
-            false
-        )
+        local missingParts = {}
+        if #sessionCandidates == 0 then
+            missingParts[#missingParts + 1] = "session"
+        end
+        if destGUID == "" then
+            missingParts[#missingParts + 1] = "GUID"
+        end
+        if not C_DamageMeter or type(C_DamageMeter.GetDamageDataForPlayerByType) ~= "function" then
+            missingParts[#missingParts + 1] = "C_DamageMeter API"
+        end
+
+        ARL.deathDebugLastPayload = {
+            target = targetName,
+            encounter = tostring(encounterName or "Unknown"),
+            encounterID = tonumber(encounterID) or 0,
+            capturedAt = date("%Y-%m-%d %H:%M:%S"),
+            reason = "missing-session-guid-or-api",
+            missing = missingParts,
+            resolvedGUID = destGUID,
+            sessionCandidates = sessionCandidates,
+            matchedEntry = matchedEntry,
+            deaths = deaths,
+        }
+
+        Print(string.format(
+            "Captured fallback death debug payload for |cffffd100%s|r (missing %s).",
+            targetName,
+            table.concat(missingParts, "/")
+        ))
+        Print("Stored at: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
+        if type(_G.DevTools_Dump) == "function" then
+            _G.DevTools_Dump(ARL.deathDebugLastPayload)
+        else
+            Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
+        end
+
+        ClearDeathDebugState("Death payload debug disarmed after fallback capture.", false)
         return
     end
 
@@ -2908,7 +3013,14 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             return nil
         end
 
-        local function NormalizeTimelineEvents(rawEvents, fallbackAnchorOffset, fallbackOverkill)
+        local function NormalizeTimelineEvents(
+            rawEvents,
+            fallbackAnchorOffset,
+            fallbackOverkill,
+            fallbackSpellId,
+            fallbackSource,
+            fallbackAmount
+        )
             if type(rawEvents) ~= "table" then
                 return nil, false
             end
@@ -3060,13 +3172,121 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
             end
 
+            local function IsDamageTimelineEvent(event)
+                if type(event) ~= "table" then
+                    return false
+                end
+
+                if event.eventType == "damage" then
+                    return true
+                end
+
+                local token = tostring(event.eventToken or "")
+                return token:find("DAMAGE", 1, true) ~= nil
+            end
+
+            local function SelectKillingEventIndex()
+                local fallbackOffset = NormalizeAnchorOffset(fallbackAnchorOffset)
+                local fallbackSpell = SafeNonNegativeNumber(fallbackSpellId)
+                local fallbackSrc = tostring(fallbackSource or ""):lower()
+                local fallbackHit = SafeNonNegativeNumber(fallbackAmount)
+                local bestIndex = nil
+                local bestTier = -1
+                local bestDistance = nil
+                local bestRawOrder = nil
+
+                for i, event in ipairs(normalized) do
+                    local eventOffset = NormalizeAnchorOffset(event and event.timeOffset)
+                    local rawOrder = ToPlainNumber(event and event.rawOrder)
+                    local isDamage = IsDamageTimelineEvent(event)
+                    local hasOverkill = isDamage
+                        and type(event.overkill) == "number"
+                        and event.overkill > 0
+                    local healthAfter = type(event.healthAfter) == "number" and event.healthAfter or nil
+                    local hasLethalHealthAfter = isDamage and healthAfter ~= nil and healthAfter <= 0
+                    local hasDamageAmount = isDamage
+                        and type(event.amount) == "number"
+                        and event.amount > 0
+                    local eventSpell = SafeNonNegativeNumber(event and event.spellId)
+                    local eventSrc = tostring(event and event.source or ""):lower()
+                    local eventAmt = SafeNonNegativeNumber(event and event.amount)
+                    local recapSpellMatch = fallbackSpell and fallbackSpell > 0
+                        and eventSpell and eventSpell == fallbackSpell
+                    local recapSourceMatch = fallbackSrc ~= "" and eventSrc == fallbackSrc
+                    local recapAmountMatch = fallbackHit and fallbackHit > 0
+                        and eventAmt and math.abs(eventAmt - fallbackHit) <= 1
+                    local recapStrongMatch = recapSpellMatch
+                        or (recapSourceMatch and recapAmountMatch)
+
+                    local tier = 0
+                    if recapStrongMatch then
+                        tier = 5
+                    elseif hasOverkill then
+                        tier = 4
+                    elseif hasLethalHealthAfter then
+                        tier = 3
+                    elseif hasDamageAmount then
+                        tier = 2
+                    elseif eventOffset ~= nil then
+                        tier = 1
+                    end
+
+                    local distance = nil
+                    if fallbackOffset ~= nil and eventOffset ~= nil then
+                        distance = math.abs(eventOffset - fallbackOffset)
+                    end
+
+                    local better = false
+                    if bestIndex == nil or tier > bestTier then
+                        better = true
+                    elseif tier == bestTier then
+                        if distance ~= nil and bestDistance == nil then
+                            better = true
+                        elseif distance ~= nil and bestDistance ~= nil and distance < bestDistance then
+                            better = true
+                        elseif distance == bestDistance then
+                            local bestOrder = bestRawOrder or 0
+                            if rawOrder > bestOrder then
+                                better = true
+                            elseif rawOrder == bestOrder and i > (bestIndex or 0) then
+                                better = true
+                            end
+                        elseif distance == nil and bestDistance == nil then
+                            local bestOrder = bestRawOrder or 0
+                            if rawOrder > bestOrder then
+                                better = true
+                            elseif rawOrder == bestOrder and i > (bestIndex or 0) then
+                                better = true
+                            end
+                        end
+                    end
+
+                    if better then
+                        bestIndex = i
+                        bestTier = tier
+                        bestDistance = distance
+                        bestRawOrder = rawOrder
+                    end
+                end
+
+                return bestIndex
+            end
+
+            local killingEventIndex = SelectKillingEventIndex()
             local killAnchorOffset = nil
-            for i = #normalized, 1, -1 do
-                local event = normalized[i]
-                if event and type(event.overkill) == "number" and event.overkill > 0 then
-                    killAnchorOffset = NormalizeAnchorOffset(event.timeOffset)
-                    if killAnchorOffset ~= nil then
-                        break
+            if killingEventIndex ~= nil then
+                local event = normalized[killingEventIndex]
+                killAnchorOffset = NormalizeAnchorOffset(event and event.timeOffset)
+            end
+
+            if killAnchorOffset == nil then
+                for i = #normalized, 1, -1 do
+                    local event = normalized[i]
+                    if event and type(event.overkill) == "number" and event.overkill > 0 then
+                        killAnchorOffset = NormalizeAnchorOffset(event.timeOffset)
+                        if killAnchorOffset ~= nil then
+                            break
+                        end
                     end
                 end
             end
@@ -3085,9 +3305,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 killAnchorOffset = NormalizeAnchorOffset(fallbackAnchorOffset)
             end
 
-            local killingEventIndex = nil
-            local smallestDistance = nil
-            if killAnchorOffset ~= nil then
+            if killingEventIndex == nil and killAnchorOffset ~= nil then
+                local smallestDistance = nil
                 for i, event in ipairs(normalized) do
                     local eventOffset = NormalizeAnchorOffset(event and event.timeOffset)
                     if eventOffset ~= nil then
@@ -3134,7 +3353,19 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
             end
 
+            local shouldInvert = false
             if negativeCount == 0 and positiveCount > 0 then
+                shouldInvert = true
+            elseif killingEventIndex ~= nil
+                and killingEventIndex <= math.min(3, #normalized)
+                and positiveCount > negativeCount
+            then
+                -- Some sessions report "seconds since death". In those cases the
+                -- killing event appears early and prior events look positive.
+                shouldInvert = true
+            end
+
+            if shouldInvert then
                 for _, event in ipairs(normalized) do
                     if type(event.relativeTimeOffset) == "number" then
                         event.relativeTimeOffset = -event.relativeTimeOffset
@@ -3176,6 +3407,68 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     event.relativeTimeStr = FormatRelativeEncounterTime(relativeOffset)
                 else
                     event.relativeTimeStr = "?.?s"
+                end
+            end
+
+            -- Reconstruct approximate HP at each event by walking backwards from the killing blow.
+            -- hpBeforeKill = killingBlow.amount - killingBlow.overkill (overkill=0 means exact kill).
+            -- Then for each prior damage event: hpBefore[i] = hpAfter[i+1] + amount[i].
+            -- estimatedMaxHP = oldest event's healthBefore (highest HP we observe in the window).
+            if killingEventIndex ~= nil then
+                local killEvent = normalized[killingEventIndex]
+                if type(killEvent) == "table" then
+                    local killOverkill = SafeNonNegativeNumber(killEvent.overkill)
+                        or SafeNonNegativeNumber(fallbackOverkill)
+                        or 0
+                    local killAmount = SafeNonNegativeNumber(killEvent.amount) or 0
+                    local hpBeforeKill = math.max(0, killAmount - killOverkill)
+
+                    -- Sort indices chronologically (most-negative relativeTimeOffset = oldest).
+                    local chronoIndices = {}
+                    for i = 1, #normalized do
+                        chronoIndices[#chronoIndices + 1] = i
+                    end
+                    table.sort(chronoIndices, function(a, b)
+                        local ra = type(normalized[a] and normalized[a].relativeTimeOffset) == "number"
+                            and normalized[a].relativeTimeOffset or 0
+                        local rb = type(normalized[b] and normalized[b].relativeTimeOffset) == "number"
+                            and normalized[b].relativeTimeOffset or 0
+                        return ra < rb
+                    end)
+
+                    local killChronoPos = #chronoIndices
+                    for pos, idx in ipairs(chronoIndices) do
+                        if idx == killingEventIndex then
+                            killChronoPos = pos
+                            break
+                        end
+                    end
+
+                    killEvent.healthAfter = 0
+                    killEvent.healthBefore = hpBeforeKill
+
+                    local hpRunning = hpBeforeKill
+                    for pos = killChronoPos - 1, 1, -1 do
+                        local idx = chronoIndices[pos]
+                        local event = normalized[idx]
+                        if type(event) == "table" then
+                            event.healthAfter = hpRunning
+                            local eventAmount = SafeNonNegativeNumber(event.amount) or 0
+                            if event.eventType == "heal" then
+                                event.healthBefore = math.max(0, hpRunning - eventAmount)
+                            else
+                                event.healthBefore = hpRunning + eventAmount
+                            end
+                            hpRunning = event.healthBefore
+                        end
+                    end
+
+                    local estimatedMaxHP = hpRunning
+                    if estimatedMaxHP and estimatedMaxHP > 0 then
+                        for _, event in ipairs(normalized) do
+                            event.healthMax = estimatedMaxHP
+                        end
+                    end
                 end
             end
 
@@ -3248,8 +3541,28 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 local eventTimeline, timelineTruncated = NormalizeTimelineEvents(
                     recapTimelineRaw,
                     timeOffset,
-                    overkill
+                    overkill,
+                    spellId,
+                    source,
+                    hitAmount
                 )
+
+                -- Sync the death record's timeOffset with the killing blow from the normalized timeline.
+                -- This fixes cases where the entry's original timeOffset matched a non-killing event,
+                -- but the timeline properly identified a different killing event with a different time.
+                if type(eventTimeline) == "table" and #eventTimeline > 0 then
+                    for _, timelineEvent in ipairs(eventTimeline) do
+                        if timelineEvent and timelineEvent.isKillingBlow then
+                            local killingOffset = SafeNumber(timelineEvent.timeOffset)
+                            if killingOffset ~= nil then
+                                timeOffset = killingOffset
+                                timeStr = timelineEvent.timeStr or "?:??"
+                            end
+                            break
+                        end
+                    end
+                end
+
                 parsed[#parsed + 1] = {
                     playerName = playerName,
                     mechanic   = mechanic,
@@ -4321,7 +4634,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
         local trimmedArg = Trim(arg)
         local lowered = trimmedArg:lower()
         if lowered == "" or lowered == "status" then
-            if deathDebugTargetName and deathDebugTargetName ~= "" then
+            if IsDeathDebugArmed() then
                 Print("Death payload debug is armed for: |cffffd100player unit|r")
             else
                 Print("Death payload debug is currently disarmed.")
@@ -4335,11 +4648,7 @@ SlashCmdList["ASTRALRAIDLEADER"] = function(msg)
             if lowered ~= "on" and lowered ~= "self" and lowered ~= "player" and lowered ~= "" then
                 Print("Death payload debug is self-only; ignoring target argument.")
             end
-            deathDebugTargetName = "self"
-            Print(string.format(
-                "Death payload debug armed for |cffffd100%s|r. Capture runs after encounter ends.",
-                "player unit"
-            ))
+            ArmDeathDebugForNextEncounter()
         end
 
     -- bare /arl opens settings
