@@ -30,11 +30,6 @@ function ARL.OptionsBuilders.BuildDeathsPanel(deps)
         "Also open the Death Recap when the encounter ends successfully.",
         8, -64)
 
-    ui.deathPayloadDebugCB = CreateCheckbox(panel,
-        "Enable post-combat death payload debug capture",
-        "Allows /arl deathdebug to dump raw C_DamageMeter death payloads after encounters.",
-        8, -92)
-
     local deathGroupFilterLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     deathGroupFilterLabel:SetPoint("TOPLEFT", 8, -124)
     deathGroupFilterLabel:SetText("Track recap data in:")
@@ -85,10 +80,34 @@ function ARL.OptionsBuilders.BuildDeathsPanel(deps)
     ui.openRecapButton:SetSize(140, 24)
     ui.openRecapButton:SetText("Open Latest Recap")
 
+    -- ============================================================
+    -- Debug Section
+    -- ============================================================
+    local debugDivider = panel:CreateTexture(nil, "ARTWORK")
+    debugDivider:SetPoint("TOPLEFT", 8, -330)
+    debugDivider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -330)
+    debugDivider:SetHeight(1)
+    debugDivider:SetColorTexture(0.44, 0.54, 0.68, 0.70)
+
+    local debugSectionLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    debugSectionLabel:SetPoint("TOPLEFT", 8, -352)
+    debugSectionLabel:SetText("Debug Tools")
+    debugSectionLabel:SetTextColor(0.95, 0.81, 0.24)
+
+    ui.deathPayloadDebugCB = CreateCheckbox(panel,
+        "Enable post-combat death payload debug capture",
+        "Allows you to capture raw C_DamageMeter death payloads after encounters for debugging.",
+        8, -374)
+
+    ui.armDeathPayloadDebugButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    ui.armDeathPayloadDebugButton:SetPoint("TOPLEFT", 8, -404)
+    ui.armDeathPayloadDebugButton:SetSize(170, 24)
+    ui.armDeathPayloadDebugButton:SetText("Arm Debug For Pull")
+
     ui.dumpDeathPayloadButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    ui.dumpDeathPayloadButton:SetPoint("LEFT", ui.openRecapButton, "RIGHT", 8, 0)
+    ui.dumpDeathPayloadButton:SetPoint("LEFT", ui.armDeathPayloadDebugButton, "RIGHT", 8, 0)
     ui.dumpDeathPayloadButton:SetSize(170, 24)
-    ui.dumpDeathPayloadButton:SetText("Dump Debug Payload")
+    ui.dumpDeathPayloadButton:SetText("View Captured Payload")
 
     return ui
 end

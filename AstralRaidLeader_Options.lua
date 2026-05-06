@@ -210,6 +210,290 @@ local function StyleCheckbox(cb)
     cb._arlStyled = true
 end
 
+local deathPayloadCopyFrame = nil
+
+local function EscapeLuaString(value)
+    local escaped = tostring(value)
+    escaped = escaped:gsub("\\", "\\\\")
+    escaped = escaped:gsub("\r", "\\r")
+    escaped = escaped:gsub("\n", "\\n")
+    escaped = escaped:gsub("\t", "\\t")
+    escaped = escaped:gsub("\"", "\\\"")
+    return "\"" .. escaped .. "\""
+end
+
+local function BuildDebugPayloadText(payload)
+    local visited = {}
+    local maxDepth = 8
+
+    local function Serialize(value, depth)
+        local valueType = type(value)
+        if valueType == "nil" or valueType == "number" or valueType == "boolean" then
+            return tostring(value)
+        end
+        if valueType == "string" then
+            return EscapeLuaString(value)
+        end
+        if valueType ~= "table" then
+            return EscapeLuaString("<" .. valueType .. ">")
+        end
+        if visited[value] then
+            return EscapeLuaString("<cycle>")
+        end
+        if depth >= maxDepth then
+            return EscapeLuaString("<max-depth>")
+        end
+
+        visited[value] = true
+
+        local keys = {}
+        for key in pairs(value) do
+            keys[#keys + 1] = key
+        end
+        table.sort(keys, function(a, b)
+            local ta, tb = type(a), type(b)
+            if ta == tb then
+                return tostring(a) < tostring(b)
+            end
+            return ta < tb
+        end)
+
+        local indent = string.rep("  ", depth)
+        local childIndent = string.rep("  ", depth + 1)
+        local out = {"{"}
+        for _, key in ipairs(keys) do
+            local keyText
+            if type(key) == "string" and key:match("^[%a_][%w_]*$") then
+                keyText = key
+            else
+                keyText = "[" .. Serialize(key, depth + 1) .. "]"
+            end
+            out[#out + 1] = string.format(
+                "%s%s = %s,",
+                childIndent,
+                keyText,
+                Serialize(value[key], depth + 1)
+            )
+        end
+        out[#out + 1] = indent .. "}"
+
+        visited[value] = nil
+        return table.concat(out, "\n")
+    end
+
+    return "AstralRaidLeader.deathDebugLastPayload = " .. Serialize(payload, 0)
+end
+
+local function EnsureDeathPayloadCopyFrame()
+    if deathPayloadCopyFrame then
+        return deathPayloadCopyFrame
+    end
+
+    local popup = CreateFrame(
+        "Frame",
+        "AstralRaidLeaderDeathDebugPayloadFrame",
+        UIParent,
+        BackdropTemplateMixin and "BackdropTemplate" or nil
+    )
+    popup:SetSize(860, 620)
+    popup:SetPoint("CENTER")
+    popup:SetClampedToScreen(true)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetFrameLevel(frame:GetFrameLevel() + 6)
+    popup:SetToplevel(true)
+    popup:SetMovable(true)
+    popup:EnableMouse(false)
+    popup:SetAlpha(0)
+    popup:Hide()
+
+    popup:HookScript("OnShow", function(self)
+        self:SetAlpha(1)
+        self:EnableMouse(true)
+    end)
+
+    popup:HookScript("OnHide", function(self)
+        self:SetAlpha(0)
+        self:EnableMouse(false)
+    end)
+
+    if popup.SetBackdrop then
+        popup:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        })
+        popup:SetBackdropColor(0.03, 0.05, 0.08, 0.985)
+        popup:SetBackdropBorderColor(0.34, 0.42, 0.54, 0.96)
+    end
+
+    local popupHeader = CreateFrame("Frame", nil, popup, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    popupHeader:SetPoint("TOPLEFT", 7, -7)
+    popupHeader:SetPoint("TOPRIGHT", -30, -7)
+    popupHeader:SetHeight(28)
+    popupHeader:SetFrameLevel(popup:GetFrameLevel() + 8)
+    if popupHeader.SetBackdrop then
+        popupHeader:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        popupHeader:SetBackdropColor(0.05, 0.09, 0.15, 0.88)
+    end
+
+    local popupDivider = popupHeader:CreateTexture(nil, "BORDER")
+    popupDivider:SetPoint("BOTTOMLEFT", popupHeader, "BOTTOMLEFT", 0, 0)
+    popupDivider:SetPoint("BOTTOMRIGHT", popupHeader, "BOTTOMRIGHT", 0, 0)
+    popupDivider:SetHeight(1)
+    popupDivider:SetColorTexture(0.44, 0.54, 0.68, 0.70)
+
+    local popupTitle = popupHeader:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    popupTitle:SetPoint("CENTER", popupHeader, "CENTER", 0, 0)
+    popupTitle:SetText("Death Debug Payload")
+    popupTitle:SetTextColor(1.0, 0.96, 0.78)
+    popupTitle:SetShadowColor(0.0, 0.0, 0.0, 0.95)
+    popupTitle:SetShadowOffset(1, -1)
+
+    local popupTopClose = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+    popupTopClose:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -3, -3)
+    popupTopClose:SetScript("OnClick", function()
+        popup:Hide()
+    end)
+
+    local popupDrag = CreateFrame("Frame", nil, popup)
+    popupDrag:SetPoint("TOPLEFT", 8, -6)
+    popupDrag:SetPoint("TOPRIGHT", -28, -6)
+    popupDrag:SetHeight(22)
+    popupDrag:EnableMouse(true)
+    popupDrag:RegisterForDrag("LeftButton")
+    popupDrag:SetScript("OnDragStart", function()
+        popup:StartMoving()
+    end)
+    popupDrag:SetScript("OnDragStop", function()
+        popup:StopMovingOrSizing()
+    end)
+
+    local popupPanel = CreateFrame("Frame", nil, popup, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    popupPanel:SetPoint("TOPLEFT", 8, -40)
+    popupPanel:SetPoint("BOTTOMRIGHT", -8, 44)
+    SkinPanel(popupPanel, 0.05, 0.08, 0.12, 0.86, 0.23, 0.30, 0.40, 0.42)
+
+    local popupHint = popupPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    popupHint:SetPoint("TOPLEFT", popupPanel, "TOPLEFT", 10, -10)
+    popupHint:SetPoint("TOPRIGHT", popupPanel, "TOPRIGHT", -12, -10)
+    popupHint:SetJustifyH("LEFT")
+    popupHint:SetTextColor(0.82, 0.86, 0.93)
+    popupHint:SetText("Select the text below and press Ctrl+C to copy.")
+
+    local popupScroll = CreateFrame(
+        "ScrollFrame",
+        "AstralRaidLeaderDeathDebugPayloadScroll",
+        popupPanel,
+        "UIPanelScrollFrameTemplate"
+    )
+    popupScroll:SetPoint("TOPLEFT", popupPanel, "TOPLEFT", 10, -32)
+    popupScroll:SetPoint("BOTTOMRIGHT", popupPanel, "BOTTOMRIGHT", -34, 10)
+
+    local popupScrollBar = _G["AstralRaidLeaderDeathDebugPayloadScrollScrollBar"]
+    if popupScrollBar then
+        popupScrollBar:ClearAllPoints()
+        popupScrollBar:SetWidth(12)
+        popupScrollBar:SetPoint("TOPRIGHT", popupPanel, "TOPRIGHT", -8, -40)
+        popupScrollBar:SetPoint("BOTTOMRIGHT", popupPanel, "BOTTOMRIGHT", -8, 18)
+    end
+
+    local popupContent = CreateFrame("Frame", nil, popupScroll)
+    popupContent:SetSize((popupScroll:GetWidth() or 760), 1)
+    popupScroll:SetScrollChild(popupContent)
+
+    local popupEdit = CreateFrame("EditBox", nil, popupContent)
+    popupEdit:SetMultiLine(true)
+    popupEdit:SetAutoFocus(false)
+    popupEdit:SetFontObject("ChatFontNormal")
+    popupEdit:SetWidth((popupScroll:GetWidth() or 760) - 8)
+    popupEdit:SetPoint("TOPLEFT", popupContent, "TOPLEFT", 4, -4)
+    popupEdit:SetTextInsets(6, 6, 6, 6)
+    popupEdit:SetJustifyH("LEFT")
+    popupEdit:SetJustifyV("TOP")
+    popupEdit:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    local selectAllButton = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+    selectAllButton:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 12, 12)
+    selectAllButton:SetSize(110, 24)
+    selectAllButton:SetText("Select All")
+    selectAllButton:SetScript("OnClick", function()
+        if popupEdit and type(popupEdit.SetFocus) == "function" then
+            pcall(function()
+                popupEdit:SetFocus()
+            end)
+        end
+        if popupEdit and type(popupEdit.HighlightText) == "function" then
+            pcall(function()
+                popupEdit:HighlightText()
+            end)
+        end
+    end)
+    SkinActionButton(selectAllButton)
+
+    local popupCloseButton = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+    popupCloseButton:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -12, 12)
+    popupCloseButton:SetSize(100, 24)
+    popupCloseButton:SetText("Close")
+    popupCloseButton:SetScript("OnClick", function()
+        popup:Hide()
+    end)
+    SkinActionButton(popupCloseButton)
+
+    popup.scrollFrame = popupScroll
+    popup.scrollContent = popupContent
+    popup.editBox = popupEdit
+
+    table.insert(UISpecialFrames, popup:GetName())
+    deathPayloadCopyFrame = popup
+    return deathPayloadCopyFrame
+end
+
+local function ShowDeathPayloadCopyWindow(payload)
+    local popup = EnsureDeathPayloadCopyFrame()
+    if not popup or not popup.editBox or not popup.scrollContent then
+        Print("Unable to open debug payload window; UI controls are unavailable.")
+        return false
+    end
+
+    local text = BuildDebugPayloadText(payload)
+    popup:Show()
+    popup:Raise()
+
+    -- Safely set text if SetText exists
+    if popup.editBox and type(popup.editBox.SetText) == "function" then
+        popup.editBox:SetText(text)
+    else
+        Print("Warning: EditBox.SetText not available; displaying in chat instead.")
+        Print(text)
+        return true
+    end
+
+    local lineCount = 1
+    if text ~= "" then
+        lineCount = select(2, text:gsub("\n", "\n")) + 1
+    end
+    local contentHeight = (lineCount * 14) + 18
+    popup.scrollContent:SetHeight(math.max(1, contentHeight))
+    if popup.scrollFrame and popup.scrollFrame.SetVerticalScroll then
+        popup.scrollFrame:SetVerticalScroll(0)
+    end
+
+    if popup.editBox and type(popup.editBox.SetFocus) == "function" then
+        pcall(function()
+            popup.editBox:SetFocus()
+        end)
+    end
+    if popup.editBox and type(popup.editBox.HighlightText) == "function" then
+        pcall(function()
+            popup.editBox:HighlightText()
+        end)
+    end
+    return true
+end
+
 -- ============================================================
 -- Tab panels
 -- Each panel is a child of the main frame occupying the content
@@ -664,6 +948,7 @@ deathsUI = RequireBuilderFields("Deaths", deathsUI, {
     "applyMaxRecapsStoredButton",
     "openRecapButton",
     "dumpDeathPayloadButton",
+    "armDeathPayloadDebugButton",
 })
 if not deathsUI then return end
 
@@ -817,6 +1102,7 @@ for _, btn in ipairs({
     deathsUI.applyMaxRecapsStoredButton,
     deathsUI.openRecapButton,
     deathsUI.dumpDeathPayloadButton,
+    deathsUI.armDeathPayloadDebugButton,
     raidImportUI.importRaidLayoutsButton, raidImportUI.clearRaidImportButton,
     applyRaidLayoutButton,
     deleteRaidLayoutButton, clearRaidLayoutsButton,
@@ -2797,17 +3083,33 @@ deathsUI.dumpDeathPayloadButton:SetScript("OnClick", function()
     local capturedAtText = tostring(payload.capturedAt or "unknown time")
     local sessionText = tostring(payload.sessionId or "?")
     Print(string.format(
-        "Dumping captured death payload (%s, session %s, captured %s).",
+        "Opening captured death payload (%s, session %s, captured %s).",
         encounterText,
         sessionText,
         capturedAtText
     ))
 
-    if type(_G.DevTools_Dump) == "function" then
-        _G.DevTools_Dump(payload)
-        Print("Dumped: |cffffff00AstralRaidLeader.deathDebugLastPayload|r")
+    local ok = ShowDeathPayloadCopyWindow(payload)
+    if not ok then
+        Print("Falling back to chat dump: /dump AstralRaidLeader.deathDebugLastPayload")
+    end
+end)
+
+deathsUI.armDeathPayloadDebugButton:SetScript("OnClick", function()
+    if not ARL.db then
+        Print("Saved variables are not ready yet. Try again in a moment.")
+        return
+    end
+
+    if not ARL.db.deathPayloadDebugEnabled then
+        Print("Enable post-combat death payload debug capture first.")
+        return
+    end
+
+    if type(ARL.ArmDeathDebugForNextEncounter) == "function" then
+        ARL.ArmDeathDebugForNextEncounter()
     else
-        Print("DevTools_Dump is unavailable. Use /dump AstralRaidLeader.deathDebugLastPayload")
+        Print("Death debug arming is unavailable. Use /arl deathdebug on.")
     end
 end)
 

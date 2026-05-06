@@ -16,13 +16,13 @@ local ToggleDropDownMenu = _G.ToggleDropDownMenu
 
 local function ResolveSpellNameAndIcon(spellId)
     if not spellId or spellId <= 0 then
-        return nil, nil
+        return nil, 134400  -- Return question mark icon as fallback
     end
 
     if GetSpellInfo then
         local name, _, icon = GetSpellInfo(spellId)
         if name or icon then
-            return name, icon
+            return name, icon or 134400
         end
     end
 
@@ -33,7 +33,7 @@ local function ResolveSpellNameAndIcon(spellId)
                 local name = info.name or info.spellName
                 local icon = info.iconID or info.icon
                 if name or icon then
-                    return name, icon
+                    return name, icon or 134400
                 end
             end
         end
@@ -54,10 +54,10 @@ local function ResolveSpellNameAndIcon(spellId)
             end
         end
 
-        return name, icon
+        return name, icon or 134400
     end
 
-    return nil, nil
+    return nil, 134400  -- Return question mark icon as fallback
 end
 
 local function Print(msg)
