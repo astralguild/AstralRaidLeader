@@ -1257,6 +1257,20 @@ local function ContinueRaidLayoutApply()
     end
 
     local snapshot = GetRaidRosterSnapshot()
+    -- Rebuild desired assignments against the live roster each pass so invited
+    -- players who join mid-apply are immediately folded into the target map.
+    local refreshedTargets, refreshedErr = BuildRaidLayoutTargets(state.profile, snapshot)
+    if not refreshedTargets then
+        StopRaidLayoutApply(refreshedErr)
+        return
+    end
+    state.targetByName = refreshedTargets.targetByName
+    state.targetCounts = refreshedTargets.targetCounts
+    state.matchedCount = refreshedTargets.matchedCount
+    state.importedCount = refreshedTargets.importedCount
+    state.missing = refreshedTargets.missing
+    state.overflowCount = refreshedTargets.overflowCount
+
     local occupancy = {}
     local entriesBySubgroup = {}
     local pending = {}
@@ -1543,7 +1557,12 @@ local function ApplyRaidLayoutProfile(profile, options)
     }
 
     Print(string.format("Applying raid layout for |cffffd100%s|r...", GetRaidLayoutLabel(profile)))
-    ContinueRaidLayoutApply()
+    if invitedMissingCount > 0 then
+        Print("Waiting 1 second for invited players to join before subgroup assignment.")
+        ScheduleRaidLayoutApplyRetry(ARL.raidLayoutApplyState, 1.0)
+    else
+        ContinueRaidLayoutApply()
+    end
     return true, profile
 end
 
