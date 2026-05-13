@@ -1257,6 +1257,20 @@ local function ContinueRaidLayoutApply()
     end
 
     local snapshot = GetRaidRosterSnapshot()
+    -- Rebuild desired assignments against the live roster each pass so invited
+    -- players who join mid-apply are immediately folded into the target map.
+    local refreshedTargets, refreshedErr = BuildRaidLayoutTargets(state.profile, snapshot)
+    if not refreshedTargets then
+        StopRaidLayoutApply(refreshedErr)
+        return
+    end
+    state.targetByName = refreshedTargets.targetByName
+    state.targetCounts = refreshedTargets.targetCounts
+    state.matchedCount = refreshedTargets.matchedCount
+    state.importedCount = refreshedTargets.importedCount
+    state.missing = refreshedTargets.missing
+    state.overflowCount = refreshedTargets.overflowCount
+
     local occupancy = {}
     local entriesBySubgroup = {}
     local pending = {}
@@ -1366,6 +1380,7 @@ local function ContinueRaidLayoutApply()
     for _, move in ipairs(pending) do
         if (occupancy[move.desiredGroup] or 0) < 5 then
             state.fullGroupStallCount = 0
+            state.lastFullGroupPendingSignature = nil
             state.combatPaused = false
             state.lastIssuedMove = string.format("%s>%d", move.name, move.desiredGroup)
             SetRaidSubgroup(move.index, move.desiredGroup)
@@ -1432,6 +1447,7 @@ local function ContinueRaidLayoutApply()
             local blocker, blockerDestination = FindBufferChainMove(move.desiredGroup)
             if blocker and blockerDestination then
                 state.fullGroupStallCount = 0
+                state.lastFullGroupPendingSignature = nil
                 state.combatPaused = false
                 state.lastIssuedMove = string.format("%s>%d", blocker.name, blockerDestination)
                 SetRaidSubgroup(blocker.index, blockerDestination)
@@ -1441,10 +1457,17 @@ local function ContinueRaidLayoutApply()
         end
     end
 
-    -- Subgroup changes can be throttled by the server. Give the roster a few short
-    -- retries before treating a full-target deadlock as a hard failure.
-    state.fullGroupStallCount = (state.fullGroupStallCount or 0) + 1
-    if state.fullGroupStallCount <= 6 then
+    -- Subgroup changes can be throttled or roster state can be mid-transition.
+    -- Retry while the pending shape is still evolving, and only hard-fail after
+    -- the same full-group pending signature repeats many times.
+    if state.lastFullGroupPendingSignature ~= pendingSignature then
+        state.lastFullGroupPendingSignature = pendingSignature
+        state.fullGroupStallCount = 1
+    else
+        state.fullGroupStallCount = (state.fullGroupStallCount or 0) + 1
+    end
+
+    if state.fullGroupStallCount <= 12 then
         if state.fullGroupStallCount == 1 then
             Print("Raid layout apply is waiting for subgroup updates before retrying.")
         end
@@ -1452,9 +1475,18 @@ local function ContinueRaidLayoutApply()
         return
     end
 
+    if state.fullGroupStallCount <= 20 then
+        if state.fullGroupStallCount == 13 then
+            Print("Raid layout apply is still waiting for subgroup updates; continuing retries.")
+        end
+        ScheduleRaidLayoutApplyRetry(state, 2.0)
+        return
+    end
+
     StopRaidLayoutApply(string.format(
-        "Raid layout apply for |cffffd100%s|r stalled because the remaining target groups are full"
-            .. " and no buffer move was available after retries. Current=%s; Targets=%s; Pending=%s",
+        "Raid layout apply for |cffffd100%s|r exhausted auto-retries while target groups were full"
+            .. " and no buffer move was available. Raid state may still settle; try Apply again"
+            .. " in a moment. Current=%s; Targets=%s; Pending=%s",
         GetRaidLayoutLabel(state.profile),
         BuildRaidLayoutOccupancyText(occupancy),
         BuildRaidLayoutOccupancyText(state.targetCounts or {}),
@@ -1543,7 +1575,12 @@ local function ApplyRaidLayoutProfile(profile, options)
     }
 
     Print(string.format("Applying raid layout for |cffffd100%s|r...", GetRaidLayoutLabel(profile)))
-    ContinueRaidLayoutApply()
+    if invitedMissingCount > 0 then
+        Print("Waiting 1 second for invited players to join before subgroup assignment.")
+        ScheduleRaidLayoutApplyRetry(ARL.raidLayoutApplyState, 1.0)
+    else
+        ContinueRaidLayoutApply()
+    end
     return true, profile
 end
 
