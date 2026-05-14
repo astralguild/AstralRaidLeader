@@ -2469,7 +2469,6 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
 
     -- Also probe C_DeathRecap: scan events for deathRecapID and capture that timeline too.
     local deathRecapProbe = nil
-    local deathsTypeForDebug = (_G.Enum and _G.Enum.DamageMeterType and _G.Enum.DamageMeterType.Deaths) or 9
     if _G.C_DeathRecap and type(_G.C_DeathRecap.GetRecapEvents) == "function" then
         for _, ev in ipairs(payload) do
             if type(ev) == "table" then
