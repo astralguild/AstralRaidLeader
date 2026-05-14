@@ -22,7 +22,7 @@ local function ResolveSpellNameAndIcon(spellId)
     if GetSpellInfo then
         local name, _, icon = GetSpellInfo(spellId)
         if name or icon then
-            return name, icon or 134400
+            return name, (icon and icon > 0) and icon or 134400
         end
     end
 
@@ -33,7 +33,7 @@ local function ResolveSpellNameAndIcon(spellId)
                 local name = info.name or info.spellName
                 local icon = info.iconID or info.icon
                 if name or icon then
-                    return name, icon or 134400
+                    return name, (icon and icon > 0) and icon or 134400
                 end
             end
         end
@@ -54,7 +54,7 @@ local function ResolveSpellNameAndIcon(spellId)
             end
         end
 
-        return name, icon or 134400
+        return name, (icon and icon > 0) and icon or 134400
     end
 
     return nil, 134400  -- Return question mark icon as fallback
@@ -766,19 +766,14 @@ local function PopulateDetailsTimelineRow(row, event)
     local spellId = type(event) == "table" and event.spellId or nil
     if type(spellId) == "number" and spellId > 0 then
         row.spellId = spellId
-        local _, icon = ResolveSpellNameAndIcon(spellId)
-        if icon then
-            row.spellIcon:SetTexture(icon)
-            row.spellIcon:Show()
-            row.lineText:ClearAllPoints()
-            row.lineText:SetPoint("LEFT", row.spellIcon, "RIGHT", 6, 0)
-            row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        else
-            row.spellIcon:Hide()
-            row.lineText:ClearAllPoints()
-            row.lineText:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        end
+    end
+    local _, icon = ResolveSpellNameAndIcon(spellId)
+    if icon then
+        row.spellIcon:SetTexture(icon)
+        row.spellIcon:Show()
+        row.lineText:ClearAllPoints()
+        row.lineText:SetPoint("LEFT", row.spellIcon, "RIGHT", 6, 0)
+        row.lineText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     else
         row.spellIcon:Hide()
         row.lineText:ClearAllPoints()
@@ -1094,11 +1089,9 @@ local function BuildDeathLine(i, entry)
         COLOR_MECHANIC, mechanicName or "Unknown", COLOR_RESET
     )
 
-    if spellId and spellId > 0 then
+    do
         local _, icon = ResolveSpellNameAndIcon(spellId)
-        if icon then
-            spellText = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, spellText)
-        end
+        spellText = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, spellText)
     end
 
     local overkillText = FormatCompactAmount(entry.overkill)

@@ -2467,6 +2467,40 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
         payload = payload,
     }
 
+    -- Also probe C_DeathRecap: scan events for deathRecapID and capture that timeline too.
+    local deathRecapProbe = nil
+    if _G.C_DeathRecap and type(_G.C_DeathRecap.GetRecapEvents) == "function" then
+        for _, ev in ipairs(payload) do
+            if type(ev) == "table" then
+                local evRecapID = tonumber(ev.deathRecapID or ev.recapID or ev.recap_id) or 0
+                if evRecapID > 0 then
+                    local okR, recapEvs = pcall(_G.C_DeathRecap.GetRecapEvents, evRecapID)
+                    deathRecapProbe = {
+                        recapIDFound = evRecapID,
+                        ok = okR,
+                        eventCount = okR and type(recapEvs) == "table" and #recapEvs or 0,
+                        events = okR and recapEvs or nil,
+                    }
+                    break
+                end
+            end
+        end
+        if not deathRecapProbe then
+            deathRecapProbe = { recapIDFound = 0, note = "no deathRecapID found on any event" }
+        end
+    else
+        deathRecapProbe = { note = "C_DeathRecap.GetRecapEvents not available" }
+    end
+    ARL.deathDebugLastPayload.deathRecapProbe = deathRecapProbe
+    -- Capture first event's raw field names so we can see what Blizzard provides.
+    local firstEventFields = {}
+    if type(payload[1]) == "table" then
+        for k, v in pairs(payload[1]) do
+            firstEventFields[tostring(k)] = tostring(v)
+        end
+    end
+    ARL.deathDebugLastPayload.firstEventFields = firstEventFields
+
     Print(string.format(
         "Captured raw death payload for |cffffd100%s|r (%d top-level entries).",
         targetName,
@@ -2634,6 +2668,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
 
         local timeline = {}
+        -- For C_DeathRecap events index 1 = killing blow (most-recent / highest timestamp).
+        -- Pre-compute the delta from the killing blow for every event so that
+        -- NormalizeTimelineEvents can display real sub-second relative intervals
+        -- without needing a session-relative time conversion.
+        local killingBlowTs = nil
+        if #events > 0 and type(events[1]) == "table" then
+            local ts = SafeNumber(events[1].timestamp or events[1].timeStamp)
+            if ts and ts > 0 then
+                killingBlowTs = ts
+            end
+        end
         for eventIndex, eventData in ipairs(events) do
             if type(eventData) == "table" then
                 local eventToken = string.upper(tostring(
@@ -2768,6 +2813,17 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         or eventData.time
                     )
 
+                    local rawDeltaFromKill = nil
+                    if killingBlowTs then
+                        local evTs = SafeNumber(eventData.timestamp or eventData.timeStamp)
+                        if evTs then
+                            local okDelta, delta = pcall(function() return evTs - killingBlowTs end)
+                            if okDelta and type(delta) == "number" then
+                                rawDeltaFromKill = delta
+                            end
+                        end
+                    end
+
                     timeline[#timeline + 1] = {
                         eventType = eventType,
                         eventToken = eventToken ~= "" and eventToken or nil,
@@ -2781,6 +2837,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         healthAfter = healthAfter,
                         healthMax = healthMax,
                         rawTimeOffset = rawTimeOffset,
+                        rawAbsoluteTimestamp = SafeNumber(eventData.timestamp or eventData.timeStamp),
+                        rawDeltaFromKill = rawDeltaFromKill,
                         rawOrder = eventIndex,
                     }
                 end
@@ -2916,6 +2974,30 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end)
         if not okDamageMeter or type(recapEvents) ~= "table" then
             return nil, nil, nil, nil, nil, nil, nil, nil, nil
+        end
+
+        -- C_DamageMeter events may carry a deathRecapID that points to the higher-fidelity
+        -- C_DeathRecap timeline (with real sub-second .timestamp precision). Check all events
+        -- since the field could appear on the death-summary row rather than the killing blow.
+        if _G.C_DeathRecap and type(_G.C_DeathRecap.GetRecapEvents) == "function" then
+            for _, ev in ipairs(recapEvents) do
+                if type(ev) == "table" then
+                    local evRecapID = SafeNumber(ev.deathRecapID or ev.recapID or ev.recap_id) or 0
+                    if evRecapID > 0 then
+                        local okRecap, deathRecapEvs = pcall(_G.C_DeathRecap.GetRecapEvents, evRecapID)
+                        if okRecap and type(deathRecapEvs) == "table" and #deathRecapEvs > 0 then
+                            local m2, s2, sp2, o2, ok2, am2, tl2, hd2, hm2 =
+                                ResolveCauseFromEventData(deathRecapEvs[1])
+                            if m2 or s2 or sp2 then
+                                local okTl, tlResult = pcall(BuildRawTimelineEvents, deathRecapEvs)
+                                if okTl then tl2 = tlResult end
+                                return m2, s2, sp2, o2, ok2, am2, tl2, hd2, hm2
+                            end
+                        end
+                        break
+                    end
+                end
+            end
         end
 
         local m, s, sp, o, ok, am, tl, hd, hm = ResolveCauseFromEventData(recapEvents[1])
@@ -3088,6 +3170,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         relativeTimeOffset = nil,
                         relativeTimeStr = "?.?s",
                         rawOrder = event.rawOrder,
+                        rawAbsoluteTimestamp = event.rawAbsoluteTimestamp,
+                        rawDeltaFromKill = event.rawDeltaFromKill,
                     }
                 end
             end
@@ -3426,14 +3510,84 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
             end
 
+            -- Detect C_DamageMeter quantization: the API assigns each event a timeOffset that
+            -- increments exactly 0.1s per event (e.g. 176.1, 176.2, ...). This produces a
+            -- perfectly uniform relativeTimeOffset sequence (0.0s, -0.1s, -0.2s, ...) that
+            -- looks real but has no sub-second accuracy. rawDeltaFromKill uses the actual
+            -- .timestamp field from the same events, which has millisecond precision.
+            -- If all relativeTimeOffset values are uniformly 0.1s apart AND rawDeltaFromKill
+            -- has meaningfully more spread, replace the quantized values with real deltas.
+            if timedCount >= 2 then
+                local sortedRel = {}
+                for _, event in ipairs(normalized) do
+                    local ro = event and event.relativeTimeOffset
+                    if type(ro) == "number" then
+                        sortedRel[#sortedRel + 1] = ro
+                    end
+                end
+                table.sort(sortedRel)
+                local isUniform0_1s = true
+                for i = 2, #sortedRel do
+                    local diff = math.abs(math.abs(sortedRel[i] - sortedRel[i - 1]) - 0.1)
+                    if diff > 0.02 then
+                        isUniform0_1s = false
+                        break
+                    end
+                end
+                if isUniform0_1s then
+                    local deltaMin2, deltaMax2 = nil, nil
+                    for _, event in ipairs(normalized) do
+                        local d = SafeNumber(event.rawDeltaFromKill)
+                        if d then
+                            if deltaMin2 == nil or d < deltaMin2 then deltaMin2 = d end
+                            if deltaMax2 == nil or d > deltaMax2 then deltaMax2 = d end
+                        end
+                    end
+                    local realSpread = (deltaMin2 ~= nil and deltaMax2 ~= nil)
+                        and math.abs(deltaMax2 - deltaMin2) or 0
+                    local quantizedSpread = math.abs(relativeMax - relativeMin)
+                    -- Only switch if real timestamps spread significantly more than the
+                    -- quantized 0.1s-per-event representation.
+                    if realSpread > quantizedSpread + 0.05 then
+                        for _, event in ipairs(normalized) do
+                            event.relativeTimeOffset = SafeNumber(event.rawDeltaFromKill)
+                        end
+                    end
+                end
+            end
+
             if timedCount >= 2 and relativeMin ~= nil and relativeMax ~= nil then
                 local spread = math.abs(relativeMax - relativeMin)
                 if spread < 0.05 then
-                    local newestIndex = #normalized
-                    for i, event in ipairs(normalized) do
-                        local syntheticRelative = (i - newestIndex) * 0.1
-                        event.relativeTimeOffset = syntheticRelative
-                        event.relativeTimeStr = FormatRelativeEncounterTime(syntheticRelative)
+                    -- All relative offsets are within 50ms: the timeOffset fields are quantized.
+                    -- Replace them with real sub-second deltas from C_DeathRecap .timestamp.
+                    -- rawDeltaFromKill = eventTs - killingBlowTs, so 0 for kill, negative for prior.
+                    local usedRealTs = false
+                    do
+                        local deltaMin, deltaMax = nil, nil
+                        for _, event in ipairs(normalized) do
+                            local d = SafeNumber(event.rawDeltaFromKill)
+                            if d then
+                                if deltaMin == nil or d < deltaMin then deltaMin = d end
+                                if deltaMax == nil or d > deltaMax then deltaMax = d end
+                            end
+                        end
+                        local deltaSpread = (deltaMin ~= nil and deltaMax ~= nil)
+                            and math.abs(deltaMax - deltaMin) or 0
+                        if deltaSpread >= 0.05 then
+                            for _, event in ipairs(normalized) do
+                                event.relativeTimeOffset = SafeNumber(event.rawDeltaFromKill)
+                            end
+                            usedRealTs = true
+                        end
+                    end
+                    if not usedRealTs then
+                        local newestIndex = #normalized
+                        for i, event in ipairs(normalized) do
+                            local syntheticRelative = (i - newestIndex) * 0.1
+                            event.relativeTimeOffset = syntheticRelative
+                            event.relativeTimeStr = FormatRelativeEncounterTime(syntheticRelative)
+                        end
                     end
                 end
             end
@@ -3444,6 +3598,84 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     event.relativeTimeStr = FormatRelativeEncounterTime(relativeOffset)
                 else
                     event.relativeTimeStr = "?.?s"
+                end
+            end
+
+            -- Fallback: if every event still has nil relativeTimeOffset (happens when
+            -- C_DeathRecap .timestamp values are large absolute numbers that cannot be
+            -- mapped to an encounter-relative window via ResolveEncounterTimeOffset),
+            -- apply rawDeltaFromKill directly — those are already relative to the kill.
+            do
+                local hasAnyRelative = false
+                for _, event in ipairs(normalized) do
+                    if type(event.relativeTimeOffset) == "number" then
+                        hasAnyRelative = true
+                        break
+                    end
+                end
+                if not hasAnyRelative then
+                    local appliedDelta = false
+                    -- Primary: rawDeltaFromKill (eventTs - killingBlowTs), already relative.
+                    do
+                        local deltaMin, deltaMax = nil, nil
+                        for _, event in ipairs(normalized) do
+                            local d = SafeNumber(event.rawDeltaFromKill)
+                            if d then
+                                if deltaMin == nil or d < deltaMin then deltaMin = d end
+                                if deltaMax == nil or d > deltaMax then deltaMax = d end
+                            end
+                        end
+                        local deltaSpread = (deltaMin ~= nil and deltaMax ~= nil)
+                            and math.abs(deltaMax - deltaMin) or 0
+                        if deltaSpread >= 0.01 then
+                            for _, event in ipairs(normalized) do
+                                local d = SafeNumber(event.rawDeltaFromKill)
+                                event.relativeTimeOffset = d
+                                event.relativeTimeStr = d ~= nil
+                                    and FormatRelativeEncounterTime(d) or "?.?s"
+                            end
+                            appliedDelta = true
+                        end
+                    end
+                    -- Secondary: rawAbsoluteTimestamp relative to killing blow anchor.
+                    if not appliedDelta then
+                        local anchorIndex = killingEventIndex or #normalized
+                        local anchorTs = normalized[anchorIndex]
+                            and SafeNumber(normalized[anchorIndex].rawAbsoluteTimestamp)
+                        if anchorTs and anchorTs > 0 then
+                            local realMin, realMax = nil, nil
+                            for _, event in ipairs(normalized) do
+                                local evTs = SafeNumber(event.rawAbsoluteTimestamp)
+                                if evTs then
+                                    local rel = evTs - anchorTs
+                                    if realMin == nil or rel < realMin then realMin = rel end
+                                    if realMax == nil or rel > realMax then realMax = rel end
+                                end
+                            end
+                            local realSpread = (realMin ~= nil and realMax ~= nil)
+                                and math.abs(realMax - realMin) or 0
+                            if realSpread >= 0.01 then
+                                for _, event in ipairs(normalized) do
+                                    local evTs = SafeNumber(event.rawAbsoluteTimestamp)
+                                    if evTs then
+                                        event.relativeTimeOffset = evTs - anchorTs
+                                        event.relativeTimeStr =
+                                            FormatRelativeEncounterTime(evTs - anchorTs)
+                                    end
+                                end
+                                appliedDelta = true
+                            end
+                        end
+                    end
+                    -- Final fallback: synthetic 0.1s spacing.
+                    if not appliedDelta then
+                        local newestIndex = #normalized
+                        for i, event in ipairs(normalized) do
+                            event.relativeTimeOffset = (i - newestIndex) * 0.1
+                            event.relativeTimeStr =
+                                FormatRelativeEncounterTime((i - newestIndex) * 0.1)
+                        end
+                    end
                 end
             end
 
