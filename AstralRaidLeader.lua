@@ -3215,7 +3215,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             fallbackOverkill,
             fallbackSpellId,
             fallbackSource,
-            fallbackAmount
+            fallbackAmount,
+            fallbackHealthMax
         )
             if type(rawEvents) ~= "table" then
                 return nil, false
@@ -3896,8 +3897,21 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         end
                     end
 
+                    local reportedMaxCandidate = SafeNonNegativeNumber(fallbackHealthMax)
+                    if type(reportedMaxCandidate) ~= "number" then
+                        for _, event in ipairs(normalized) do
+                            local eventMaxValue = SafeNonNegativeNumber(event and event.healthMax)
+                            if type(eventMaxValue) == "number" and eventMaxValue > 0 then
+                                reportedMaxCandidate = eventMaxValue
+                                break
+                            end
+                        end
+                    end
+
                     local estimatedMaxHP = hpRunning
-                    if estimatedMaxHP and estimatedMaxHP > 0 then
+                    if (type(reportedMaxCandidate) ~= "number" or reportedMaxCandidate <= 0)
+                        and estimatedMaxHP and estimatedMaxHP > 0
+                    then
                         for _, event in ipairs(normalized) do
                             if type(event.healthMax) ~= "number" or event.healthMax <= 0 then
                                 event.healthMax = estimatedMaxHP
@@ -3910,7 +3924,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             -- Fallback for recap payloads that provide currentHP snapshots but no max HP.
             do
                 local observedMaxHP = nil
-                local reportedMaxHP = nil
+                local reportedMaxHP = SafeNonNegativeNumber(fallbackHealthMax)
                 for _, event in ipairs(normalized) do
                     local beforeValue = SafeNonNegativeNumber(event and event.healthBefore)
                     local afterValue = SafeNonNegativeNumber(event and event.healthAfter)
@@ -4085,7 +4099,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     overkill,
                     spellId,
                     source,
-                    hitAmount
+                    hitAmount,
+                    recapHealthMaxAtDeath
                 )
 
                 -- Sync the death record's timeOffset with the killing blow from the normalized timeline.
