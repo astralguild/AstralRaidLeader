@@ -23,6 +23,7 @@ local IsGuildGroup = _G.IsGuildGroup
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
 local UnitInRaid = _G.UnitInRaid
+local UnitClass = _G.UnitClass
 
 -- ============================================================
 -- Defaults
@@ -266,6 +267,38 @@ local function GetGroupMemberMap()
         local n = GetNumSubgroupMembers()
         for i = 1, n do
             AddName(UnitName("party" .. i))
+        end
+    end
+
+    return members
+end
+
+local function GetGroupMemberClassTokenMap()
+    local members = {}
+
+    local function AddName(unit)
+        if not unit or unit == "" or not UnitExists(unit) then return end
+        local name = UnitName(unit)
+        if not name or name == "" then return end
+        local _, classToken = UnitClass(unit)
+        if not classToken or classToken == "" then return end
+
+        local shortName = name:match("^([^%-]+)") or name
+        local lowerClassToken = tostring(classToken):lower()
+        members[shortName:lower()] = lowerClassToken
+        members[name:lower()] = lowerClassToken
+    end
+
+    if IsInRaid() then
+        local n = GetNumGroupMembers()
+        for i = 1, n do
+            AddName("raid" .. i)
+        end
+    elseif IsInGroup() then
+        AddName("player")
+        local n = GetNumSubgroupMembers()
+        for i = 1, n do
+            AddName("party" .. i)
         end
     end
 
@@ -2783,6 +2816,13 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         eventData.finalHealth,
                         eventData.destHealth
                     )
+                    local currentHP = SafeNonNegativeNumber(
+                        eventData.currentHP,
+                        eventData.currentHp,
+                        eventData.currentHealth,
+                        eventData.curHP,
+                        eventData.hp
+                    )
                     local healthMax = SafeNonNegativeNumber(
                         eventData.maxHealth,
                         eventData.healthMax,
@@ -2790,6 +2830,43 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         eventData.targetMaxHealth,
                         eventData.maxHP
                     )
+                    local snapshotHealthPct = SafeNumber(
+                        eventData.healthPercent,
+                        eventData.currentHealthPercent,
+                        eventData.healthPct,
+                        eventData.hpPercent
+                    )
+                    if type(snapshotHealthPct) ~= "number" then
+                        local indexedHealthPct = SafeNumber(eventData[5])
+                        if type(indexedHealthPct) == "number" and indexedHealthPct >= 0 then
+                            if indexedHealthPct <= 100 then
+                                snapshotHealthPct = indexedHealthPct
+                            else
+                                -- Details clamps event[5] * 100 to 100 when this field carries
+                                -- absolute-like values; mirror that behavior instead of discarding.
+                                snapshotHealthPct = 100
+                            end
+                        end
+                    end
+                    if type(snapshotHealthPct) ~= "number"
+                        and type(currentHP) == "number"
+                        and type(healthMax) == "number"
+                        and healthMax > 0
+                    then
+                        snapshotHealthPct = (currentHP / healthMax) * 100
+                    end
+                    if type(snapshotHealthPct) == "number" then
+                        if snapshotHealthPct > 0 and snapshotHealthPct <= 1 then
+                            snapshotHealthPct = snapshotHealthPct * 100
+                        end
+                        if snapshotHealthPct < 0 then
+                            snapshotHealthPct = 0
+                        elseif snapshotHealthPct > 100 then
+                            snapshotHealthPct = 100
+                        end
+                    else
+                        snapshotHealthPct = nil
+                    end
 
                     local rawTimeOffset = SafeNumber(
                         eventData.timeOffset
@@ -2836,6 +2913,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         healthBefore = healthBefore,
                         healthAfter = healthAfter,
                         healthMax = healthMax,
+                        snapshotHealthCurrent = currentHP,
+                        snapshotHealthMax = healthMax,
+                        snapshotHealthPct = snapshotHealthPct,
                         rawTimeOffset = rawTimeOffset,
                         rawAbsoluteTimestamp = SafeNumber(eventData.timestamp or eventData.timeStamp),
                         rawDeltaFromKill = rawDeltaFromKill,
@@ -3138,7 +3218,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             fallbackOverkill,
             fallbackSpellId,
             fallbackSource,
-            fallbackAmount
+            fallbackAmount,
+            fallbackHealthMax
         )
             if type(rawEvents) ~= "table" then
                 return nil, false
@@ -3165,6 +3246,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         healthBefore = event.healthBefore,
                         healthAfter = event.healthAfter,
                         healthMax = event.healthMax,
+                        snapshotHealthCurrent = event.snapshotHealthCurrent,
+                        snapshotHealthMax = event.snapshotHealthMax,
+                        snapshotHealthPct = event.snapshotHealthPct,
                         timeOffset = eventOffset,
                         timeStr = eventTimeStr,
                         relativeTimeOffset = nil,
@@ -3203,14 +3287,6 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             end
 
             local timelineTruncated = #normalized > RECAP_TIMELINE_EVENT_LIMIT
-            if timelineTruncated then
-                local trimmed = {}
-                local startIndex = #normalized - RECAP_TIMELINE_EVENT_LIMIT + 1
-                for i = startIndex, #normalized do
-                    trimmed[#trimmed + 1] = normalized[i]
-                end
-                normalized = trimmed
-            end
 
             local hasPreciseTime = false
             for _, event in ipairs(normalized) do
@@ -3679,6 +3755,85 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 end
             end
 
+            -- Reconcile killing blow selection using final relative offsets so the
+            -- isKillingBlow marker always aligns with the visual 0.0s row.
+            do
+                local bestIndex = nil
+                local bestDistance = nil
+                local bestTier = -1
+                local bestRawOrder = -1
+
+                for i, event in ipairs(normalized) do
+                    if IsDamageTimelineEvent(event) then
+                        local rel = SafeNumber(event and event.relativeTimeOffset)
+                        if type(rel) == "number" then
+                            local distance = math.abs(rel)
+                            local hasOverkill = type(event.overkill) == "number" and event.overkill > 0
+                            local hasLethal = type(event.healthAfter) == "number" and event.healthAfter <= 0
+                            local tier = hasOverkill and 2 or (hasLethal and 1 or 0)
+                            local rawOrder = ToPlainNumber(event and event.rawOrder)
+
+                            local better = false
+                            if bestIndex == nil then
+                                better = true
+                            elseif distance < (bestDistance - 0.0001) then
+                                better = true
+                            elseif math.abs(distance - bestDistance) <= 0.0001 then
+                                if tier > bestTier then
+                                    better = true
+                                elseif tier == bestTier and rawOrder > bestRawOrder then
+                                    better = true
+                                end
+                            end
+
+                            if better then
+                                bestIndex = i
+                                bestDistance = distance
+                                bestTier = tier
+                                bestRawOrder = rawOrder
+                            end
+                        end
+                    end
+                end
+
+                if bestIndex ~= nil then
+                    killingEventIndex = bestIndex
+                end
+
+                for i, event in ipairs(normalized) do
+                    event.isKillingBlow = (killingEventIndex ~= nil and i == killingEventIndex)
+                    if event.isKillingBlow
+                        and (type(event.overkill) ~= "number" or event.overkill <= 0)
+                        and type(fallbackOverkill) == "number"
+                        and fallbackOverkill > 0
+                    then
+                        event.overkill = fallbackOverkill
+                    end
+                end
+            end
+
+            -- Keep timeline strictly pre-kill plus the kill row itself.
+            -- This avoids duplicate 0.0s entries when near-zero non-kill rows survive
+            -- relative-time normalization, and drops any post-kill spillover rows.
+            do
+                local filtered = {}
+                for _, event in ipairs(normalized) do
+                    local rel = SafeNumber(event and event.relativeTimeOffset)
+                    local isKill = type(event) == "table" and event.isKillingBlow
+                    if isKill then
+                        filtered[#filtered + 1] = event
+                    elseif rel == nil then
+                        filtered[#filtered + 1] = event
+                    elseif rel < -0.001 then
+                        if rel > -0.05 then
+                            event.relativeTimeOffset = -0.1
+                        end
+                        filtered[#filtered + 1] = event
+                    end
+                end
+                normalized = filtered
+            end
+
             -- Reconstruct approximate HP at each event by walking backwards from the killing blow.
             -- hpBeforeKill = killingBlow.amount - killingBlow.overkill (overkill=0 means exact kill).
             -- Then for each prior damage event: hpBefore[i] = hpAfter[i+1] + amount[i].
@@ -3690,7 +3845,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         or SafeNonNegativeNumber(fallbackOverkill)
                         or 0
                     local killAmount = SafeNonNegativeNumber(killEvent.amount) or 0
-                    local hpBeforeKill = math.max(0, killAmount - killOverkill)
+                    local computedHpBeforeKill = math.max(0, killAmount - killOverkill)
 
                     -- Sort indices chronologically (most-negative relativeTimeOffset = oldest).
                     local chronoIndices = {}
@@ -3713,32 +3868,157 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         end
                     end
 
-                    killEvent.healthAfter = 0
-                    killEvent.healthBefore = hpBeforeKill
+                    if type(killEvent.healthAfter) ~= "number" then
+                        killEvent.healthAfter = 0
+                    end
+                    if type(killEvent.healthBefore) ~= "number" then
+                        killEvent.healthBefore = computedHpBeforeKill
+                    end
 
-                    local hpRunning = hpBeforeKill
+                    local hpRunning = killEvent.healthBefore
+                    if type(hpRunning) ~= "number" then
+                        hpRunning = computedHpBeforeKill
+                    end
                     for pos = killChronoPos - 1, 1, -1 do
                         local idx = chronoIndices[pos]
                         local event = normalized[idx]
                         if type(event) == "table" then
-                            event.healthAfter = hpRunning
-                            local eventAmount = SafeNonNegativeNumber(event.amount) or 0
-                            if event.eventType == "heal" then
-                                event.healthBefore = math.max(0, hpRunning - eventAmount)
-                            else
-                                event.healthBefore = hpRunning + eventAmount
+                            if type(event.healthAfter) ~= "number" then
+                                event.healthAfter = hpRunning
                             end
-                            hpRunning = event.healthBefore
+                            local eventAmount = SafeNonNegativeNumber(event.amount) or 0
+                            if type(event.healthBefore) ~= "number" then
+                                if event.eventType == "heal" then
+                                    event.healthBefore = math.max(0, hpRunning - eventAmount)
+                                else
+                                    event.healthBefore = hpRunning + eventAmount
+                                end
+                            end
+                            if type(event.healthBefore) == "number" then
+                                hpRunning = event.healthBefore
+                            end
+                        end
+                    end
+
+                    local reportedMaxCandidate = SafeNonNegativeNumber(fallbackHealthMax)
+                    if type(reportedMaxCandidate) ~= "number" then
+                        for _, event in ipairs(normalized) do
+                            local eventMaxValue = SafeNonNegativeNumber(event and event.healthMax)
+                            if type(eventMaxValue) == "number" and eventMaxValue > 0 then
+                                reportedMaxCandidate = eventMaxValue
+                                break
+                            end
                         end
                     end
 
                     local estimatedMaxHP = hpRunning
-                    if estimatedMaxHP and estimatedMaxHP > 0 then
+                    if (type(reportedMaxCandidate) ~= "number" or reportedMaxCandidate <= 0)
+                        and estimatedMaxHP and estimatedMaxHP > 0
+                    then
                         for _, event in ipairs(normalized) do
-                            event.healthMax = estimatedMaxHP
+                            if type(event.healthMax) ~= "number" or event.healthMax <= 0 then
+                                event.healthMax = estimatedMaxHP
+                            end
                         end
                     end
                 end
+            end
+
+            -- Fallback for recap payloads that provide currentHP snapshots but no max HP.
+            do
+                local observedMaxHP = nil
+                local reportedMaxHP = SafeNonNegativeNumber(fallbackHealthMax)
+                for _, event in ipairs(normalized) do
+                    local beforeValue = SafeNonNegativeNumber(event and event.healthBefore)
+                    local afterValue = SafeNonNegativeNumber(event and event.healthAfter)
+                    local maxValue = SafeNonNegativeNumber(event and event.healthMax)
+                    local candidate = beforeValue
+                    if type(afterValue) == "number"
+                        and (type(candidate) ~= "number" or afterValue > candidate)
+                    then
+                        candidate = afterValue
+                    end
+                    if type(candidate) == "number" and candidate > 0 then
+                        if type(observedMaxHP) ~= "number" or candidate > observedMaxHP then
+                            observedMaxHP = candidate
+                        end
+                    end
+                    if type(maxValue) == "number" and maxValue > 0 then
+                        if type(reportedMaxHP) ~= "number" or maxValue > reportedMaxHP then
+                            reportedMaxHP = maxValue
+                        end
+                    end
+                end
+
+                local unifiedMaxHP = reportedMaxHP
+                if type(observedMaxHP) == "number" and observedMaxHP > 0 then
+                    if type(unifiedMaxHP) ~= "number" or observedMaxHP > unifiedMaxHP then
+                        unifiedMaxHP = observedMaxHP
+                    end
+                end
+
+                if type(unifiedMaxHP) == "number" and unifiedMaxHP > 0 then
+                    for _, event in ipairs(normalized) do
+                        local existingMax = SafeNonNegativeNumber(event and event.healthMax)
+                        local beforeValue = SafeNonNegativeNumber(event and event.healthBefore)
+                        local afterValue = SafeNonNegativeNumber(event and event.healthAfter)
+                        local eventPeak = beforeValue
+                        if type(afterValue) == "number"
+                            and (type(eventPeak) ~= "number" or afterValue > eventPeak)
+                        then
+                            eventPeak = afterValue
+                        end
+
+                        local shouldReplace = type(existingMax) ~= "number" or existingMax <= 0
+                        if not shouldReplace
+                            and type(eventPeak) == "number"
+                            and existingMax < eventPeak
+                        then
+                            -- If an event's own max is below observed HP snapshot, it is not reliable.
+                            shouldReplace = true
+                        end
+
+                        if shouldReplace then
+                            event.healthMax = unifiedMaxHP
+                        elseif existingMax < (unifiedMaxHP * 0.90) then
+                            -- Keep event-level max when close enough, normalize clearly outlier values.
+                            event.healthMax = unifiedMaxHP
+                        end
+                    end
+                end
+            end
+
+            -- Ensure a stable oldest->newest order before truncation and rendering.
+            table.sort(normalized, function(a, b)
+                local leftRelative = SafeNumber(a and a.relativeTimeOffset)
+                local rightRelative = SafeNumber(b and b.relativeTimeOffset)
+                local leftOrder = ToPlainNumber(a and a.rawOrder)
+                local rightOrder = ToPlainNumber(b and b.rawOrder)
+
+                if leftRelative ~= nil and rightRelative ~= nil then
+                    if leftRelative == rightRelative then
+                        return leftOrder < rightOrder
+                    end
+                    return leftRelative < rightRelative
+                end
+
+                if leftRelative ~= nil then
+                    return true
+                end
+                if rightRelative ~= nil then
+                    return false
+                end
+
+                return leftOrder < rightOrder
+            end)
+
+            if timelineTruncated then
+                local trimmed = {}
+                local startIndex = #normalized - RECAP_TIMELINE_EVENT_LIMIT + 1
+                for i = startIndex, #normalized do
+                    trimmed[#trimmed + 1] = normalized[i]
+                end
+                normalized = trimmed
             end
 
             return normalized, timelineTruncated
@@ -3770,6 +4050,15 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.finalAmount,
                     entry.value
                 )
+                local classTokenMap = GetGroupMemberClassTokenMap()
+                local classToken = nil
+                if type(playerName) == "string" then
+                    classToken = classTokenMap[playerName:lower()]
+                    if not classToken then
+                        local shortName = playerName:match("^([^%-]+)") or playerName
+                        classToken = classTokenMap[shortName:lower()]
+                    end
+                end
                 local lookupSessionId = SafeNonNegativeNumber(
                     sourceSessionId,
                     entry.sessionId,
@@ -3813,7 +4102,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     overkill,
                     spellId,
                     source,
-                    hitAmount
+                    hitAmount,
+                    recapHealthMaxAtDeath
                 )
 
                 -- Sync the death record's timeOffset with the killing blow from the normalized timeline.
@@ -3836,6 +4126,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     playerName = playerName,
                     mechanic   = mechanic,
                     source     = source,
+                    classToken = classToken,
                     destGUID   = entry.destGUID or entry.destGuid or entry.playerGUID or entry.playerGuid,
                     sessionId  = lookupSessionId,
                     spellId    = spellId,
