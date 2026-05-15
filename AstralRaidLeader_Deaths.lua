@@ -637,7 +637,11 @@ local function BuildTimelineDetailsLine(event)
 
     local overkillText = nil
     local rawOverkill = event and event.overkill
-    if type(rawOverkill) == "number" and rawOverkill > 0 then
+    if type(rawOverkill) == "number"
+        and rawOverkill > 0
+        and type(event) == "table"
+        and event.isKillingBlow
+    then
         local overkillAmount = FormatCompactAmountOneDecimal(rawOverkill)
             or FormatCompactAmount(rawOverkill)
             or tostring(rawOverkill)
@@ -645,18 +649,28 @@ local function BuildTimelineDetailsLine(event)
     end
 
     local healthPctText = nil
-    if type(event) == "table" and type(event.healthMax) == "number" and event.healthMax > 0 then
+    if type(event) == "table" and type(event.snapshotHealthPct) == "number" then
+        local pct = math.floor(event.snapshotHealthPct + 0.5)
+        if pct < 0 then
+            pct = 0
+        elseif pct > 999 then
+            pct = 999
+        end
+        healthPctText = string.format("(%d%%)", pct)
+    end
+
+    if not healthPctText and type(event) == "table" and type(event.healthMax) == "number" and event.healthMax > 0 then
         local healthCurrent = nil
         if eventType == "damage" and type(event.healthBefore) == "number" then
             healthCurrent = event.healthBefore
         elseif eventType == "heal" and type(event.healthAfter) == "number" then
             healthCurrent = event.healthAfter
-        end
-        if type(healthCurrent) ~= "number" then
-            healthCurrent = event.healthAfter
-        end
-        if type(healthCurrent) ~= "number" then
+        elseif type(event.healthBefore) == "number" then
             healthCurrent = event.healthBefore
+        elseif type(event.healthAfter) == "number" then
+            healthCurrent = event.healthAfter
+        elseif type(event.snapshotHealthCurrent) == "number" then
+            healthCurrent = event.snapshotHealthCurrent
         end
         if type(healthCurrent) == "number" and healthCurrent >= 0 then
             local pct = math.floor(((healthCurrent / event.healthMax) * 100) + 0.5)
@@ -847,6 +861,15 @@ local function ShowDeathDetails(entry)
                 current = event.healthBefore
             end
             if type(current) ~= "number" or current < 0 then
+                if type(event.snapshotHealthPct) == "number" then
+                    local pct = math.floor(event.snapshotHealthPct + 0.5)
+                    if pct < 0 then
+                        pct = 0
+                    elseif pct > 999 then
+                        pct = 999
+                    end
+                    return string.format("%d%%", pct)
+                end
                 return nil
             end
 
@@ -885,7 +908,7 @@ local function ShowDeathDetails(entry)
     local shownRows = 0
     if type(timeline) == "table" and #timeline > 0 then
         local rowIndex = 0
-        for i = #timeline, 1, -1 do
+        for i = 1, #timeline do
             local event = timeline[i]
             rowIndex = rowIndex + 1
             local row = AcquireDetailsTimelineRow(rowIndex, popup)
@@ -1048,6 +1071,74 @@ local COLOR_SOURCE   = "|cffff8000"   -- orange
 local COLOR_TIME     = "|cff888888"   -- grey
 local COLOR_RESET    = "|r"
 
+local RAID_CLASS_COLORS = _G.RAID_CLASS_COLORS
+
+local function ColorizePlayerName(playerName, classToken)
+    local text = tostring(playerName or "Unknown")
+    if type(classToken) == "string" and RAID_CLASS_COLORS then
+        local color = RAID_CLASS_COLORS[classToken:upper()] or RAID_CLASS_COLORS[classToken:lower()]
+        if color and color.colorStr then
+            return string.format("|c%s%s|r", color.colorStr, text)
+        end
+    end
+
+    return COLOR_PLAYER .. text .. COLOR_RESET
+end
+
+local function ResolvePlayerClassToken(playerName, classToken)
+    if type(classToken) == "string" and classToken ~= "" then
+        return classToken
+    end
+
+    local name = tostring(playerName or "")
+    if name == "" then
+        return nil
+    end
+
+    local shortName = name:match("^([^%-]+)") or name
+
+    local function MatchUnit(unit)
+        if not unit or not _G.UnitExists(unit) then return nil end
+        local unitName = _G.UnitName(unit)
+        if not unitName or unitName == "" then return nil end
+        local unitShort = unitName:match("^([^%-]+)") or unitName
+        if unitName:lower() ~= name:lower() and unitShort:lower() ~= shortName:lower() then
+            return nil
+        end
+        local _, unitClassToken = _G.UnitClass(unit)
+        if unitClassToken and unitClassToken ~= "" then
+            return unitClassToken:lower()
+        end
+        return nil
+    end
+
+    if _G.IsInRaid and _G.IsInRaid() then
+        local raidSize = _G.GetNumGroupMembers() or 0
+        for i = 1, raidSize do
+            local resolved = MatchUnit("raid" .. i)
+            if resolved then
+                return resolved
+            end
+        end
+    elseif _G.IsInGroup and _G.IsInGroup() then
+        local resolved = MatchUnit("player")
+        if resolved then
+            return resolved
+        end
+
+        local partySize = _G.GetNumSubgroupMembers() or 0
+        for i = 1, partySize do
+            resolved = MatchUnit("party" .. i)
+            if resolved then
+                return resolved
+            end
+        end
+    end
+
+    return nil
+end
+
+
 local function IsMissingMechanicName(value)
     if type(value) ~= "string" then
         return not value
@@ -1062,9 +1153,9 @@ local function BuildDeathLine(i, entry)
     local shownTime = tostring((entry and entry.timeStr) or "?:??")
 
     local prefix = string.format(
-        "%2d. %s%s%s  died to",
+        "%2d. %s  died to",
         i,
-        COLOR_PLAYER, playerName, COLOR_RESET
+        ColorizePlayerName(playerName, ResolvePlayerClassToken(playerName, entry and entry.classToken))
     )
 
     local spellId = entry and entry.spellId
