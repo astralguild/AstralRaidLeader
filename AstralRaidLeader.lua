@@ -2838,11 +2838,14 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     )
                     if type(snapshotHealthPct) ~= "number" then
                         local indexedHealthPct = SafeNumber(eventData[5])
-                        if type(indexedHealthPct) == "number"
-                            and indexedHealthPct >= 0
-                            and indexedHealthPct <= 100
-                        then
-                            snapshotHealthPct = indexedHealthPct
+                        if type(indexedHealthPct) == "number" and indexedHealthPct >= 0 then
+                            if indexedHealthPct <= 100 then
+                                snapshotHealthPct = indexedHealthPct
+                            else
+                                -- Details clamps event[5] * 100 to 100 when this field carries
+                                -- absolute-like values; mirror that behavior instead of discarding.
+                                snapshotHealthPct = 100
+                            end
                         end
                     end
                     if type(snapshotHealthPct) ~= "number"
@@ -2858,8 +2861,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         end
                         if snapshotHealthPct < 0 then
                             snapshotHealthPct = 0
-                        elseif snapshotHealthPct > 999 then
-                            snapshotHealthPct = 999
+                        elseif snapshotHealthPct > 100 then
+                            snapshotHealthPct = 100
                         end
                     else
                         snapshotHealthPct = nil

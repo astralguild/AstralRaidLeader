@@ -650,11 +650,11 @@ local function BuildTimelineDetailsLine(event)
 
     local healthPctText = nil
     if type(event) == "table" and type(event.snapshotHealthPct) == "number" then
-        local pct = math.floor(event.snapshotHealthPct + 0.5)
+        local pct = math.floor(event.snapshotHealthPct)
         if pct < 0 then
             pct = 0
-        elseif pct > 999 then
-            pct = 999
+        elseif pct > 100 then
+            pct = 100
         end
         healthPctText = string.format("(%d%%)", pct)
     end
@@ -672,11 +672,11 @@ local function BuildTimelineDetailsLine(event)
             and type(snapshotMax) == "number"
             and snapshotMax > 0
         then
-            local pct = math.floor(((snapshotCurrent / snapshotMax) * 100) + 0.5)
+            local pct = math.floor((snapshotCurrent / snapshotMax) * 100)
             if pct < 0 then
                 pct = 0
-            elseif pct > 999 then
-                pct = 999
+            elseif pct > 100 then
+                pct = 100
             end
             healthPctText = string.format("(%d%%)", pct)
         end
@@ -696,11 +696,11 @@ local function BuildTimelineDetailsLine(event)
             healthCurrent = event.snapshotHealthCurrent
         end
         if type(healthCurrent) == "number" and healthCurrent >= 0 then
-            local pct = math.floor(((healthCurrent / event.healthMax) * 100) + 0.5)
+            local pct = math.floor((healthCurrent / event.healthMax) * 100)
             if pct < 0 then
                 pct = 0
-            elseif pct > 999 then
-                pct = 999
+            elseif pct > 100 then
+                pct = 100
             end
             healthPctText = string.format("(%d%%)", pct)
         end
@@ -885,11 +885,11 @@ local function ShowDeathDetails(entry)
             end
             if type(current) ~= "number" or current < 0 then
                 if type(event.snapshotHealthPct) == "number" then
-                    local pct = math.floor(event.snapshotHealthPct + 0.5)
+                    local pct = math.floor(event.snapshotHealthPct)
                     if pct < 0 then
                         pct = 0
-                    elseif pct > 999 then
-                        pct = 999
+                    elseif pct > 100 then
+                        pct = 100
                     end
                     return string.format("%d%%", pct)
                 end
