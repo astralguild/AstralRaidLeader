@@ -23,6 +23,7 @@ local IsGuildGroup = _G.IsGuildGroup
 local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
 local UnitInRaid = _G.UnitInRaid
+local UnitClass = _G.UnitClass
 
 -- ============================================================
 -- Defaults
@@ -2829,8 +2830,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         eventData.targetMaxHealth,
                         eventData.maxHP
                     )
-                    local snapshotHealthPct = nil
-                    snapshotHealthPct = SafeNumber(
+                    local snapshotHealthPct = SafeNumber(
                         eventData.healthPercent,
                         eventData.currentHealthPercent,
                         eventData.healthPct,

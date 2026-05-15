@@ -659,6 +659,29 @@ local function BuildTimelineDetailsLine(event)
         healthPctText = string.format("(%d%%)", pct)
     end
 
+    if not healthPctText and type(event) == "table" then
+        local snapshotCurrent = type(event.snapshotHealthCurrent) == "number"
+            and event.snapshotHealthCurrent or nil
+        local snapshotMax = type(event.snapshotHealthMax) == "number"
+            and event.snapshotHealthMax or nil
+        if type(snapshotMax) ~= "number" or snapshotMax <= 0 then
+            snapshotMax = type(event.healthMax) == "number" and event.healthMax or nil
+        end
+        if type(snapshotCurrent) == "number"
+            and snapshotCurrent >= 0
+            and type(snapshotMax) == "number"
+            and snapshotMax > 0
+        then
+            local pct = math.floor(((snapshotCurrent / snapshotMax) * 100) + 0.5)
+            if pct < 0 then
+                pct = 0
+            elseif pct > 999 then
+                pct = 999
+            end
+            healthPctText = string.format("(%d%%)", pct)
+        end
+    end
+
     if not healthPctText and type(event) == "table" and type(event.healthMax) == "number" and event.healthMax > 0 then
         local healthCurrent = nil
         if eventType == "damage" and type(event.healthBefore) == "number" then
