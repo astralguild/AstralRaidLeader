@@ -4053,10 +4053,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 local classTokenMap = GetGroupMemberClassTokenMap()
                 local classToken = nil
                 if type(playerName) == "string" then
-                    classToken = classTokenMap[playerName:lower()]
+                    classToken = classTokenMap[string.lower(playerName)]
                     if not classToken then
-                        local shortName = playerName:match("^([^%-]+)") or playerName
-                        classToken = classTokenMap[shortName:lower()]
+                        local shortName = string.match(playerName, "^([^%-]+)") or playerName
+                        classToken = classTokenMap[string.lower(shortName)]
                     end
                 end
                 local lookupSessionId = SafeNonNegativeNumber(
