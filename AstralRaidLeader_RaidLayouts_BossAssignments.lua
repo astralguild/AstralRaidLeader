@@ -208,10 +208,8 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
                                 rightSet[canonicalName:lower()] = true
                             end
                         end
-                    elseif trimmedLine == "" then
-                        -- blank line inside section — keep reading
-                    else
-                        -- any other non-blank, non-Left, non-Right line ends the section
+                    elseif trimmedLine ~= "" then
+                        -- any other non-blank line ends the section
                         inP3Sides = false
                     end
                 end
