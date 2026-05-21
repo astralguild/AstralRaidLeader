@@ -85,7 +85,7 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
     if difficultyToken ~= "mythic" then
         return nil
     end
-    if numericEncounterID ~= 3306 and numericEncounterID ~= 3180 then
+    if numericEncounterID ~= 3306 and numericEncounterID ~= 3180 and numericEncounterID ~= 3183 then
         return nil
     end
 
@@ -174,6 +174,62 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
                 soakLabel = "soak_2",
                 targetGroups = { 2, 4 },
                 names = laneB,
+            }
+        end
+    elseif numericEncounterID == 3183 then
+        -- Midnight: parse "P3 Sides" section for Left / Right lane assignments.
+        local leftSet = {}
+        local rightSet = {}
+        local inP3Sides = false
+
+        for line in normalizedBody:gmatch("[^\n]+") do
+            local trimmedLine = Trim(line)
+            if trimmedLine:match("^[Pp]3%s+[Ss]ides%s*$") then
+                inP3Sides = true
+            elseif inP3Sides then
+                local sideLabel, rawNames = trimmedLine:match("^([Ll]eft)%s*:%s*(.-)%s*$")
+                if sideLabel and rawNames then
+                    for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                        local fullKey = parsedName:lower()
+                        local shortKey = GetShortName(parsedName):lower()
+                        local canonicalName = inviteLookup[fullKey] or inviteLookup[shortKey]
+                        if canonicalName and ClaimCanonicalName(canonicalName) then
+                            leftSet[canonicalName:lower()] = true
+                        end
+                    end
+                else
+                    sideLabel, rawNames = trimmedLine:match("^([Rr]ight)%s*:%s*(.-)%s*$")
+                    if sideLabel and rawNames then
+                        for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                            local fullKey = parsedName:lower()
+                            local shortKey = GetShortName(parsedName):lower()
+                            local canonicalName = inviteLookup[fullKey] or inviteLookup[shortKey]
+                            if canonicalName and ClaimCanonicalName(canonicalName) then
+                                rightSet[canonicalName:lower()] = true
+                            end
+                        end
+                    elseif trimmedLine ~= "" then
+                        -- any other non-blank line ends the section
+                        inP3Sides = false
+                    end
+                end
+            end
+        end
+
+        local leftNames  = BuildOrderedNamesFromSet(leftSet)
+        local rightNames = BuildOrderedNamesFromSet(rightSet)
+        if #leftNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel    = "side_left",
+                targetGroups = { 1, 3 },
+                names        = leftNames,
+            }
+        end
+        if #rightNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel    = "side_right",
+                targetGroups = { 2, 4 },
+                names        = rightNames,
             }
         end
     elseif numericEncounterID == 3180 then
