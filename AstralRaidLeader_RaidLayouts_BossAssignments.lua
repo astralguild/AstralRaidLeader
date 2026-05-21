@@ -341,6 +341,34 @@ function ARL.RaidLayoutBossAssignments.BuildRaidLayoutGroupsFromHints(rawInvitel
         return nil
     end
 
+    local function PickAssignmentTarget(targetGroups, assignmentTankCounts, preferTankSpread)
+        if preferTankSpread and type(targetGroups) == "table" and #targetGroups > 0 then
+            local bestGroup
+            local bestTankCount
+            local bestSize
+            for _, groupIndex in ipairs(targetGroups) do
+                local group = groups[groupIndex] or {}
+                local groupSize = #group
+                if groupSize < 5 then
+                    local tankCount = assignmentTankCounts[groupIndex] or 0
+                    if not bestGroup
+                        or tankCount < bestTankCount
+                        or (tankCount == bestTankCount and groupSize < bestSize)
+                    then
+                        bestGroup = groupIndex
+                        bestTankCount = tankCount
+                        bestSize = groupSize
+                    end
+                end
+            end
+            if bestGroup then
+                return bestGroup
+            end
+        end
+
+        return AddToFirstAvailable(targetGroups)
+    end
+
     local normalizedAssignments = {}
     if type(hints) == "table" and hints.kind == "soak_assignments" then
         normalizedAssignments = hints.assignments or {}
@@ -370,19 +398,25 @@ function ARL.RaidLayoutBossAssignments.BuildRaidLayoutGroupsFromHints(rawInvitel
             end
         end
 
-        local ordered = {}
-        for _, name in ipairs(tanks) do
-            ordered[#ordered + 1] = name
-        end
-        for _, name in ipairs(healers) do
-            ordered[#ordered + 1] = name
-        end
-        for _, name in ipairs(others) do
-            ordered[#ordered + 1] = name
+        local assignmentTankCounts = {}
+
+        for _, playerName in ipairs(tanks) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, true)
+            if target then
+                AddToGroup(target, playerName)
+                assignmentTankCounts[target] = (assignmentTankCounts[target] or 0) + 1
+            end
         end
 
-        for _, playerName in ipairs(ordered) do
-            local target = AddToFirstAvailable(targetGroups)
+        for _, playerName in ipairs(healers) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, false)
+            if target then
+                AddToGroup(target, playerName)
+            end
+        end
+
+        for _, playerName in ipairs(others) do
+            local target = PickAssignmentTarget(targetGroups, assignmentTankCounts, false)
             if target then
                 AddToGroup(target, playerName)
             end
