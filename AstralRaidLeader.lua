@@ -4056,7 +4056,8 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 local rawClassToken = entry.classFilename or entry.classToken or entry.class or entry.playerClass
                 if type(rawClassToken) == "string" and rawClassToken ~= "" then
                     local upperClassToken = string.upper(rawClassToken)
-                    if RAID_CLASS_COLORS and RAID_CLASS_COLORS[upperClassToken] then
+                    local raidClassColors = _G.RAID_CLASS_COLORS
+                    if raidClassColors and raidClassColors[upperClassToken] then
                         classToken = string.lower(upperClassToken)
                     end
                 end
