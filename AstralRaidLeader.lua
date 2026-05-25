@@ -285,6 +285,8 @@ local function GetGroupMemberClassTokenMap()
 
         local shortName = name:match("^([^%-]+)") or name
         local lowerClassToken = tostring(classToken):lower()
+        members[shortName] = lowerClassToken
+        members[name] = lowerClassToken
         members[shortName:lower()] = lowerClassToken
         members[name:lower()] = lowerClassToken
     end
@@ -4050,14 +4052,18 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     entry.finalAmount,
                     entry.value
                 )
-                local classTokenMap = GetGroupMemberClassTokenMap()
                 local classToken = nil
-                if type(playerName) == "string" then
-                    classToken = classTokenMap[string.lower(playerName)]
-                    if not classToken then
-                        local shortName = string.match(playerName, "^([^%-]+)") or playerName
-                        classToken = classTokenMap[string.lower(shortName)]
+                local rawClassToken = entry.classFilename or entry.classToken or entry.class or entry.playerClass
+                if type(rawClassToken) == "string" and rawClassToken ~= "" then
+                    local upperClassToken = string.upper(rawClassToken)
+                    local raidClassColors = _G.RAID_CLASS_COLORS
+                    if raidClassColors and raidClassColors[upperClassToken] then
+                        classToken = string.lower(upperClassToken)
                     end
+                end
+                if not classToken and type(playerName) == "string" and playerName ~= "" then
+                    local classTokenMap = GetGroupMemberClassTokenMap()
+                    classToken = classTokenMap[playerName]
                 end
                 local lookupSessionId = SafeNonNegativeNumber(
                     sourceSessionId,
