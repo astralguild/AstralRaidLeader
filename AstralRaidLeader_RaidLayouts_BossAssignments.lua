@@ -221,14 +221,14 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         if #leftNames > 0 then
             assignments[#assignments + 1] = {
                 soakLabel    = "side_left",
-                targetGroups = { 1, 3 },
+                targetGroups = { 1, 2 },
                 names        = leftNames,
             }
         end
         if #rightNames > 0 then
             assignments[#assignments + 1] = {
                 soakLabel    = "side_right",
-                targetGroups = { 2, 4 },
+                targetGroups = { 3, 4 },
                 names        = rightNames,
             }
         end
