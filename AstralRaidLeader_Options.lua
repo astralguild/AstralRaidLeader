@@ -2349,13 +2349,59 @@ for groupIndex = 1, 8 do
                 UpdateOptionsKeyboardCapture()
                 return
             end
+            -- If in move mode and clicking a different player, swap them
+            if raidEditorDrag and raidEditorDrag.name ~= playerName then
+                local draggedName = raidEditorDrag.name
+                local draggedFromGroup = raidEditorDrag.fromGroup
+                local targetGroup = self._groupIndex
+
+                -- Find the dragged player's slot in their source group
+                local draggedSlot = nil
+                for s = 1, 5 do
+                    if raidEditorState.groups[draggedFromGroup][s]
+                        == draggedName
+                    then
+                        draggedSlot = s
+                        break
+                    end
+                end
+
+                -- Find the target player's slot in their group
+                local targetSlot = nil
+                for s = 1, 5 do
+                    if raidEditorState.groups[targetGroup][s]
+                        == playerName
+                    then
+                        targetSlot = s
+                        break
+                    end
+                end
+
+                if draggedSlot and targetSlot then
+                    -- Perform the swap
+                    raidEditorState.groups[draggedFromGroup][draggedSlot]
+                        = playerName
+                    raidEditorState.groups[targetGroup][targetSlot]
+                        = draggedName
+                    Print(string.format(
+                        "Swapped %s and %s.",
+                        draggedName,
+                        playerName
+                    ))
+                end
+
+                raidEditorDrag = nil
+                RefreshRaidEditorBoard()
+                UpdateOptionsKeyboardCapture()
+                return
+            end
             raidEditorDrag = {
                 name = playerName,
                 fromGroup = self._groupIndex,
             }
             RefreshRaidEditorBoard()
             UpdateOptionsKeyboardCapture()
-            Print("Picked up " .. playerName .. ". Click a group header to drop.")
+            Print("Picked up " .. playerName .. ". Click a group header to drop or another player to swap.")
         end)
     end
 end
