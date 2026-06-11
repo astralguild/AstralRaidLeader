@@ -121,7 +121,8 @@ function ARL.OptionsBuilders.BuildRaidGroupsLayoutsPanel(deps)
     raidGroupsUI.editorHelp:SetJustifyH("LEFT")
     raidGroupsUI.editorHelp:SetText(
         "Plan subgroup assignments here. Left-click a player to pick up,"
-            .. " click a group header to drop, right-click to remove."
+            .. " click a group header to drop, click another player to swap,"
+            .. " or right-click to remove."
     )
 
     raidGroupsUI.editorStatusText = raidEditorSection:CreateFontString(
