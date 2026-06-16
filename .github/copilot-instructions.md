@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, raid group layouts, guild rank priority, and death recaps. Target interface version: `120005` (Midnight).
+AstralRaidLeader is a **World of Warcraft (Retail) addon** written in Lua. It manages automatic raid leader hand-offs, consumable audits, raid group layouts, guild rank priority, and death recaps. Target interface version: `120007` (Midnight).
 
 ### File Layout
 
