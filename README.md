@@ -197,7 +197,7 @@ WTF/Account/<account>/SavedVariables/AstralRaidLeader.lua
 
 ## Compatibility
 
-Targets **WoW Retail** (Interface `120005`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.
+Targets **WoW Retail** (Interface `120007`, Midnight). The addon uses standard group/raid APIs plus modern Retail APIs for consumable auditing and death recap.
 
 ## Release workflow
 
