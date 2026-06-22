@@ -4243,9 +4243,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return table.concat({
             tostring(SafeNonNegativeNumber(entry.sessionId) or 0),
             tostring(entry.destGUID or ""),
-            tostring((tostring(entry.playerName or "")):lower()),
-            tostring((tostring(entry.mechanic or "")):lower()),
-            tostring((tostring(entry.source or "")):lower()),
+            tostring(string.lower(tostring(entry.playerName or ""))),
+            tostring(string.lower(tostring(entry.mechanic or ""))),
+            tostring(string.lower(tostring(entry.source or ""))),
             tostring(SafeNonNegativeNumber(entry.spellId) or 0),
             tostring(SafeNonNegativeNumber(entry.hitAmount) or 0),
             tostring(SafeNonNegativeNumber(entry.overkill) or 0),
