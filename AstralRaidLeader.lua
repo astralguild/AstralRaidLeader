@@ -82,12 +82,30 @@ local SYSTEM_CONSUMABLES = {
 
 local function Print(msg)
     if ARL.db and ARL.db.quietMode then return end
-    print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
+    local ok, text = pcall(function()
+        return tostring(msg)
+    end)
+    print("|cff00ccff[AstralRaidLeader]|r " .. ((ok and type(text) == "string") and text or ""))
+end
+
+local function SafeToString(value, fallback)
+    if value == nil then
+        return fallback or ""
+    end
+
+    local ok, text = pcall(function()
+        return tostring(value)
+    end)
+    if ok and type(text) == "string" then
+        return text
+    end
+
+    return fallback or ""
 end
 
 local function Trim(value)
     if value == nil then return "" end
-    return tostring(value):match("^%s*(.-)%s*$")
+    return SafeToString(value):match("^%s*(.-)%s*$")
 end
 
 local function GetShortName(name)
@@ -2296,14 +2314,14 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
     local targetName = playerUnitName ~= "" and playerUnitName or "player"
     local playerDestGUID = ""
     if type(_G.UnitGUID) == "function" then
-        playerDestGUID = tostring(_G.UnitGUID("player") or "")
+        playerDestGUID = SafeToString(_G.UnitGUID("player") or "")
     end
 
     local matchedEntry = nil
     if type(deaths) == "table" then
         if playerDestGUID ~= "" then
             for _, entry in ipairs(deaths) do
-                local entryGUID = tostring(entry and entry.destGUID or "")
+                local entryGUID = SafeToString(entry and entry.destGUID or "")
                 if entryGUID ~= "" and entryGUID == playerDestGUID then
                     matchedEntry = entry
                     break
@@ -2336,7 +2354,7 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
 
     local destGUID = playerDestGUID
     if destGUID == "" then
-        destGUID = tostring(matchedEntry.destGUID or "")
+        destGUID = SafeToString(matchedEntry.destGUID or "")
     end
 
     local sessionCandidates = {}
@@ -2531,7 +2549,7 @@ local function CaptureArmedDeathDebugPayload(encounterName, encounterID, deaths)
     local firstEventFields = {}
     if type(payload[1]) == "table" then
         for k, v in pairs(payload[1]) do
-            firstEventFields[tostring(k)] = tostring(v)
+            firstEventFields[SafeToString(k)] = SafeToString(v)
         end
     end
     ARL.deathDebugLastPayload.firstEventFields = firstEventFields
@@ -2716,7 +2734,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         end
         for eventIndex, eventData in ipairs(events) do
             if type(eventData) == "table" then
-                local eventToken = string.upper(tostring(
+                local eventToken = string.upper(SafeToString(
                     eventData.event
                     or eventData.eventType
                     or eventData.logEvent
@@ -2944,7 +2962,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             if eventType == "SWING_DAMAGE" then
                 mechanic = _G.ACTION_SWING or "Melee"
             elseif eventType == "ENVIRONMENTAL_DAMAGE" then
-                local envType = string.upper(tostring(eventData.environmentalType or ""))
+                local envType = string.upper(SafeToString(eventData.environmentalType or ""))
                 mechanic = _G["ACTION_ENVIRONMENTAL_DAMAGE_" .. envType] or "Environmental"
             else
                 mechanic = eventType or nil
@@ -3281,7 +3299,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 if okCompare then
                     return result
                 end
-                return tostring(left) < tostring(right)
+                return SafeToString(left) < SafeToString(right)
             end)
 
             if #normalized == 0 then
@@ -3380,14 +3398,14 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                     return true
                 end
 
-                local token = tostring(event.eventToken or "")
+                local token = SafeToString(event.eventToken or "")
                 return token:find("DAMAGE", 1, true) ~= nil
             end
 
             local function SelectKillingEventIndex()
                 local fallbackOffset = NormalizeAnchorOffset(fallbackAnchorOffset)
                 local fallbackSpell = SafeNonNegativeNumber(fallbackSpellId)
-                local fallbackSrc = tostring(fallbackSource or ""):lower()
+                local fallbackSrc = SafeToString(fallbackSource or ""):lower()
                 local fallbackHit = SafeNonNegativeNumber(fallbackAmount)
                 local bestIndex = nil
                 local bestTier = -1
@@ -3407,7 +3425,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                         and type(event.amount) == "number"
                         and event.amount > 0
                     local eventSpell = SafeNonNegativeNumber(event and event.spellId)
-                    local eventSrc = tostring(event and event.source or ""):lower()
+                    local eventSrc = SafeToString(event and event.source or ""):lower()
                     local eventAmt = SafeNonNegativeNumber(event and event.amount)
                     local recapSpellMatch = fallbackSpell and fallbackSpell > 0
                         and eventSpell and eventSpell == fallbackSpell
@@ -4163,7 +4181,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             if okCompare then
                 return result
             end
-            return tostring(left) < tostring(right)
+            return SafeToString(left) < SafeToString(right)
         end)
         return parsed
     end
@@ -4229,6 +4247,26 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
         return {}
     end
 
+    local function SafeString(value)
+        return SafeToString(value)
+    end
+
+    local function SafeLowerString(value)
+        local text = SafeString(value)
+        if text == "" then
+            return ""
+        end
+
+        local ok, lowered = pcall(function()
+            return string.lower(text)
+        end)
+        if ok and type(lowered) == "string" then
+            return lowered
+        end
+
+        return ""
+    end
+
     local function BuildDeathEntryFingerprint(entry)
         if type(entry) ~= "table" then
             return ""
@@ -4242,10 +4280,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
         return table.concat({
             tostring(SafeNonNegativeNumber(entry.sessionId) or 0),
-            tostring(entry.destGUID or ""),
-            tostring(string.lower(tostring(entry.playerName or ""))),
-            tostring(string.lower(tostring(entry.mechanic or ""))),
-            tostring(string.lower(tostring(entry.source or ""))),
+            SafeString(entry.destGUID),
+            SafeLowerString(entry.playerName),
+            SafeLowerString(entry.mechanic),
+            SafeLowerString(entry.source),
             tostring(SafeNonNegativeNumber(entry.spellId) or 0),
             tostring(SafeNonNegativeNumber(entry.hitAmount) or 0),
             tostring(SafeNonNegativeNumber(entry.overkill) or 0),
@@ -4258,7 +4296,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             local left = SafeNumber(a and a.timeOffset)
             local right = SafeNumber(b and b.timeOffset)
             if left == nil and right == nil then
-                return tostring(a and a.playerName or "") < tostring(b and b.playerName or "")
+                return SafeString(a and a.playerName) < SafeString(b and b.playerName)
             end
             if left == nil then return false end
             if right == nil then return true end
@@ -4270,7 +4308,7 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
                 return result
             end
 
-            return tostring(a and a.playerName or "") < tostring(b and b.playerName or "")
+            return SafeString(a and a.playerName) < SafeString(b and b.playerName)
         end)
     end
 

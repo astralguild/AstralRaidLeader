@@ -61,7 +61,57 @@ local function ResolveSpellNameAndIcon(spellId)
 end
 
 local function Print(msg)
-    print("|cff00ccff[AstralRaidLeader]|r " .. tostring(msg))
+    local ok, text = pcall(function()
+        return tostring(msg)
+    end)
+    print("|cff00ccff[AstralRaidLeader]|r " .. ((ok and type(text) == "string") and text or ""))
+end
+
+local function SafeToString(value, fallback)
+    if value == nil then
+        return fallback or ""
+    end
+
+    local ok, text = pcall(function()
+        return tostring(value)
+    end)
+    if ok and type(text) == "string" then
+        return text
+    end
+
+    return fallback or ""
+end
+
+local function SafeLowerString(value)
+    local text = SafeToString(value)
+    if text == "" then
+        return ""
+    end
+
+    local ok, lowered = pcall(function()
+        return string.lower(text)
+    end)
+    if ok and type(lowered) == "string" then
+        return lowered
+    end
+
+    return ""
+end
+
+local function SafeShortName(value)
+    local text = SafeToString(value)
+    if text == "" then
+        return ""
+    end
+
+    local ok, short = pcall(function()
+        return text:match("^([^%-]+)") or text
+    end)
+    if ok and type(short) == "string" then
+        return short
+    end
+
+    return text
 end
 
 -- ============================================================
@@ -299,7 +349,7 @@ local DEATH_ROW_HEIGHT = 18
 local selectedRecapIndex = 1
 
 local function FormatRecapDifficulty(value)
-    local text = tostring(value or "")
+    local text = SafeToString(value or "")
     if text == "" then
         return "Unknown"
     end
@@ -603,11 +653,11 @@ local function EnsureDetailsFrame()
 end
 
 local function BuildTimelineDetailsLine(event)
-    local eventType = tostring((event and event.eventType) or "")
-    local eventToken = tostring((event and event.eventToken) or "")
+    local eventType = SafeToString((event and event.eventType) or "")
+    local eventToken = SafeToString((event and event.eventToken) or "")
     local shownTime = "?.?s"
     if type(event) == "table" then
-        shownTime = tostring(event.relativeTimeStr or event.timeStr or "?.?s")
+        shownTime = SafeToString(event.relativeTimeStr or event.timeStr or "?.?s")
     end
 
     local spellName = event and event.spellName
@@ -619,7 +669,7 @@ local function BuildTimelineDetailsLine(event)
         spellName = "Unknown"
     end
 
-    local sourceName = tostring((event and event.source) or "Unknown")
+    local sourceName = SafeToString((event and event.source) or "Unknown")
     local amountText = nil
     local rawAmount = event and event.amount
     if type(rawAmount) == "number" and rawAmount > 0 then
@@ -831,7 +881,7 @@ local function ShowDeathDetails(entry)
         return
     end
 
-    local playerName = tostring(entry.playerName or "Unknown")
+    local playerName = SafeToString(entry.playerName or "Unknown")
     if popup.titleText then
         popup.titleText:SetText("Death Details - " .. playerName)
     end
@@ -840,8 +890,8 @@ local function ShowDeathDetails(entry)
     if type(entry) ~= "table" or entry.timeOffset == nil then
         shownTime = "?.?s"
     end
-    local mechanicName = tostring(entry.mechanic or "Unknown")
-    local sourceName = tostring(entry.source or "Unknown")
+    local mechanicName = SafeToString(entry.mechanic or "Unknown")
+    local sourceName = SafeToString(entry.source or "Unknown")
     local summary = string.format(
         "%s died to %s (from %s) at %s relative to kill.",
         playerName,
@@ -1097,9 +1147,10 @@ local COLOR_RESET    = "|r"
 local RAID_CLASS_COLORS = _G.RAID_CLASS_COLORS
 
 local function ColorizePlayerName(playerName, classToken)
-    local text = tostring(playerName or "Unknown")
-    if type(classToken) == "string" and RAID_CLASS_COLORS then
-        local color = RAID_CLASS_COLORS[classToken:upper()] or RAID_CLASS_COLORS[classToken:lower()]
+    local text = SafeToString(playerName or "Unknown")
+    if RAID_CLASS_COLORS then
+        local classKey = SafeToString(classToken)
+        local color = RAID_CLASS_COLORS[string.upper(classKey)] or RAID_CLASS_COLORS[string.lower(classKey)]
         if color and color.colorStr then
             return string.format("|c%s%s|r", color.colorStr, text)
         end
@@ -1109,28 +1160,31 @@ local function ColorizePlayerName(playerName, classToken)
 end
 
 local function ResolvePlayerClassToken(playerName, classToken)
-    if type(classToken) == "string" and classToken ~= "" then
-        return classToken
+    local normalizedToken = SafeLowerString(classToken)
+    if normalizedToken ~= "" then
+        return normalizedToken
     end
 
-    local name = tostring(playerName or "")
+    local name = SafeToString(playerName or "")
     if name == "" then
         return nil
     end
 
-    local shortName = name:match("^([^%-]+)") or name
+    local shortName = SafeShortName(name)
+    local nameLower = SafeLowerString(name)
+    local shortLower = SafeLowerString(shortName)
 
     local function MatchUnit(unit)
         if not unit or not _G.UnitExists(unit) then return nil end
         local unitName = _G.UnitName(unit)
         if not unitName or unitName == "" then return nil end
-        local unitShort = unitName:match("^([^%-]+)") or unitName
-        if unitName:lower() ~= name:lower() and unitShort:lower() ~= shortName:lower() then
+        local unitShort = SafeShortName(unitName)
+        if SafeLowerString(unitName) ~= nameLower and SafeLowerString(unitShort) ~= shortLower then
             return nil
         end
         local _, unitClassToken = _G.UnitClass(unit)
         if unitClassToken and unitClassToken ~= "" then
-            return unitClassToken:lower()
+            return SafeLowerString(unitClassToken)
         end
         return nil
     end
@@ -1171,9 +1225,9 @@ local function IsMissingMechanicName(value)
 end
 
 local function BuildDeathLine(i, entry)
-    local playerName = tostring((entry and entry.playerName) or "Unknown")
-    local sourceName = tostring((entry and entry.source) or "Unknown")
-    local shownTime = tostring((entry and entry.timeStr) or "?:??")
+    local playerName = SafeToString((entry and entry.playerName) or "Unknown")
+    local sourceName = SafeToString((entry and entry.source) or "Unknown")
+    local shownTime = SafeToString((entry and entry.timeStr) or "?:??")
 
     local prefix = string.format(
         "%2d. %s  died to",
