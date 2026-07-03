@@ -201,7 +201,7 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
         return false
     end
 
-    local assignments = nil
+    local assignments
     local bossAssignmentHelpers = ARL.RaidLayoutBossAssignments
     if bossAssignmentHelpers and bossAssignmentHelpers.GetAssignmentsForHints then
         local modeOverrides = type(ARL.db) == "table" and ARL.db.raidGroupAssignmentModes or nil
