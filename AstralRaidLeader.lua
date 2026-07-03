@@ -4253,10 +4253,9 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
     local function SafeLowerString(value)
         local text = SafeString(value)
-        if text == "" then
-            return ""
-        end
-
+        -- Do NOT compare 'text' to "" here — it may be a secret/tainted string from
+        -- C_DamageMeter which crashes on any == / ~= comparison with a literal.
+        -- string.lower("") == "" anyway, so skip the guard entirely.
         local ok, lowered = pcall(function()
             return string.lower(text)
         end)
@@ -4296,7 +4295,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
             local left = SafeNumber(a and a.timeOffset)
             local right = SafeNumber(b and b.timeOffset)
             if left == nil and right == nil then
-                return SafeString(a and a.playerName) < SafeString(b and b.playerName)
+                local okCmp, cmpResult = pcall(function()
+                    return SafeString(a and a.playerName) < SafeString(b and b.playerName)
+                end)
+                return okCmp and cmpResult or false
             end
             if left == nil then return false end
             if right == nil then return true end
@@ -4342,7 +4344,10 @@ local function BuildDeathsFromDamageMeter(encounterIDForLookup)
 
         for _, entry in ipairs(deaths) do
             local fingerprint = BuildDeathEntryFingerprint(entry)
-            if fingerprint ~= "" and not seenFingerprints[fingerprint] then
+            -- fingerprint may be a tainted string if any concat'd field was tainted;
+            -- use pcall to guard the ~= "" comparison.
+            local okFp, fingerprintNonEmpty = pcall(function() return fingerprint ~= "" end)
+            if okFp and fingerprintNonEmpty and not seenFingerprints[fingerprint] then
                 seenFingerprints[fingerprint] = true
                 mergedDeaths[#mergedDeaths + 1] = entry
             end
