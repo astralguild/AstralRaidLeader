@@ -249,6 +249,10 @@ function ARL.OptionsBuilders.BindRaidGroupsLogic(deps)
     splitRaidLayoutButton:SetScript("OnClick", function()
         local summary = SplitRaidEditorGroups and SplitRaidEditorGroups()
         RefreshRaidEditorBoard()
+        if summary and summary.appliedBossAssignments then
+            Print("Split draft applied the configured boss assignment layout.")
+            return
+        end
         if summary and summary.total and summary.total > 0 then
             local unknownSuffix = ""
             if (summary.unknown or 0) > 0 then

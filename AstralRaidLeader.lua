@@ -51,6 +51,7 @@ local DEFAULTS = {
     raidGroupShowMissingNames = true, -- include missing player names in the apply completion message
     raidGroupAutoApplyOnJoin  = false, -- automatically re-apply the selected layout when a raid member joins
     raidGroupInviteMissingPlayers = false, -- invite listed players who are not already in the raid when applying
+    raidGroupAssignmentModes = {}, -- per-encounter assignment split mode overrides
     -- Death tracking
     deathTrackingEnabled   = true,  -- record deaths during raid encounters
     deathGroupTypeFilter   = {
@@ -227,6 +228,9 @@ local function InitDB()
     end
     if type(ARL.db.deathGroupTypeFilter) ~= "table" then
         ARL.db.deathGroupTypeFilter = MigrateFilter(ARL.db.deathGroupTypeFilter)
+    end
+    if type(ARL.db.raidGroupAssignmentModes) ~= "table" then
+        ARL.db.raidGroupAssignmentModes = {}
     end
 
     if type(ARL.db.deathRecapHistory) ~= "table" then
@@ -633,7 +637,15 @@ local function BuildRaidLayoutProfile(input)
         and bossAssignmentHelpers
         and bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints
     then
-        groups, invitelist = bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints(invitelist, assignmentHints)
+        local shouldApplyHints = true
+        if bossAssignmentHelpers.GetAssignmentsForHints then
+            local modeOverrides = type(ARL.db) == "table" and ARL.db.raidGroupAssignmentModes or nil
+            local resolved = bossAssignmentHelpers.GetAssignmentsForHints(assignmentHints, modeOverrides)
+            shouldApplyHints = type(resolved) == "table" and #resolved > 0
+        end
+        if shouldApplyHints then
+            groups, invitelist = bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints(invitelist, assignmentHints)
+        end
     end
 
     local overfullGroups = GetOverfullRaidLayoutGroups(groups)

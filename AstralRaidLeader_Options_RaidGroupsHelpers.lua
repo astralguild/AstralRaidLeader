@@ -201,8 +201,12 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
         return false
     end
 
-    local assignments
-    if hints.kind == "soak_assignments" and type(hints.assignments) == "table" then
+    local assignments = nil
+    local bossAssignmentHelpers = ARL.RaidLayoutBossAssignments
+    if bossAssignmentHelpers and bossAssignmentHelpers.GetAssignmentsForHints then
+        local modeOverrides = type(ARL.db) == "table" and ARL.db.raidGroupAssignmentModes or nil
+        assignments = bossAssignmentHelpers.GetAssignmentsForHints(hints, modeOverrides)
+    elseif hints.kind == "soak_assignments" and type(hints.assignments) == "table" then
         assignments = hints.assignments
     elseif hints.kind == "chimaerus_soaks" then
         assignments = {
@@ -210,6 +214,10 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
             { targetGroups = { 2, 4 }, names = hints.laneB or {} },
         }
     else
+        return false
+    end
+
+    if type(assignments) ~= "table" then
         return false
     end
 
