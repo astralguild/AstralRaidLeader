@@ -1053,15 +1053,25 @@ if not raidGroupsSettingsBuilder then
     return
 end
 
+local assignmentModeHelpers = ARL.RaidLayoutBossAssignments or {}
+local assignmentModeCatalog = assignmentModeHelpers.GetAssignmentModeCatalog
+    and assignmentModeHelpers.GetAssignmentModeCatalog() or {}
+
 local raidGroupsSettingsUI = raidGroupsSettingsBuilder({
     panel = raidSettingsPanel,
     CreateCheckbox = CreateCheckbox,
+    UIDropDownMenu_SetWidth = UIDropDownMenu_SetWidth,
+    UIDropDownMenu_SetText = UIDropDownMenu_SetText,
+    ToggleDropDownMenu = ToggleDropDownMenu,
+    Print = Print,
+    assignmentModeCatalog = assignmentModeCatalog,
 })
 
 raidGroupsSettingsUI = RequireBuilderFields("Raid Groups settings", raidGroupsSettingsUI, {
     "raidGroupAutoApplyOnJoinListCB",
     "raidGroupShowMissingNamesCB",
     "raidGroupInviteMissingPlayersCB",
+    "assignmentModeRows",
 })
 if not raidGroupsSettingsUI then return end
 
@@ -1668,6 +1678,33 @@ local function SplitRaidEditorGroups()
     end
 
     local rosterLookup = BuildRaidRosterRoleLookup and BuildRaidRosterRoleLookup(Normalize, ShortName) or {}
+
+    if TryApplyBossSoakAssignmentsToEditor and TryApplyBossSoakAssignmentsToEditor({
+            raidEditorState = raidEditorState,
+            orderedNames = orderedNames,
+            rosterLookup = rosterLookup,
+            fallbackOrder = isMythic
+                and { 1, 2, 3, 4, 8, 7, 6, 5 }
+                or { 1, 2, 3, 4, 5, 6, 7, 8 },
+            Normalize = Normalize,
+            ShortName = ShortName,
+            IsAssignmentHintsApplicable = IsAssignmentHintsApplicable,
+            SetEditorTargetGroup = SetEditorTargetGroup,
+            ClearDrag = function() raidEditorDrag = nil end,
+        }) then
+        if isMythic then
+            for groupIndex = 5, 8 do
+                raidEditorState.groups[groupIndex] = {}
+                for _, playerName in ipairs(preservedOverflowGroups[groupIndex] or {}) do
+                    raidEditorState.groups[groupIndex][#raidEditorState.groups[groupIndex] + 1] = playerName
+                end
+            end
+        end
+        return {
+            total = #orderedNames,
+            appliedBossAssignments = true,
+        }
+    end
 
     local tanks = {}
     local healers = {}
@@ -2539,6 +2576,124 @@ UIDropDownMenu_Initialize(raidLayoutDropDown, function(_, level)
     end
 end)
 
+local function ResolveConfiguredAssignmentMode(row)
+    if not ARL.db or type(row) ~= "table" then
+        return "disabled"
+    end
+    if type(ARL.db.raidGroupAssignmentModes) ~= "table" then
+        ARL.db.raidGroupAssignmentModes = {}
+    end
+    local configured = Normalize(ARL.db.raidGroupAssignmentModes[row.key])
+    if configured == "disabled" then
+        return "disabled"
+    end
+    if configured ~= "" then
+        return configured
+    end
+    local fallback = Normalize(row.defaultMode)
+    if fallback ~= "" then
+        return fallback
+    end
+    if type(row.modes) == "table" and row.modes[1] and Normalize(row.modes[1].key) ~= "" then
+        return Normalize(row.modes[1].key)
+    end
+    return "disabled"
+end
+
+local function GetModeDisplayText(row, modeKey)
+    local selectedKey = Normalize(modeKey)
+    if selectedKey == "disabled" or selectedKey == "" then
+        return "Disabled"
+    end
+
+    local modeCount = #(row and row.modes or {})
+    for _, mode in ipairs(row and row.modes or {}) do
+        if Normalize(mode.key) == selectedKey then
+            if modeCount == 1 then
+                return "Enabled"
+            end
+            return mode.label or mode.key
+        end
+    end
+
+    return "Disabled"
+end
+
+local function RefreshAssignmentModeSettingsUI()
+    for _, row in ipairs(raidGroupsSettingsUI.assignmentModeRows or {}) do
+        local selectedMode = ResolveConfiguredAssignmentMode(row)
+        UIDropDownMenu_SetText(
+            row.dropDown,
+            GetModeDisplayText(row, selectedMode)
+        )
+    end
+end
+
+for _, row in ipairs(raidGroupsSettingsUI.assignmentModeRows or {}) do
+    local rowRef = row
+    UIDropDownMenu_Initialize(rowRef.dropDown, function(_, level)
+        if level ~= 1 then return end
+
+        local currentMode = ResolveConfiguredAssignmentMode(rowRef)
+        local modeCount = #(rowRef.modes or {})
+
+        local disabledInfo = UIDropDownMenu_CreateInfo()
+        disabledInfo.text = "Disabled"
+        disabledInfo.checked = currentMode == "disabled"
+        disabledInfo.func = function()
+            if InCombatLockdown() then
+                Print("Cannot change assignment split settings while in combat.")
+                return
+            end
+            if not ARL.db then return end
+            if type(ARL.db.raidGroupAssignmentModes) ~= "table" then
+                ARL.db.raidGroupAssignmentModes = {}
+            end
+            ARL.db.raidGroupAssignmentModes[rowRef.key] = "disabled"
+            RefreshAssignmentModeSettingsUI()
+            Print(string.format(
+                "%s assignment handling: |cffff6060disabled|r.",
+                rowRef.encounterLabel or "Encounter"
+            ))
+        end
+        UIDropDownMenu_AddButton(disabledInfo, level)
+
+        for _, mode in ipairs(rowRef.modes or {}) do
+            local modeKey = Normalize(mode.key)
+            if modeKey ~= "" then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = modeCount == 1 and "Enabled" or (mode.label or mode.key)
+                info.checked = modeKey == currentMode
+                info.func = function()
+                    if InCombatLockdown() then
+                        Print("Cannot change assignment split settings while in combat.")
+                        return
+                    end
+                    if not ARL.db then return end
+                    if type(ARL.db.raidGroupAssignmentModes) ~= "table" then
+                        ARL.db.raidGroupAssignmentModes = {}
+                    end
+
+                    local defaultMode = Normalize(rowRef.defaultMode)
+                    if modeKey == defaultMode then
+                        ARL.db.raidGroupAssignmentModes[rowRef.key] = nil
+                    else
+                        ARL.db.raidGroupAssignmentModes[rowRef.key] = modeKey
+                    end
+
+                    RefreshAssignmentModeSettingsUI()
+                    Print(string.format(
+                        "%s assignment handling: |cffffd100%s|r.",
+                        rowRef.encounterLabel or "Encounter",
+                        modeCount == 1 and "Enabled" or (mode.label or modeKey)
+                    ))
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end
+    end)
+end
+
 local function RefreshUI()
     if not ARL.db then return end
 
@@ -2575,6 +2730,7 @@ local function RefreshUI()
     raidGroupsSettingsUI.raidGroupAutoApplyOnJoinListCB:SetChecked(ARL.db.raidGroupAutoApplyOnJoin == true)
     raidGroupsSettingsUI.raidGroupShowMissingNamesCB:SetChecked(ARL.db.raidGroupShowMissingNames ~= false)
     raidGroupsSettingsUI.raidGroupInviteMissingPlayersCB:SetChecked(ARL.db.raidGroupInviteMissingPlayers == true)
+    RefreshAssignmentModeSettingsUI()
 
     RefreshListText()
     RefreshRankListText()
