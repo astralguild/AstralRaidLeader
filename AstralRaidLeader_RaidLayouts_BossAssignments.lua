@@ -407,12 +407,37 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
 
         local tyrsWrathAssignments = {}
         local tyrsWrathNames = BuildOrderedNamesFromSet(tyrsWrathNamesSet)
+        local tyrsWrathNameLookup = {}
+        for _, playerName in ipairs(tyrsWrathNames) do
+            tyrsWrathNameLookup[playerName:lower()] = true
+        end
         if #tyrsWrathNames > 0 then
             tyrsWrathAssignments[#tyrsWrathAssignments + 1] = {
                 soakLabel = "tyrs_wrath_all",
                 targetGroups = { 4 },
                 names = tyrsWrathNames,
             }
+        end
+
+        for soakNumber = 1, 4 do
+            local names = BuildOrderedNamesFromSet(executionBySoak[soakNumber])
+            local filteredNames = {}
+            for _, playerName in ipairs(names) do
+                if not tyrsWrathNameLookup[playerName:lower()] then
+                    filteredNames[#filteredNames + 1] = playerName
+                end
+            end
+            if #filteredNames > 0 then
+                local targetGroups = { soakNumber }
+                if soakNumber == 4 then
+                    targetGroups = { 1, 2, 3 }
+                end
+                tyrsWrathAssignments[#tyrsWrathAssignments + 1] = {
+                    soakLabel = "soak_" .. tostring(soakNumber),
+                    targetGroups = targetGroups,
+                    names = filteredNames,
+                }
+            end
         end
 
         modeAssignments.execution_sentence = {
