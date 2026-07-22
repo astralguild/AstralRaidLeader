@@ -179,6 +179,32 @@ local function ParseImportNameList(rawText)
     return parsed
 end
 
+local function ResolveVanguardExecutionSoakNumber(soakLabel)
+    local token = Trim(soakLabel):lower()
+    if token == "" then
+        return nil
+    end
+
+    local numeric = tonumber(token)
+    if numeric and numeric >= 1 and numeric <= 4 then
+        return numeric
+    end
+
+    token = token:gsub("[^%a]", "")
+
+    if token == "frontleft" then
+        return 1
+    elseif token == "frontright" then
+        return 2
+    elseif token == "backright" then
+        return 3
+    elseif token == "backleft" then
+        return 4
+    end
+
+    return nil
+end
+
 function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID, difficulty, bodyText, invitelist)
     local difficultyToken = NormalizeDifficultyToken(difficulty)
     local numericEncounterID = tonumber(encounterID)
@@ -369,8 +395,8 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
                 inExecutionSentenceSoaks = true
                 inTyrsWrathSection = false
             elseif inExecutionSentenceSoaks then
-                local soakLabel, rawNames = trimmedLine:match("^[Ss][Oo][Aa][Kk]%s+(%d+)%s*:%s*(.-)%s*$")
-                local soakNumber = tonumber(soakLabel)
+                local soakLabel, rawNames = trimmedLine:match("^[Ss][Oo][Aa][Kk]%s+([^:]+)%s*:%s*(.-)%s*$")
+                local soakNumber = ResolveVanguardExecutionSoakNumber(soakLabel)
                 if soakNumber and executionBySoak[soakNumber] and rawNames then
                     for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
                         AddCanonicalNameToSet(executionBySoak[soakNumber], parsedName)
