@@ -998,7 +998,7 @@ local function ResolveRaidRosterEntry(snapshot, importedName, used)
     return nil
 end
 
-local function BuildRaidLayoutTargets(profile, snapshot)
+local function BuildRaidLayoutTargets(profile, snapshot, previousTargetByName)
     local targetByName = {}
     local used = {}
     local groupCounts = {}
@@ -1032,11 +1032,53 @@ local function BuildRaidLayoutTargets(profile, snapshot)
     end
 
     local overflowGroups = { 8, 7, 6, 5 }
-    local overflowCount = 0
+    local overflowGroupPriority = {}
+    for priority, subgroup in ipairs(overflowGroups) do
+        overflowGroupPriority[subgroup] = priority
+    end
+
+    local overflowEntries = {}
     for _, entry in ipairs(snapshot.entries) do
         local rosterKey = entry.name:lower()
         if not used[rosterKey] then
-            local assigned = false
+            overflowEntries[#overflowEntries + 1] = entry
+        end
+    end
+
+    table.sort(overflowEntries, function(left, right)
+        local leftKey = left.name:lower()
+        local rightKey = right.name:lower()
+        local leftPriority = math.huge
+        local rightPriority = math.huge
+
+        if previousTargetByName then
+            leftPriority = overflowGroupPriority[previousTargetByName[leftKey]] or math.huge
+            rightPriority = overflowGroupPriority[previousTargetByName[rightKey]] or math.huge
+        end
+
+        if leftPriority ~= rightPriority then
+            return leftPriority < rightPriority
+        end
+
+        return left.name < right.name
+    end)
+
+    local overflowCount = 0
+    for _, entry in ipairs(overflowEntries) do
+        local rosterKey = entry.name:lower()
+        local assigned = false
+        local preferredOverflowGroup = previousTargetByName and previousTargetByName[rosterKey]
+
+        if overflowGroupPriority[preferredOverflowGroup]
+            and (groupCounts[preferredOverflowGroup] or 0) < 5
+        then
+            targetByName[rosterKey] = preferredOverflowGroup
+            groupCounts[preferredOverflowGroup] = (groupCounts[preferredOverflowGroup] or 0) + 1
+            overflowCount = overflowCount + 1
+            assigned = true
+        end
+
+        if not assigned then
             for _, subgroup in ipairs(overflowGroups) do
                 if (groupCounts[subgroup] or 0) < 5 then
                     targetByName[rosterKey] = subgroup
@@ -1046,12 +1088,13 @@ local function BuildRaidLayoutTargets(profile, snapshot)
                     break
                 end
             end
-            if not assigned then
-                return nil, string.format(
-                    "Raid layout |cffffd100%s|r cannot be applied because groups 8, 7, 6, and 5 are already full.",
-                    GetRaidLayoutLabel(profile)
-                )
-            end
+        end
+
+        if not assigned then
+            return nil, string.format(
+                "Raid layout |cffffd100%s|r cannot be applied because groups 8, 7, 6, and 5 are already full.",
+                GetRaidLayoutLabel(profile)
+            )
         end
     end
 
@@ -1324,7 +1367,7 @@ local function ContinueRaidLayoutApply()
     local snapshot = GetRaidRosterSnapshot()
     -- Rebuild desired assignments against the live roster each pass so invited
     -- players who join mid-apply are immediately folded into the target map.
-    local refreshedTargets, refreshedErr = BuildRaidLayoutTargets(state.profile, snapshot)
+    local refreshedTargets, refreshedErr = BuildRaidLayoutTargets(state.profile, snapshot, state.targetByName)
     if not refreshedTargets then
         StopRaidLayoutApply(refreshedErr)
         return
