@@ -439,7 +439,6 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
                 }
             end
         end
-
         modeAssignments.execution_sentence = {
             label = "Execution Sentence Soaks",
             assignments = executionAssignments,
