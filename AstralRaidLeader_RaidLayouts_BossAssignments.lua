@@ -704,3 +704,91 @@ function ARL.RaidLayoutBossAssignments.BuildRaidLayoutGroupsFromHints(rawInvitel
 
     return groups, invitelist
 end
+
+function ARL.RaidLayoutBossAssignments.BuildRaidLayoutGroupsFromMythicRoleFallback(rawInvitelist)
+    local groups = NewRaidLayoutGroups()
+    local invitelist = {}
+    local seenNames = {}
+    local roleLookup = BuildRaidRoleLookupByName()
+
+    for _, rawName in ipairs(rawInvitelist or {}) do
+        local cleanName = Trim(rawName)
+        local key = cleanName:lower()
+        if cleanName ~= "" and not seenNames[key] then
+            seenNames[key] = true
+            invitelist[#invitelist + 1] = cleanName
+        end
+    end
+
+    local tanks = {}
+    local healers = {}
+    local others = {}
+
+    for _, playerName in ipairs(invitelist) do
+        local key = playerName:lower()
+        local role = roleLookup[key] or roleLookup[GetShortName(playerName):lower()] or "NONE"
+        if role == "TANK" then
+            tanks[#tanks + 1] = playerName
+        elseif role == "HEALER" then
+            healers[#healers + 1] = playerName
+        else
+            others[#others + 1] = playerName
+        end
+    end
+
+    if #tanks == 0 then
+        return nil, invitelist
+    end
+
+    local function AddToGroup(groupIndex, playerName)
+        if not groupIndex or groupIndex < 1 or groupIndex > 8 then
+            return false
+        end
+        if #(groups[groupIndex] or {}) >= 5 then
+            return false
+        end
+        groups[groupIndex][#groups[groupIndex] + 1] = playerName
+        return true
+    end
+
+    local function PickFirstOpen(order)
+        for _, groupIndex in ipairs(order or {}) do
+            if #(groups[groupIndex] or {}) < 5 then
+                return groupIndex
+            end
+        end
+        return nil
+    end
+
+    if tanks[1] then
+        AddToGroup(1, tanks[1])
+    end
+    if tanks[2] then
+        if not AddToGroup(2, tanks[2]) then
+            local fallback = PickFirstOpen({ 1, 2, 3, 4, 5, 6, 7, 8 })
+            if fallback then
+                AddToGroup(fallback, tanks[2])
+            end
+        end
+    end
+    for index = 3, #tanks do
+        local target = PickFirstOpen({ 1, 2, 3, 4, 8, 7, 6, 5 })
+        if target then
+            AddToGroup(target, tanks[index])
+        end
+    end
+
+    local function PlaceRemaining(list)
+        for _, playerName in ipairs(list) do
+            local target = PickFirstOpen({ 1, 2, 3, 4, 8, 7, 6, 5 })
+            if target then
+                AddToGroup(target, playerName)
+            end
+        end
+    end
+
+    PlaceRemaining(healers)
+    PlaceRemaining(others)
+
+    return groups, invitelist
+end

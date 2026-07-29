@@ -628,6 +628,7 @@ local function BuildRaidLayoutProfile(input)
         )
     end
 
+    local appliedHintGroups = false
     if type(input.groups) ~= "table"
         and type(assignmentHints) == "table"
         and (
@@ -645,6 +646,20 @@ local function BuildRaidLayoutProfile(input)
         end
         if shouldApplyHints then
             groups, invitelist = bossAssignmentHelpers.BuildRaidLayoutGroupsFromHints(invitelist, assignmentHints)
+            appliedHintGroups = true
+        end
+    end
+
+    if type(input.groups) ~= "table"
+        and not appliedHintGroups
+        and difficultyToken == "mythic"
+        and bossAssignmentHelpers
+        and bossAssignmentHelpers.BuildRaidLayoutGroupsFromMythicRoleFallback
+    then
+        local fallbackGroups, fallbackInvitelist =
+            bossAssignmentHelpers.BuildRaidLayoutGroupsFromMythicRoleFallback(invitelist)
+        if type(fallbackGroups) == "table" and type(fallbackInvitelist) == "table" then
+            groups, invitelist = fallbackGroups, fallbackInvitelist
         end
     end
 
