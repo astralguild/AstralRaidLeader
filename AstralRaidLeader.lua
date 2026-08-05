@@ -24,6 +24,7 @@ local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
 local UnitInRaid = _G.UnitInRaid
 local UnitClass = _G.UnitClass
+local UnitIsConnected = _G.UnitIsConnected
 
 -- ============================================================
 -- Defaults
@@ -289,6 +290,37 @@ local function GetGroupMemberMap()
         local n = GetNumSubgroupMembers()
         for i = 1, n do
             AddName(UnitName("party" .. i))
+        end
+    end
+
+    return members
+end
+
+-- Return a lookup table { lowercaseName -> originalName } of every current
+-- group / raid member that is online (connected).
+local function GetOnlineGroupMemberMap()
+    local members = {}
+
+    local function AddOnlineUnit(unit)
+        if not unit or not UnitExists(unit) then return end
+        if not UnitIsConnected(unit) then return end
+        local name = UnitName(unit)
+        if not name or name == "" then return end
+        local shortName = name:match("^([^%-]+)") or name
+        members[shortName:lower()] = name
+        members[name:lower()] = name
+    end
+
+    if IsInRaid() then
+        local n = GetNumGroupMembers()
+        for i = 1, n do
+            AddOnlineUnit("raid" .. i)
+        end
+    elseif IsInGroup() then
+        AddOnlineUnit("player")
+        local n = GetNumSubgroupMembers()
+        for i = 1, n do
+            AddOnlineUnit("party" .. i)
         end
     end
 
@@ -683,7 +715,7 @@ end
 
 local function BuildRaidLayoutImportText(profile)
     local invitelist = profile and profile.invitelist or {}
-    local inviteText = #invitelist > 0 and table.concat(invitelist, " ") or ""
+    local inviteText = #invitelist > 0 and table.concat(invitelist, ",") or ""
     return string.format(
         "EncounterID: %d; Difficulty: %s; Name: %s;\ninvitelist: %s;",
         tonumber(profile.encounterID) or 0,
@@ -691,6 +723,40 @@ local function BuildRaidLayoutImportText(profile)
         Trim(profile.name),
         inviteText
     )
+end
+
+local function ParseRaidLayoutInviteList(inviteListText)
+    local inviteList = {}
+    local seenNames = {}
+    local text = Trim(inviteListText)
+
+    local function AddName(rawName)
+        local cleanName = Trim(rawName)
+        local key = cleanName:lower()
+        if cleanName ~= "" and not seenNames[key] then
+            seenNames[key] = true
+            inviteList[#inviteList + 1] = cleanName
+        end
+    end
+
+    if text == "" then
+        return inviteList
+    end
+
+    -- Viserio exports are comma-delimited; keep whitespace parsing for older notes.
+    if text:find(",", 1, true) then
+        for commaToken in text:gmatch("([^,]+)") do
+            for nameToken in commaToken:gmatch("%S+") do
+                AddName(nameToken)
+            end
+        end
+    else
+        for nameToken in text:gmatch("%S+") do
+            AddName(nameToken)
+        end
+    end
+
+    return inviteList
 end
 
 local function BuildCurrentRaidInvitelist()
@@ -779,17 +845,7 @@ local function ParseRaidLayoutImport(text)
         local difficulty = Trim(difficultyText)
         local encounterName = Trim(encounterNameText)
         local noteBody = Trim(noteBodyText)
-        local inviteList = {}
-        local seenNames = {}
-
-        for rawName in Trim(inviteListText):gmatch("%S+") do
-            local cleanName = Trim(rawName)
-            local key = cleanName:lower()
-            if cleanName ~= "" and not seenNames[key] then
-                seenNames[key] = true
-                inviteList[#inviteList + 1] = cleanName
-            end
-        end
+        local inviteList = ParseRaidLayoutInviteList(inviteListText)
 
         if encounterID and encounterID > 0 and encounterName ~= "" then
             local rawProfile = {
@@ -1900,7 +1956,7 @@ function ARL:ShowManualPromotePopup(preferredName, bypassCooldown)
     if not UnitIsGroupLeader("player") then return end
     if not IsInRelevantGroup() then return end
 
-    local memberMap = GetGroupMemberMap()
+    local memberMap = GetOnlineGroupMemberMap()
     local normalized = (preferredName or ""):lower()
     local shortName = ((preferredName or ""):match("^([^%-]+)") or preferredName or ""):lower()
     if not (memberMap[normalized] or memberMap[shortName]) then return end
