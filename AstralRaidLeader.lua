@@ -1955,7 +1955,7 @@ function ARL:ShowManualPromotePopup(preferredName, bypassCooldown)
     if not UnitIsGroupLeader("player") then return end
     if not IsInRelevantGroup() then return end
 
-    local memberMap = GetGroupMemberMap()
+    local memberMap = GetOnlineGroupMemberMap()
     local normalized = (preferredName or ""):lower()
     local shortName = ((preferredName or ""):match("^([^%-]+)") or preferredName or ""):lower()
     if not (memberMap[normalized] or memberMap[shortName]) then return end
