@@ -24,6 +24,7 @@ local UnitInPhase = _G.UnitInPhase
 local UnitPosition = _G.UnitPosition
 local UnitInRaid = _G.UnitInRaid
 local UnitClass = _G.UnitClass
+local UnitIsConnected = _G.UnitIsConnected
 
 -- ============================================================
 -- Defaults
