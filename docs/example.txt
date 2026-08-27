@@ -1,343 +1,69 @@
-EncounterID:3182;Difficulty:Mythic;Name:Belo'ren
+EncounterID:3470;Difficulty:Heroic;Name:Nek'zali
 
-time:19;ph:1;tag:everyone;text:Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:69;ph:1;tag:everyone;text:Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:72;ph:2;tag:everyone;text:Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:122;ph:2;tag:everyone;text:Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:172;ph:2;tag:everyone;text:Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:20;ph:1;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:70;ph:1;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:120;ph:1;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:25;ph:1;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:75;ph:1;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:125;ph:1;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:30;ph:1;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
-time:80;ph:1;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
-time:130;ph:1;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
-time:73;ph:2;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:123;ph:2;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:173;ph:2;tag:ranged;text:Kick First;dur:8;colors:0.7 0.4 0.15 1;
-time:78;ph:2;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:128;ph:2;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:178;ph:2;tag:melee;text:Kick Second;dur:8;colors:0.7 0.4 0.15 1;
-time:83;ph:2;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
-time:133;ph:2;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
-time:183;ph:2;tag:melee;text:Kick Third;dur:8;colors:0.7 0.4 0.15 1;
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Delasteve-Area52,Brickinkeys-Area52;
 
-Group Soaks
-P1 Soak 1: Everyone
-P1 Soak 2: Everyone
-P2 Soak 1: Everyone
-P2 Soak 2: Everyone
-P2 Soak 3: Everyone
+EncounterID:3445;Difficulty:Heroic;Name:Sentinels
 
-Interrupts on Adds
-Kick 1: Ranged
-Kick 2: Melee
-Kick 3: Melee
-Kick 1: Ranged
-Kick 2: Melee
-Kick 3: Melee
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Brickinkeys-Area52;
 
-Power Infusion
-PI: Rwp Migzz
-PI: Publik Scoodahblue
+EncounterID:3429;Difficulty:Heroic;Name:Coiled Altar
 
-invitelist:Rwp-Area52,Stormiedk-Area52,Flytanx-Area52,Migzz-Area52,Banditobow-Area52,Meecs-Area52,Psamtik-Area52,Scoodahblue-Area52,Delasteve-Area52,Publik-Area52,Nyghtdh-Illidan,Beardgon-Area52,Brookss-Area52,Hotcornn-Area52,Ganksturr-Area52,Biotta-Area52,Horson-Area52,Kefkaqt-Area52,Zeviawithaz-Area52,Wolfsokal-MoonGuard;
+time:46;ph:1;tag:Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp;text:Soak Guillotine;colors:1 1 0.2 1;
+time:24;ph:3;tag:Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp;text:Soak Guillotine;colors:1 1 0.2 1;
+time:131;ph:1;tag:Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz;text:Soak Guillotine;colors:1 1 0.2 1;
+time:194;ph:3;tag:Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz;text:Soak Guillotine;colors:1 1 0.2 1;
+time:10;ph:1;tag:Banditobow Koeros Biotta Pandice Psamtik;text:You are on orb duty;colors:0.2 0.4 1 1;
 
-EncounterID:3183;Difficulty:Mythic;Name:Lura
+Guillotine Soaks
+Group 1: Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp
+Group 2: Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz
 
-time:28;ph:1;tag:Biotta Banditobow Publik;text:Pick up Crystal;colors:1 1 0.2 1;
-time:92;ph:1;tag:Scoodahblue Migzz Psamtik;text:Pick up Crystal;colors:1 1 0.2 1;
-time:179;ph:1;tag:Kefkaqt Beardgon Banditobow Publik Psamtik Migzz;text:Pick up Crystal;colors:1 1 0.2 1;
-time:13;ph:3;tag:Biotta Scoodahblue Banditobow Publik Psamtik Migzz;text:Pick up Crystal;colors:1 1 0.2 1;
-time:14;ph:4;tag:Biotta Scoodahblue Banditobow Publik Psamtik Migzz;text:Pick up Crystal;colors:1 1 0.2 1;
-time:16;ph:1;tag:Stormiedk Horson;text:Grip Adds;colors:1 0.16 0.16 1;
-time:78;ph:1;tag:Stormiedk Horson;text:Grip Adds;colors:1 0.16 0.16 1;
-time:140;ph:1;tag:Stormiedk Horson;text:Grip Adds;colors:1 0.16 0.16 1;
-time:16;ph:1;tag:Biotta Brookss Migzz Scoodahblue;text:Knock Adds;colors:0.16 1 0.16 1;
-time:78;ph:1;tag:Biotta Brookss Migzz Scoodahblue;text:Knock Adds;colors:0.16 1 0.16 1;
-time:140;ph:1;tag:Biotta Brookss Migzz Scoodahblue;text:Knock Adds;colors:0.16 1 0.16 1;
-time:16;ph:1;tag:Publik Rwp;text:Grip Crystal;colors:1 1 1 1;
-time:78;ph:1;tag:Publik Rwp;text:Grip Crystal;colors:1 1 1 1;
-time:13;ph:3;tag:Delasteve Wolfsokal Brookss Rwp Psamtik;text:Soak {cross};colors:1 0.16 0.16 1;
-time:43;ph:3;tag:Delasteve Wolfsokal Brookss Rwp Psamtik;text:Soak {cross};colors:1 0.16 0.16 1;
-time:73;ph:3;tag:Delasteve Wolfsokal Brookss Rwp Psamtik;text:Soak {cross};colors:1 0.16 0.16 1;
-time:13;ph:3;tag:Kefkaqt Beardgon Biotta Migzz Banditobow;text:Soak {star};colors:1 1 0.2 1;
-time:43;ph:3;tag:Kefkaqt Beardgon Biotta Migzz Banditobow;text:Soak {star};colors:1 1 0.2 1;
-time:73;ph:3;tag:Kefkaqt Beardgon Biotta Migzz Banditobow;text:Soak {star};colors:1 1 0.2 1;
-time:13;ph:3;tag:Ganksturr Tdmp Horson Stormiedk Flytanx;text:Soak {circle};colors:1 0.5 0 1;
-time:43;ph:3;tag:Ganksturr Tdmp Horson Stormiedk Flytanx;text:Soak {circle};colors:1 0.5 0 1;
-time:73;ph:3;tag:Ganksturr Tdmp Horson Stormiedk Flytanx;text:Soak {circle};colors:1 0.5 0 1;
-time:13;ph:3;tag:Nyghtdh Publik Scoodahblue Nymlock Zeviawithaz;text:Soak {skull};colors:1 1 1 1;
-time:43;ph:3;tag:Nyghtdh Publik Scoodahblue Nymlock Zeviawithaz;text:Soak {skull};colors:1 1 1 1;
-time:73;ph:3;tag:Nyghtdh Publik Scoodahblue Nymlock Zeviawithaz;text:Soak {skull};colors:1 1 1 1;
-time:61;ph:4;tag:Biotta Scoodahblue;text:Pop Crystal;colors:1 0.16 0.16 1;
-time:116;ph:4;tag:Banditobow Publik;text:Pop Crystal;colors:1 0.16 0.16 1;
-time:171;ph:4;tag:Psamtik Migzz;text:Pop Crystal;colors:1 0.16 0.16 1;
-time:18;ph:4;tag:Banditobow Biotta Migzz;text:Soaks;colors:1 0.5 0 1;
-time:93;ph:4;tag:Banditobow Biotta Migzz;text:Soaks;colors:1 0.5 0 1;
-time:128;ph:4;tag:Banditobow Biotta Migzz;text:Soaks;colors:1 0.5 0 1;
-time:18;ph:4;tag:Beardgon Tdmp Delasteve Rwp Zeviawithaz Ganksturr Horson;text:Soaks;colors:1 0.5 0 1;
-time:93;ph:4;tag:Beardgon Tdmp Delasteve Rwp Zeviawithaz Ganksturr Horson;text:Soaks;colors:1 0.5 0 1;
-time:128;ph:4;tag:Beardgon Tdmp Delasteve Rwp Zeviawithaz Ganksturr Horson;text:Soaks;colors:1 0.5 0 1;
-time:38;ph:4;tag:Publik Psamtik Scoodahblue;text:Soaks;colors:1 0.5 0 1;
-time:73;ph:4;tag:Publik Psamtik Scoodahblue;text:Soaks;colors:1 0.5 0 1;
-time:148;ph:4;tag:Publik Psamtik Scoodahblue;text:Soaks;colors:1 0.5 0 1;
-time:38;ph:4;tag:Nyghtdh Wolfsokal Brookss Stormiedk Nymlock Flytanx Kefkaqt;text:Soaks;colors:1 0.5 0 1;
-time:73;ph:4;tag:Nyghtdh Wolfsokal Brookss Stormiedk Nymlock Flytanx Kefkaqt;text:Soaks;colors:1 0.5 0 1;
-time:148;ph:4;tag:Nyghtdh Wolfsokal Brookss Stormiedk Nymlock Flytanx Kefkaqt;text:Soaks;colors:1 0.5 0 1;
-time:20;ph:5;tag:Delasteve;text:Immunity Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:40;ph:5;tag:Ganksturr;text:Immunity Soak;dur:8;colors:0.7 0.4 0.15 1;
-time:60;ph:5;tag:Tdmp Banditobow;text:Immunity Soak;dur:8;colors:0.7 0.4 0.15 1;
+Orb Carrier Duty
+Orb Carriers: Banditobow Koeros Biotta Pandice Psamtik
 
-Crystals
-Crystal spawn 1 (0:28): Biotta Banditobow Publik
-Crystal spawn 2 (1:32): Scoodahblue Migzz Psamtik
-Crystal Intermission: Kefkaqt Beardgon Banditobow Publik Psamtik Migzz
-Crystal P2 (3:58): Biotta Scoodahblue Banditobow Publik Psamtik Migzz
-Crystal P3 (5:44): Biotta Scoodahblue Banditobow Publik Psamtik Migzz
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Ganksturr-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Zeviawithaz-Area52,Scoodahblue-Area52,Psamtik-Area52,Publik-Area52,Pewbies-Area52,Pandice-Stormrage,Nyghtdh-Illidan,Migzz-Area52,Koeros-BleedingHollow,Brickinkeys-Area52,Banditobow-Area52;
 
-P1 Grip Adds
-Grip Adds: Stormiedk Horson
-Knock Adds: Biotta Brookss Migzz Scoodahblue
-Grip Crystals: Publik Rwp
+EncounterID:3492;Difficulty:Heroic;Name:Ula'tek
 
-intstart
-Stormiedk Zeviawithaz Banditobow Nymlock
-Horson Ganksturr Biotta Nyghtdh
-Flytanx Tdmp Scoodahblue Psamtik
-intend
+time:165;ph:1;tag:Byegon Nilsin Wolfsokyl Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz;text:Split Left;colors:0.2 0.4 1 1;
+time:165;ph:1;tag:Terraqt Delasteve Brookzz Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz;text:Split Right;colors:1 0.16 0.16 1;
+time:25;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
+time:120;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
+time:324;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
+time:331;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
+time:339;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
+time:28;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
+time:123;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
+time:327;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
+time:335;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
+time:342;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
+time:397;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
+time:468;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
+time:505;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
+time:565;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
+time:397;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
+time:468;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
+time:505;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
+time:565;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
+time:397;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
+time:468;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
+time:505;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
+time:565;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
 
-Intermission Spreads
-Tanks: Beardgon Kefkaqt
-Healers: Ganksturr Flytanx Tdmp Brookss
-DPS: Stormiedk Horson Wolfsokal Delasteve Publik Banditobow Nyghtdh Nymlock Rwp Scoodahblue Migzz Psamtik Biotta Zeviawithaz
+P2 - Group Split
+Left: Byegon Nilsin Wolfsokyl Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz
+Right: Terraqt Delasteve Brookzz Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz
 
-P2 Galvanize Soaks
-Healers: Delasteve Wolfsokal Brookss Rwp Psamtik
-Tanks: Kefkaqt Beardgon Biotta Migzz Banditobow
-Melee: Ganksturr Tdmp Horson Stormiedk Flytanx
-Ranged: Nyghtdh Publik Scoodahblue Nymlock Zeviawithaz
+P1 + Int -  Spectral Coil Soaks
+Soak first: Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon
+Soak second: Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt
 
-P2 Spread Positions
-North West: Banditobow Rwp Delasteve Tdmp
-North East: Psamtik Wolfsokal Brookss Nyghtdh
-West: Biotta Ganksturr Beardgon
-East: Publik Nymlock Zeviawithaz
-South West: Migzz Horson Stormiedk
-South East: Scoodahblue Flytanx Kefkaqt
-
-P3 Pop Crystal
-Pop Crystal 1 (6:31): Biotta Scoodahblue
-Pop Crystal 2 (7:26): Banditobow Publik
-Pop Crystal 3 (8:21): Psamtik Migzz
-
-P3 Sides
-Left: Beardgon Delasteve Rwp Tdmp Banditobow Biotta Ganksturr Migzz Zeviawithaz Horson
-Right: Kefkaqt Wolfsokal Brookss Nyghtdh Psamtik Publik Nymlock Scoodahblue Stormiedk Flytanx
-
-P3 Positions
-Left - Crystal Carrier: Banditobow Biotta Migzz
-Left - Non-Crystal: Beardgon Tdmp Delasteve Rwp Zeviawithaz Ganksturr Horson
-Right - Crystal Carrier: Publik Psamtik Scoodahblue
-Right - Non-Crystal: Nyghtdh Wolfsokal Brookss Stormiedk Nymlock Flytanx Kefkaqt
-
-P4 - Immunity Soak
-Run 1: Delasteve
-Run 2: Ganksturr
-Run 3: Tdmp Banditobow
-
-Power Infusion
-PI: Rwp Migzz
-PI: Publik Scoodahblue
-
-invitelist:Brookss-Area52,Rwp-Area52,Stormiedk-Area52,Flytanx-Area52,Banditobow-Area52,Psamtik-Area52,Scoodahblue-Area52,Migzz-Area52,Delasteve-Area52,Publik-Area52,Nyghtdh-Illidan,Beardgon-Area52,Biotta-Area52,Horson-Area52,Tdmp-Area52,Kefkaqt-Area52,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Ganksturr-Area52;
-
-EncounterID:3176;Difficulty:Mythic;Name:Averzian
+P3 - Serpents Bite Soaks
+Left: Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx
+Front: Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh
+Right: Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik
 
 Power Infusion
 PI: Publik Scoodahblue
 
-Mass: Rwp > Publik
-
-invitelist:Psamtik-Area52,Tdmp-Area52,Scoodahblue-Area52,Hotcornn-Area52,Publik-Area52,Ganksturr-Area52,Nyghtdh-Illidan,Beardgon-Area52,Brookzz-Area52,Pozemka-Stormrage,Biotta-Area52,Meecs-Area52,Sabinqt-Area52,Stormywar-Area52,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Rwsh-Tichondrius,Pewbies-Area52,Migzz-Area52;
-
-EncounterID:3177;Difficulty:Mythic;Name:Vorasius
-
-Power Infusion
-PI: Publik Migzz
-
-invitelist:Psamtik-Area52,Migzz-Area52,Tdmp-Area52,Meecs-Area52,Publik-Area52,Ganksturr-Area52,Beardgon-Area52,Hotcornn-Area52,Stormywar-Area52,Pozemka-Stormrage,Brookzz-Area52,Biotta-Area52,Pewbies-Area52,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Rwsh-Tichondrius,Delasteve-Area52,Scoodahblue-Area52,Sabinqt-Area52;
-
-EncounterID:3179;Difficulty:Mythic;Name:Salhadaar
-
-time:27;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:72;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:150;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:196;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:271;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:317;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:393;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:439;ph:1;tag:Psamtik;text:CC Image 1;colors:1 0.4 0.7 1;
-time:27;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:72;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:150;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:196;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:271;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:317;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:393;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:439;ph:1;tag:Scoodahblue;text:CC Image 2;colors:1 0.4 0.7 1;
-time:27;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:72;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:150;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:196;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:271;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:317;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:393;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:439;ph:1;tag:Meecs Tdmp;text:CC Image 3;colors:1 0.4 0.7 1;
-time:27;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:72;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:150;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:196;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:271;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:317;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:393;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:439;ph:1;tag:Hotcornn Stormiedk;text:CC Image 4;colors:1 0.4 0.7 1;
-time:27;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:72;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:150;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:196;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:271;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:317;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:393;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-time:439;ph:1;tag:Banditobow Pewbies;text:CC Image 5;colors:1 0.4 0.7 1;
-
-CC Fractured Images
-Image 1: Psamtik
-Image 2: Scoodahblue
-Image 3: Meecs Tdmp
-Image 4: Hotcornn Stormiedk
-Image 5: Banditobow Pewbies
-
-Power Infusion
-PI: Publik Scoodahblue
-
-invitelist:Psamtik-Area52,Migzz-Area52,Tdmp-Area52,Meecs-Area52,Pozemka-Stormrage,Scoodahblue-Area52,Publik-Area52,Ganksturr-Area52,Beardgon-Area52,Pewbies-Area52,Hotcornn-Area52,Biotta-Area52,Stormiedk-Area52,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Delasteve-Area52,Banditobow-Area52,Sabinqt-Area52,Brookzz-Area52;
-
-EncounterID:3178;Difficulty:Mythic;Name:Vaelgor
-
-time:16;ph:1;tag:Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz;text:Soak Gloom;colors:1 0.5 0 1;
-time:116;ph:1;tag:Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz;text:Soak Gloom;colors:1 0.5 0 1;
-time:215;ph:1;tag:Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz;text:Soak Gloom;colors:1 0.5 0 1;
-time:317;ph:1;tag:Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz;text:Soak Gloom;colors:1 0.5 0 1;
-time:410;ph:1;tag:Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz;text:Soak Gloom;colors:1 0.5 0 1;
-time:66;ph:1;tag:Kefkaqt Stormiedk Biotta Brookzz Tdmp Psamtik Scoodahblue;text:Soak Gloom;colors:1 0.5 0 1;
-time:264;ph:1;tag:Kefkaqt Stormiedk Biotta Brookzz Tdmp Psamtik Scoodahblue;text:Soak Gloom;colors:1 0.5 0 1;
-time:362;ph:1;tag:Kefkaqt Stormiedk Biotta Brookzz Tdmp Psamtik Scoodahblue;text:Soak Gloom;colors:1 0.5 0 1;
-time:246;ph:1;tag:Migzz Biotta Psamtik Scoodahblue Brookzz Rwsh;text:Knock;colors:1 0.16 0.16 1;
-time:455;ph:1;tag:Migzz Biotta Psamtik Scoodahblue Brookzz Rwsh;text:Knock;colors:1 0.16 0.16 1;
-
-Gloom Soak Groups
-Gloom Soak Group 1: Beardgon Flytanx Nyghtdh Ganksturr Pewbies Meecs Migzz
-Gloom Soak Group 2: Kefkaqt Stormiedk Biotta Brookzz Tdmp Psamtik Scoodahblue
-
-Positions Ganksturr Flytanx Stormiedk Banditobow Tdmp Nyghtdh Pewbies Delasteve Biotta Psamtik Meecs Rwsh Wolfsokal Brookzz Scoodahblue Migzz Publik Nymlock
-
-Knock - No Mass Grip
-Knock 1: Migzz Biotta Psamtik Scoodahblue Brookzz Rwsh
-Knock 2: Migzz Biotta Psamtik Scoodahblue Brookzz Rwsh
-
-Power Infusion
-PI: Publik Scoodahblue
-
-invitelist:Brookzz-Area52,Stormiedk-Area52,Scoodahblue-Area52,Psamtik-Area52,Migzz-Area52,Pewbies-Area52,Meecs-Area52,Delasteve-Area52,Publik-Area52,Ganksturr-Area52,Nyghtdh-Illidan,Beardgon-Area52,Rwsh-Tichondrius,Biotta-Area52,Banditobow-Area52,Kefkaqt-Area52,Wolfsokal-MoonGuard,Nymlock-Area52,Flytanx-Area52,Tdmp-Area52;
-
-EncounterID:3180;Difficulty:Mythic;Name:Vanguard
-
-time:90;ph:1;tag:Kefkaqt Delasteve Flytanx Stormiedk Ganksturr;text:Soak Front Left;colors:1 1 0.2 1;
-time:146;ph:1;tag:Kefkaqt Delasteve Flytanx Stormiedk Ganksturr;text:Soak Front Left;colors:1 1 0.2 1;
-time:249;ph:1;tag:Kefkaqt Delasteve Flytanx Stormiedk Ganksturr;text:Soak Front Left;colors:1 1 0.2 1;
-time:305;ph:1;tag:Kefkaqt Delasteve Flytanx Stormiedk Ganksturr;text:Soak Front Left;colors:1 1 0.2 1;
-time:90;ph:1;tag:Wolfsokal Meecs Banditobow Publik Hotcornn;text:Soak Front Right;colors:1 1 0.2 1;
-time:146;ph:1;tag:Wolfsokal Meecs Banditobow Publik Hotcornn;text:Soak Front Right;colors:1 1 0.2 1;
-time:249;ph:1;tag:Wolfsokal Meecs Banditobow Publik Hotcornn;text:Soak Front Right;colors:1 1 0.2 1;
-time:305;ph:1;tag:Wolfsokal Meecs Banditobow Publik Hotcornn;text:Soak Front Right;colors:1 1 0.2 1;
-time:90;ph:1;tag:Beardgon Scoodahblue Biotta Zeviawithaz Brookss;text:Soak Back Right;colors:1 1 0.2 1;
-time:146;ph:1;tag:Beardgon Scoodahblue Biotta Zeviawithaz Brookss;text:Soak Back Right;colors:1 1 0.2 1;
-time:249;ph:1;tag:Beardgon Scoodahblue Biotta Zeviawithaz Brookss;text:Soak Back Right;colors:1 1 0.2 1;
-time:305;ph:1;tag:Beardgon Scoodahblue Biotta Zeviawithaz Brookss;text:Soak Back Right;colors:1 1 0.2 1;
-time:90;ph:1;tag:Rwsh Psamtik Zeviawithaz Migzz Nyghtdh;text:Soak Back Left;colors:1 1 0.2 1;
-time:146;ph:1;tag:Rwsh Psamtik Zeviawithaz Migzz Nyghtdh;text:Soak Back Left;colors:1 1 0.2 1;
-time:249;ph:1;tag:Rwsh Psamtik Zeviawithaz Migzz Nyghtdh;text:Soak Back Left;colors:1 1 0.2 1;
-time:305;ph:1;tag:Rwsh Psamtik Zeviawithaz Migzz Nyghtdh;text:Soak Back Left;colors:1 1 0.2 1;
-time:29;ph:1;tag:ranged;text:Bait Charge;colors:0.16 1 0.16 1;
-time:161;ph:1;tag:ranged;text:Bait Charge;colors:0.16 1 0.16 1;
-time:205;ph:1;tag:ranged;text:Bait Charge;colors:0.16 1 0.16 1;
-time:258;ph:1;tag:ranged;text:Bait Charge;colors:0.16 1 0.16 1;
-time:39;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 1;colors:1 0.16 0.16 1;
-time:148;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 2;colors:1 0.16 0.16 1;
-time:198;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 3;colors:1 0.16 0.16 1;
-time:307;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 4;colors:1 0.16 0.16 1;
-time:357;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 5;colors:1 0.16 0.16 1;
-time:466;ph:1;tag:Delasteve Biotta Hotcornn Banditobow Nymlock;text:Set 6;colors:1 0.16 0.16 1;
-time:82;ph:1;tag:healer;text:Pre-position for soaks;colors:0.2 0.4 1 1;
-time:138;ph:1;tag:healer;text:Pre-position for soaks;colors:0.2 0.4 1 1;
-time:241;ph:1;tag:healer;text:Pre-position for soaks;colors:0.2 0.4 1 1;
-time:297;ph:1;tag:healer;text:Pre-position for soaks;colors:0.2 0.4 1 1;
-
-Execution Sentence Soaks
-Soak Front Left: Kefkaqt Delasteve Flytanx Stormiedk Ganksturr
-Soak Front Right: Wolfsokal Meecs Banditobow Publik Hotcornn
-Soak Back Right: Beardgon Scoodahblue Biotta Zeviawithaz Brookss
-Soak Back Left: Rwsh Psamtik Zeviawithaz Migzz Nyghtdh
-
-Bait Charge
-Bait Charge: Ranged
-Bait Charge: Ranged
-Bait Charge: Ranged
-Bait Charge: Ranged
-
-Tyr's Wrath Healing Absorbs
-Set 1: Delasteve Biotta Hotcornn Banditobow Nymlock
-Set 2: Delasteve Biotta Hotcornn Banditobow Nymlock
-Set 3: Delasteve Biotta Hotcornn Banditobow Nymlock
-Set 4: Delasteve Biotta Hotcornn Banditobow Nymlock
-Set 5: Delasteve Biotta Hotcornn Banditobow Nymlock
-Set 6: Delasteve Biotta Hotcornn Banditobow Nymlock
-
-Pre-position for Executioner's Sentence
-Pre-position: Healers
-
-Power Infusion
-PI: Publik Scoodahblue
-
-invitelist:Stormiedk-Area52,Banditobow-Area52,Meecs-Area52,Migzz-Area52,Psamtik-Area52,Scoodahblue-Area52,Flytanx-Area52,Delasteve-Area52,Publik-Area52,Beardgon-Area52,Rwsh-Tichondrius,Hotcornn-Area52,Brookss-Area52,Biotta-Area52,Kefkaqt-Area52,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Ganksturr-Area52,Nyghtdh-Illidan;
-
-EncounterID:3181;Difficulty:Mythic;Name:Crown
-
-time:5;ph:3;tag:Migzz Nyghtdh Scoodahblue;text:Kill Add;colors:1 0.16 0.16 1;
-time:15;ph:5;tag:Brookss Wolfsokal;text:Help your friend;colors:0.16 1 0.16 1;
-time:72;ph:5;tag:Brookss Wolfsokal;text:Help your friend;colors:0.16 1 0.16 1;
-time:127;ph:5;tag:Brookss Wolfsokal;text:Help your friend;colors:0.16 1 0.16 1;
-
-Phase 2 Rift Simulacrum Kill Squad
-Kill Add: Migzz Nyghtdh Scoodahblue
-
-First P3 Jump Helpers
-Help your friend: Brookss Wolfsokal
-
-Second P3 Jump Helpers
-Help your friend: Brookss Wolfsokal
-
-Third P3 Jump Helpers
-Help your friend: Brookss Wolfsokal
-
-Power Infusion
-PI: Publik Scoodahblue
-
-invitelist:Brookss-Area52,Stormiedk-Area52,Tdmp-Area52,Scoodahblue-Area52,Psamtik-Area52,Banditobow-Area52,Migzz-Area52,Flytanx-Area52,Delasteve-Area52,Publik-Area52,Beardgon-Area52,Ganksturr-Area52,Nyghtdh-Illidan,Biotta-Area52,Kefkaqt-Area52,Rwsh-Tichondrius,Wolfsokal-MoonGuard,Zeviawithaz-Area52,Nymlock-Area52,Hotcornn-Area52;
-
-EncounterID:3159;Difficulty:Mythic;Name:Rotmire
-
-invitelist:Brookzz-Area52,Delasteve-Area52,Rwsh-Tichondrius,Ganksturr-Area52,Hotcornn-Area52,Nyghtdh-Illidan,Pewbies-Area52,Migzz-Area52,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Stormywar-Area52,Sabinqt-Area52,Biotta-Area52,Banditogun-Proudmoore,Holosight-Area52,Campbell-Whisperwind,Wolfsokal-MoonGuard,Nymlock-Area52,Pozemka-Stormrage,Beardgon-Area52;
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Flytanx-Area52,Ganksturr-Area52,Wolfsokyl-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Brickinkeys-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Pandice-Stormrage,Pewbies-Area52,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52;

@@ -80,6 +80,16 @@ local ASSIGNMENT_MODE_CATALOG = {
         },
         defaultMode = "default",
     },
+    {
+        key = GetEncounterDifficultyKey(3492, "mythic"),
+        encounterID = 3492,
+        difficultyToken = "mythic",
+        encounterLabel = "Ula'tek (Mythic)",
+        modes = {
+            { key = "default", label = "P2 Group Split Left/Right" },
+        },
+        defaultMode = "default",
+    },
 }
 
 local ASSIGNMENT_MODE_BY_KEY = {}
@@ -208,10 +218,17 @@ end
 function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID, difficulty, bodyText, invitelist)
     local difficultyToken = NormalizeDifficultyToken(difficulty)
     local numericEncounterID = tonumber(encounterID)
-    if difficultyToken ~= "mythic" then
+    -- Ula'tek's P2 split also applies at non-Mythic difficulties once the raid is large enough.
+    local allowsNonMythicSplit = numericEncounterID == 3492
+    if difficultyToken == "" then
         return nil
     end
-    if numericEncounterID ~= 3306 and numericEncounterID ~= 3180 and numericEncounterID ~= 3183 then
+    if difficultyToken ~= "mythic" and not allowsNonMythicSplit then
+        return nil
+    end
+    local isSupportedEncounter = numericEncounterID == 3306 or numericEncounterID == 3180
+        or numericEncounterID == 3183 or numericEncounterID == 3492
+    if not isSupportedEncounter then
         return nil
     end
 
@@ -375,6 +392,75 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         end
         modeAssignments.default = {
             label = "P3 Sides Left/Right",
+            assignments = assignments,
+        }
+    elseif numericEncounterID == 3492 then
+        -- Parse the "P2 - Group Split" section for Left / Right lane assignments.
+        local leftSet = {}
+        local rightSet = {}
+        local inGroupSplit = false
+
+        for line in normalizedBody:gmatch("[^\n]+") do
+            local trimmedLine = Trim(line)
+            if trimmedLine:match("^[Pp]2%s*%-%s*[Gg]roup%s+[Ss]plit%s*$") then
+                inGroupSplit = true
+            elseif inGroupSplit then
+                local sideLabel, rawNames = trimmedLine:match("^([Ll]eft)%s*:%s*(.-)%s*$")
+                if sideLabel and rawNames then
+                    for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                        local fullKey = parsedName:lower()
+                        local shortKey = GetShortName(parsedName):lower()
+                        local canonicalName = inviteLookup[fullKey] or inviteLookup[shortKey]
+                        if canonicalName and ClaimCanonicalName(canonicalName) then
+                            leftSet[canonicalName:lower()] = true
+                        end
+                    end
+                else
+                    sideLabel, rawNames = trimmedLine:match("^([Rr]ight)%s*:%s*(.-)%s*$")
+                    if sideLabel and rawNames then
+                        for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                            local fullKey = parsedName:lower()
+                            local shortKey = GetShortName(parsedName):lower()
+                            local canonicalName = inviteLookup[fullKey] or inviteLookup[shortKey]
+                            if canonicalName and ClaimCanonicalName(canonicalName) then
+                                rightSet[canonicalName:lower()] = true
+                            end
+                        end
+                    elseif trimmedLine ~= "" then
+                        -- any other non-blank line ends the section
+                        inGroupSplit = false
+                    end
+                end
+            end
+        end
+
+        local leftNames  = BuildOrderedNamesFromSet(leftSet)
+        local rightNames = BuildOrderedNamesFromSet(rightSet)
+
+        -- Mythic always splits into groups 1/2 vs 3/4; larger non-Mythic raids fill left, then right, sequentially.
+        local leftGroups  = { 1, 2 }
+        local rightGroups = { 3, 4 }
+        if difficultyToken ~= "mythic" and #(invitelist or {}) > 20 then
+            leftGroups  = { 1, 2, 3, 4, 5, 6, 7, 8 }
+            rightGroups = { 1, 2, 3, 4, 5, 6, 7, 8 }
+        end
+
+        if #leftNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel    = "side_left",
+                targetGroups = leftGroups,
+                names        = leftNames,
+            }
+        end
+        if #rightNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel    = "side_right",
+                targetGroups = rightGroups,
+                names        = rightNames,
+            }
+        end
+        modeAssignments.default = {
+            label = "P2 Group Split Left/Right",
             assignments = assignments,
         }
     elseif numericEncounterID == 3180 then
