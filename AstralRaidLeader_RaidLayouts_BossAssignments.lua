@@ -50,43 +50,13 @@ end
 
 local ASSIGNMENT_MODE_CATALOG = {
     {
-        key = GetEncounterDifficultyKey(3306, "mythic"),
-        encounterID = 3306,
+        key = GetEncounterDifficultyKey(3445, "mythic"),
+        encounterID = 3445,
         difficultyToken = "mythic",
-        encounterLabel = "Chimaerus (Mythic)",
+        encounterLabel = "Sentinels (Mythic)",
         modes = {
-            { key = "default", label = "Alndust Upheaval Soaks" },
-        },
-        defaultMode = "default",
-    },
-    {
-        key = GetEncounterDifficultyKey(3180, "mythic"),
-        encounterID = 3180,
-        difficultyToken = "mythic",
-        encounterLabel = "Vanguard (Mythic)",
-        modes = {
-            { key = "execution_sentence", label = "Execution Sentence Soaks" },
-            { key = "tyrs_wrath_group4", label = "Normal Split + Tyr's Wrath in Group 4" },
-        },
-        defaultMode = "execution_sentence",
-    },
-    {
-        key = GetEncounterDifficultyKey(3183, "mythic"),
-        encounterID = 3183,
-        difficultyToken = "mythic",
-        encounterLabel = "Nexus-King Salhadaar (Mythic)",
-        modes = {
-            { key = "default", label = "P3 Sides Left/Right" },
-        },
-        defaultMode = "default",
-    },
-    {
-        key = GetEncounterDifficultyKey(3492, "mythic"),
-        encounterID = 3492,
-        difficultyToken = "mythic",
-        encounterLabel = "Ula'tek (Mythic)",
-        modes = {
-            { key = "default", label = "P2 Group Split Left/Right" },
+            { key = "default", label = "Blood / Breath / Middle Group" },
+            { key = "middle_split", label = "Evenly Split Middle Players" },
         },
         defaultMode = "default",
     },
@@ -227,7 +197,7 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         return nil
     end
     local isSupportedEncounter = numericEncounterID == 3306 or numericEncounterID == 3180
-        or numericEncounterID == 3183 or numericEncounterID == 3492
+        or numericEncounterID == 3183 or numericEncounterID == 3492 or numericEncounterID == 3445
     if not isSupportedEncounter then
         return nil
     end
@@ -462,6 +432,112 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         modeAssignments.default = {
             label = "P2 Group Split Left/Right",
             assignments = assignments,
+        }
+    elseif numericEncounterID == 3445 then
+        local bloodSet = {}
+        local breathSet = {}
+        local middleSet = {}
+        local inBloodBreathSplit = false
+
+        for line in normalizedBody:gmatch("[^\n]+") do
+            local trimmedLine = Trim(line)
+            if trimmedLine:match("^[Bb]lood/[Bb]reath%s+[Ss]plit%s*$") then
+                inBloodBreathSplit = true
+            elseif inBloodBreathSplit then
+                local label, rawNames = trimmedLine:match("^([%a]+)%s*:%s*(.-)%s*$")
+                local nameSet
+                if label and rawNames then
+                    local normalizedLabel = label:lower()
+                    if normalizedLabel == "blood" then
+                        nameSet = bloodSet
+                    elseif normalizedLabel == "breath" then
+                        nameSet = breathSet
+                    elseif normalizedLabel == "middle" then
+                        nameSet = middleSet
+                    end
+                end
+
+                if nameSet then
+                    for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                        AddCanonicalNameToSet(nameSet, parsedName)
+                    end
+                elseif trimmedLine ~= "" then
+                    inBloodBreathSplit = false
+                end
+            end
+        end
+
+        local bloodNames = BuildOrderedNamesFromSet(bloodSet)
+        local breathNames = BuildOrderedNamesFromSet(breathSet)
+        local middleNames = BuildOrderedNamesFromSet(middleSet)
+        if #bloodNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel = "blood",
+                targetGroups = { 1, 2 },
+                names = bloodNames,
+            }
+        end
+        -- Reserve the final subgroup before Breath fills the remaining open slots.
+        if #middleNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel = "middle",
+                targetGroups = { 4 },
+                names = middleNames,
+            }
+        end
+        if #breathNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel = "breath",
+                targetGroups = { 2, 3, 4 },
+                names = breathNames,
+            }
+        end
+        modeAssignments.default = {
+            label = "Blood / Breath / Middle Group",
+            assignments = assignments,
+        }
+
+        local splitMiddleAssignments = {}
+        if #bloodNames > 0 then
+            splitMiddleAssignments[#splitMiddleAssignments + 1] = {
+                soakLabel = "blood",
+                targetGroups = { 1, 2 },
+                names = bloodNames,
+            }
+        end
+        if #breathNames > 0 then
+            splitMiddleAssignments[#splitMiddleAssignments + 1] = {
+                soakLabel = "breath",
+                targetGroups = { 3, 4 },
+                names = breathNames,
+            }
+        end
+        local bloodMiddleNames = {}
+        local breathMiddleNames = {}
+        for index, playerName in ipairs(middleNames) do
+            if index % 2 == 1 then
+                bloodMiddleNames[#bloodMiddleNames + 1] = playerName
+            else
+                breathMiddleNames[#breathMiddleNames + 1] = playerName
+            end
+        end
+        if #bloodMiddleNames > 0 then
+            splitMiddleAssignments[#splitMiddleAssignments + 1] = {
+                soakLabel = "middle_blood",
+                targetGroups = { 1, 2 },
+                names = bloodMiddleNames,
+            }
+        end
+        if #breathMiddleNames > 0 then
+            splitMiddleAssignments[#splitMiddleAssignments + 1] = {
+                soakLabel = "middle_breath",
+                targetGroups = { 3, 4 },
+                names = breathMiddleNames,
+            }
+        end
+        modeAssignments.middle_split = {
+            label = "Evenly Split Middle Players",
+            assignments = splitMiddleAssignments,
         }
     elseif numericEncounterID == 3180 then
         local executionBySoak = {
