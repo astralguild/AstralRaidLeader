@@ -1,69 +1,79 @@
-EncounterID:3470;Difficulty:Heroic;Name:Nek'zali
+EncounterID:3470;Difficulty:Mythic;Name:Nek'zali
 
-invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Delasteve-Area52,Brickinkeys-Area52;
+time:48;ph:1;tag:Flytanx Horson Ganksturr Pewbies Delasteve;text:Group 1 go in;dur:8;colors:0 1 1 1;
+time:50;ph:1.5;tag:Flytanx Horson Ganksturr Pewbies Delasteve;text:Group 1 go in;dur:8;colors:0 1 1 1;
+time:33;ph:2;tag:Flytanx Horson Ganksturr Pewbies Delasteve;text:Group 1 go in;dur:8;colors:0 1 1 1;
+time:113;ph:2;tag:Flytanx Horson Ganksturr Pewbies Delasteve;text:Group 1 go in;dur:8;colors:0 1 1 1;
+time:119;ph:1;tag:Scoodahblue Stormiedk Ninjuh Banditobow Nilsin;text:Group 2 go in;dur:8;colors:0.63 0.16 1 1;
+time:40;ph:1.75;tag:Scoodahblue Stormiedk Ninjuh Banditobow Nilsin;text:Group 2 go in;dur:8;colors:0.63 0.16 1 1;
+time:73;ph:2;tag:Scoodahblue Stormiedk Ninjuh Banditobow Nilsin;text:Group 2 go in;dur:8;colors:0.63 0.16 1 1;
+time:153;ph:2;tag:Scoodahblue Stormiedk Ninjuh Banditobow Nilsin;text:Group 2 go in;dur:8;colors:0.63 0.16 1 1;
+time:36;ph:1.5;tag:Horson Stormiedk Drakley Ninjuh Flytanx Nilsin Delasteve Yaffy Ganksturr;text:Soak the Circle;dur:8;colors:0.16 1 0.16 1;
+time:71;ph:1.5;tag:Horson Stormiedk Drakley Ninjuh Flytanx Nilsin Delasteve Yaffy Ganksturr;text:Soak the Circle;dur:8;colors:0.16 1 0.16 1;
+time:26;ph:1.75;tag:Horson Stormiedk Drakley Ninjuh Flytanx Nilsin Delasteve Yaffy Ganksturr;text:Soak the Circle;dur:8;colors:0.16 1 0.16 1;
+time:61;ph:1.75;tag:Horson Stormiedk Drakley Ninjuh Flytanx Nilsin Delasteve Yaffy Ganksturr;text:Soak the Circle;dur:8;colors:0.16 1 0.16 1;
+time:36;ph:1.5;tag:Brookzz Pewbies Migzz Banditobow Koeros Psamtik Publik Scoodahblue Zeviawithaz;text:Stay Out of the Circle;dur:8;colors:1 0.16 0.16 1;
+time:71;ph:1.5;tag:Brookzz Pewbies Migzz Banditobow Koeros Psamtik Publik Scoodahblue Zeviawithaz;text:Stay Out of the Circle;dur:8;colors:1 0.16 0.16 1;
+time:26;ph:1.75;tag:Brookzz Pewbies Migzz Banditobow Koeros Psamtik Publik Scoodahblue Zeviawithaz;text:Stay Out of the Circle;dur:8;colors:1 0.16 0.16 1;
+time:61;ph:1.75;tag:Brookzz Pewbies Migzz Banditobow Koeros Psamtik Publik Scoodahblue Zeviawithaz;text:Stay Out of the Circle;dur:8;colors:1 0.16 0.16 1;
 
-EncounterID:3445;Difficulty:Heroic;Name:Sentinels
+Soulcoil Well Realm Groups
+Realm Group 1: Flytanx Horson Ganksturr Pewbies Delasteve
+Realm Group 2: Scoodahblue Stormiedk Ninjuh Banditobow Nilsin
 
-invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Brickinkeys-Area52;
-
-EncounterID:3429;Difficulty:Heroic;Name:Coiled Altar
-
-time:46;ph:1;tag:Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp;text:Soak Guillotine;colors:1 1 0.2 1;
-time:24;ph:3;tag:Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp;text:Soak Guillotine;colors:1 1 0.2 1;
-time:131;ph:1;tag:Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz;text:Soak Guillotine;colors:1 1 0.2 1;
-time:194;ph:3;tag:Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz;text:Soak Guillotine;colors:1 1 0.2 1;
-time:10;ph:1;tag:Banditobow Koeros Biotta Pandice Psamtik;text:You are on orb duty;colors:0.2 0.4 1 1;
-
-Guillotine Soaks
-Group 1: Nyghtdh Horson Wolfsokyl Pandice Koeros Biotta Ninjuh Brickinkeys Flytanx Tdmp
-Group 2: Pewbies Stormiedk Brookzz Publik Psamtik Banditobow Ganksturr Zeviawithaz Scoodahblue Migzz
-
-Orb Carrier Duty
-Orb Carriers: Banditobow Koeros Biotta Pandice Psamtik
-
-invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Ganksturr-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Zeviawithaz-Area52,Scoodahblue-Area52,Psamtik-Area52,Publik-Area52,Pewbies-Area52,Pandice-Stormrage,Nyghtdh-Illidan,Migzz-Area52,Koeros-BleedingHollow,Brickinkeys-Area52,Banditobow-Area52;
-
-EncounterID:3492;Difficulty:Heroic;Name:Ula'tek
-
-time:165;ph:1;tag:Byegon Nilsin Wolfsokyl Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz;text:Split Left;colors:0.2 0.4 1 1;
-time:165;ph:1;tag:Terraqt Delasteve Brookzz Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz;text:Split Right;colors:1 0.16 0.16 1;
-time:25;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
-time:120;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
-time:324;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
-time:331;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
-time:339;ph:1;tag:Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon;spellid:1299010;text:Soak Left/First;dur:5;colors:0.2 0.4 1 1;DisplayType:Text;
-time:28;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
-time:123;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
-time:327;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
-time:335;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
-time:342;ph:1;tag:Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt;spellid:1299010;text:Soak Right/Second;dur:5;colors:1 0.5 0 1;DisplayType:Text;
-time:397;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
-time:468;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
-time:505;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
-time:565;ph:1;tag:Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx;text:Soak Melee;colors:0.2 0.4 1 1;
-time:397;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
-time:468;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
-time:505;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
-time:565;ph:1;tag:Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh;text:Soak Healer;colors:1 1 0.2 1;
-time:397;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
-time:468;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
-time:505;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
-time:565;ph:1;tag:Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik;text:Soak Ranged;colors:1 0.16 0.16 1;
-
-P2 - Group Split
-Left: Byegon Nilsin Wolfsokyl Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz
-Right: Terraqt Delasteve Brookzz Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz
-
-P1 + Int -  Spectral Coil Soaks
-Soak first: Wolfsokyl Nilsin Horson Ninjuh Tdmp Flytanx Pewbies Koeros Pandice Zeviawithaz Byegon
-Soak second: Brookzz Delasteve Publik Stormiedk Ganksturr Scoodahblue Nyghtdh Banditobow Psamtik Brickinkeys Migzz Terraqt
-
-P3 - Serpents Bite Soaks
-Left: Terraqt Byegon Horson Stormiedk Tdmp Ninjuh Ganksturr Flytanx
-Front: Wolfsokyl Nilsin Delasteve Publik Brookzz Pewbies Nyghtdh
-Right: Brickinkeys Zeviawithaz Migzz Banditobow Koeros Scoodahblue Pandice Psamtik
+Hungering Pyre Soak Circle
+Soak Circle: Horson Stormiedk Drakley Ninjuh Flytanx Nilsin Delasteve Yaffy Ganksturr
+Don't Soak Circle: Brookzz Pewbies Migzz Banditobow Koeros Psamtik Publik Scoodahblue Zeviawithaz
 
 Power Infusion
-PI: Publik Scoodahblue
+PI: Publik Ninjuh (Glow: Ninjuh)
+PI: Yaffy Ganksturr (Glow: Ganksturr)
 
-invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Flytanx-Area52,Ganksturr-Area52,Wolfsokyl-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Brickinkeys-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Pandice-Stormrage,Pewbies-Area52,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52;
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Nilsin-Area52,Flytanx-Area52,Horson-Area52,Stormiedk-Area52,Banditobow-Area52,Koeros-BleedingHollow,Migzz-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Delasteve-Area52,Ganksturr-Area52,Yaffy-Sargeras,Drakley-Stormrage,Psamtik-Area52,Ninjuh-Area52,Pewbies-Area52;
+
+EncounterID:3497;Difficulty:Mythic;Name:Explorers
+
+time:48;ph:1;tag:Psamtik Migzz;spellid:1292490;text:Find the fish;dur:20;colors:1 0.5 0 1;DisplayType:Text;
+time:114;ph:2;tag:Psamtik Migzz;spellid:1292490;text:Find the fish;dur:20;colors:1 0.5 0 1;DisplayType:Text;
+time:114;ph:3;tag:Psamtik Migzz;spellid:1292490;text:Find the fish;dur:20;colors:1 0.5 0 1;DisplayType:Text;
+
+Fish Throw Job
+Fish Throwers: Psamtik Migzz
+
+Power Infusion
+PI: Publik Ninjuh (Glow: Ninjuh)
+
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Ninjuh-Area52,Stormiedk-Area52,Banditobow-Area52,Brickinkeys-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Pandice-Stormrage,Tdmp-Area52;
+
+EncounterID:3445;Difficulty:Mythic;Name:Sentinels
+
+time:10;ph:1;tag:Byegon Nilsin Wolfsokyl Ninjuh Horson Banditobow Nyghtdh Psamtik;text:Blood side;colors:1 0.16 0.16 1;
+time:10;ph:1;tag:Terraqt Delasteve Yaffy Ganksturr Tdmp Koeros Scoodahblue Flytanx;text:Breath side;colors:0.16 1 0.16 1;
+time:10;ph:1;tag:Brickinkeys Zeviawithaz Publik Migzz;text:Middle;colors:1 1 0.2 1;
+
+Blood/Breath Split
+Blood: Byegon Nilsin Wolfsokyl Ninjuh Horson Banditobow Nyghtdh Psamtik
+Breath: Terraqt Delasteve Yaffy Ganksturr Tdmp Koeros Scoodahblue Flytanx
+Middle: Brickinkeys Zeviawithaz Publik Migzz
+
+Power Infusion
+PI: Publik Ninjuh (Glow: Ninjuh)
+PI: Yaffy Ganksturr (Glow: Ganksturr)
+
+invitelist:Terraqt-Area52,Byegon-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Zeviawithaz-Area52,Scoodahblue-Area52,Nyghtdh-Illidan,Migzz-Area52,Koeros-BleedingHollow,Brickinkeys-Area52,Banditobow-Area52,Ninjuh-Area52,Horson-Area52,Ganksturr-Area52,Psamtik-Area52,Publik-Area52,Yaffy-Sargeras,Tdmp-Area52;
+
+EncounterID:3455;Difficulty:Mythic;Name:Vashnik
+
+invitelist:Byegon-Area52,Terraqt-Area52;
+
+EncounterID:3429;Difficulty:Mythic;Name:Coiled Altar
+
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Zeviawithaz-Area52,Scoodahblue-Area52,Psamtik-Area52,Publik-Area52,Pewbies-Area52,Pandice-Stormrage,Nyghtdh-Illidan,Migzz-Area52,Koeros-BleedingHollow,Brickinkeys-Area52,Banditobow-Area52,Ganksturr-Area52,Yaffy-Sargeras;
+
+EncounterID:3492;Difficulty:Mythic;Name:Ula'tek
+
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Flytanx-Area52,Wolfsokyl-Area52,Horson-Area52,Stormiedk-Area52,Banditobow-Area52,Brickinkeys-Area52,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Pandice-Stormrage,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Ganksturr-Area52,Tdmp-Area52,Psamtik-Area52,Pewbies-Area52,Drakley-Stormrage,Ninjuh-Area52,Yaffy-Sargeras;
+
+EncounterID:3379;Difficulty:Mythic;Name:Nymrissa
+
+invitelist:Byegon-Area52,Terraqt-Area52,Brookzz-Area52,Delasteve-Area52,Nilsin-Area52,Wolfsokyl-Area52,Flytanx-Area52,Ganksturr-Area52,Horson-Area52,Ninjuh-Area52,Stormiedk-Area52,Tdmp-Area52,Banditobow-Area52,Brickinkeys-Area52,Drakley-Stormrage,Koeros-BleedingHollow,Migzz-Area52,Nyghtdh-Illidan,Pandice-Stormrage,Pewbies-Area52,Psamtik-Area52,Publik-Area52,Scoodahblue-Area52,Zeviawithaz-Area52,Yaffy-Sargeras;

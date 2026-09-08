@@ -1302,6 +1302,23 @@ local DIFFICULTY_MAX_PLAYERS = {
     lfr    = 25,
 }
 
+-- Mythic-flex encounters: bosses whose Mythic size exceeds the standard 20-player cap.
+-- Add future encounter IDs here as new mythic-flex fights are added.
+local MYTHIC_FLEX_MAX_PLAYERS_BY_ENCOUNTER = {
+    [3379] = 25, -- Nymrissa
+}
+
+-- Returns the expected max raid size for a difficulty, honoring mythic-flex encounter overrides.
+local function GetDifficultyMaxPlayers(diffToken, encounterID)
+    if diffToken == "mythic" then
+        local override = MYTHIC_FLEX_MAX_PLAYERS_BY_ENCOUNTER[tonumber(encounterID) or 0]
+        if override then
+            return override
+        end
+    end
+    return DIFFICULTY_MAX_PLAYERS[diffToken] or MAX_RAID_MEMBERS
+end
+
 -- Returns true when the current group cannot accept more invites.
 local function IsGroupAtInviteCapacity(_expectedMaxSize)
     -- Raid groups can always invite up to the hard 40-player cap.
@@ -1724,7 +1741,7 @@ local function ApplyRaidLayoutProfile(profile, options)
         -- capacity check is reliable even when GetRaidDifficultyID / GetInstanceInfo returns
         -- stale or zero values (e.g. outside the instance or after a reload).
         local diffToken = NormalizeDifficultyToken(profile.difficulty)
-        local expectedMaxSize = DIFFICULTY_MAX_PLAYERS[diffToken] or MAX_RAID_MEMBERS
+        local expectedMaxSize = GetDifficultyMaxPlayers(diffToken, profile.encounterID)
         invitedMissingCount, skippedInviteCount = InviteMissingRaidLayoutPlayers(targetState.missing, expectedMaxSize)
         if skippedInviteCount > 0 then
             Print("Skipped " .. tostring(skippedInviteCount)
