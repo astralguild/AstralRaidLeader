@@ -197,7 +197,8 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         return nil
     end
     local isSupportedEncounter = numericEncounterID == 3306 or numericEncounterID == 3180
-        or numericEncounterID == 3183 or numericEncounterID == 3492 or numericEncounterID == 3445
+        or numericEncounterID == 3183 or numericEncounterID == 3420 or numericEncounterID == 3492
+        or numericEncounterID == 3445
     if not isSupportedEncounter then
         return nil
     end
@@ -362,6 +363,63 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
         end
         modeAssignments.default = {
             label = "P3 Sides Left/Right",
+            assignments = assignments,
+        }
+    elseif numericEncounterID == 3420 then
+        -- Parse the "Mutilate Soaks" section for Left / Right lanes and tanks.
+        local leftSet = {}
+        local rightSet = {}
+        local inMutilateSoaks = false
+
+        for line in normalizedBody:gmatch("[^\n]+") do
+            local trimmedLine = Trim(line)
+            if trimmedLine:match("^[Mm]utilate%s+[Ss]oaks%s*$") then
+                inMutilateSoaks = true
+            elseif inMutilateSoaks then
+                local label, rawNames = trimmedLine:match("^([Ll]eft)%s*:%s*(.-)%s*$")
+                local nameSet
+                if label and rawNames then
+                    nameSet = leftSet
+                else
+                    label, rawNames = trimmedLine:match("^([Rr]ight)%s*:%s*(.-)%s*$")
+                    if label and rawNames then
+                        nameSet = rightSet
+                    end
+                end
+
+                if nameSet then
+                    for _, parsedName in ipairs(ParseImportNameList(rawNames)) do
+                        local fullKey = parsedName:lower()
+                        local shortKey = GetShortName(parsedName):lower()
+                        local canonicalName = inviteLookup[fullKey] or inviteLookup[shortKey]
+                        if canonicalName and ClaimCanonicalName(canonicalName) then
+                            nameSet[canonicalName:lower()] = true
+                        end
+                    end
+                elseif trimmedLine ~= "" then
+                    inMutilateSoaks = false
+                end
+            end
+        end
+
+        local leftNames = BuildOrderedNamesFromSet(leftSet)
+        local rightNames = BuildOrderedNamesFromSet(rightSet)
+        if #leftNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel = "mutilate_left",
+                targetGroups = { 1, 2 },
+                names = leftNames,
+            }
+        end
+        if #rightNames > 0 then
+            assignments[#assignments + 1] = {
+                soakLabel = "mutilate_right",
+                targetGroups = { 3, 4 },
+                names = rightNames,
+            }
+        end
+        modeAssignments.default = {
+            label = "Mutilate Left / Right Group Split",
             assignments = assignments,
         }
     elseif numericEncounterID == 3492 then

@@ -359,6 +359,33 @@ function ARL.OptionsRaidGroupsHelpers.TryApplyBossSoakAssignmentsToEditor(args)
         end
     end
 
+    if tonumber(raidEditorState.encounterID) == 3420 then
+        local tanks = {}
+        local nonTanks = {}
+        for _, playerName in ipairs(remaining) do
+            if #remaining <= 2 then
+                tanks[#tanks + 1] = playerName
+            else
+                local cleanName = normalize(playerName)
+                local lowerName = cleanName:lower()
+                local shortLower = shortName(cleanName):lower()
+                local info = rosterLookup[lowerName] or rosterLookup[shortLower]
+                if info and info.role == "TANK" then
+                    tanks[#tanks + 1] = playerName
+                else
+                    nonTanks[#nonTanks + 1] = playerName
+                end
+            end
+        end
+        remaining = nonTanks
+        if tanks[1] then
+            AddToGroup(1, tanks[1])
+        end
+        if tanks[2] then
+            AddToGroup(3, tanks[2])
+        end
+    end
+
     for _, assignment in ipairs(prepared) do
         PlaceAssignment(assignment.names, assignment.targetGroups)
     end
