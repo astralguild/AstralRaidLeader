@@ -2041,6 +2041,15 @@ local function LoadEditorFromImportText(text)
         return false, "No raid layout entries were found."
     end
     LoadEditorFromProfile(profiles[1])
+    if raidEditorState.assignmentHints
+        and IsAssignmentHintsApplicable(
+            raidEditorState.assignmentHints,
+            raidEditorState.encounterID,
+            raidEditorState.difficulty
+        )
+    then
+        ReorganizeRaidEditorGroups()
+    end
     raidEditorLoadedKey = nil
     raidEditorHasDraft = true
     return true
