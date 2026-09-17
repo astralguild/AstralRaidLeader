@@ -905,6 +905,36 @@ function ARL.RaidLayoutBossAssignments.BuildRaidLayoutGroupsFromHints(rawInvitel
         end
     end
 
+    if tonumber(hints.encounterID) == 3420 then
+        -- Tanks not named in the Mutilate Soaks lists must anchor to groups 1/3, matching the editor path,
+        -- otherwise they fall through to the group-5-first overflow fallback below.
+        local hintedKeys = {}
+        for _, assignment in ipairs(normalizedAssignments) do
+            for _, playerName in ipairs(assignment.names or {}) do
+                hintedKeys[playerName:lower()] = true
+                hintedKeys[GetShortName(playerName):lower()] = true
+            end
+        end
+
+        local unassignedTanks = {}
+        for _, playerName in ipairs(invitelist) do
+            local key = playerName:lower()
+            if not hintedKeys[key] and not hintedKeys[GetShortName(playerName):lower()] then
+                local role = roleLookup[key] or roleLookup[GetShortName(playerName):lower()] or "NONE"
+                if role == "TANK" then
+                    unassignedTanks[#unassignedTanks + 1] = playerName
+                end
+            end
+        end
+
+        if unassignedTanks[1] then
+            AddToGroup(1, unassignedTanks[1])
+        end
+        if unassignedTanks[2] then
+            AddToGroup(3, unassignedTanks[2])
+        end
+    end
+
     for _, assignment in ipairs(normalizedAssignments) do
         local targets = type(assignment.targetGroups) == "table"
             and assignment.targetGroups
