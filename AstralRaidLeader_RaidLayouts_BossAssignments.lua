@@ -430,7 +430,9 @@ function ARL.RaidLayoutBossAssignments.ParseBossSoakAssignmentHints(encounterID,
 
         for line in normalizedBody:gmatch("[^\n]+") do
             local trimmedLine = Trim(line)
-            if trimmedLine:match("^[Pp]2%s*%-%s*[Gg]roup%s+[Ss]plit%s*$") then
+            if trimmedLine:match("^[Pp]2%s*%-%s*[Gg]roup%s+[Ss]plit%s*$")
+                or trimmedLine:match("^[Ss]ides%s*$")
+            then
                 inGroupSplit = true
             elseif inGroupSplit then
                 local sideLabel, rawNames = trimmedLine:match("^([Ll]eft)%s*:%s*(.-)%s*$")
